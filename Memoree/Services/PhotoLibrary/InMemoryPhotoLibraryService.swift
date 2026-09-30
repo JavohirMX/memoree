@@ -121,8 +121,12 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
 
     func assetExists(_ identifier: String) async -> Bool {
         lock.withLock {
-            !state.missingIdentifiers.contains(identifier)
-                && (state.storedBytes[identifier] != nil || identifier.hasPrefix("back-") || identifier.hasPrefix("front-") || identifier.hasPrefix("bts-"))
+            !state.missingIdentifiers.contains(identifier) && (
+                state.storedBytes[identifier] != nil
+                    || identifier.hasPrefix("back-")
+                    || identifier.hasPrefix("front-")
+                    || identifier.hasPrefix("bts-")
+            )
         }
     }
 

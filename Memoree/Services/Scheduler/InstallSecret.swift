@@ -39,14 +39,32 @@ struct InstallSecret: Sendable {
         }
     }
 
+    /// 32 bytes from the system CSPRNG.
+    ///
+    /// `SecRandomCopyBytes` cannot meaningfully fail on iOS. If it somehow does,
+    /// `generate()` retries and then falls back to UUID bytes rather than
+    /// crashing: this runs during `init()` on the launch path, and a failed RNG
+    /// must not take the app down before the user has seen anything.
+    ///
+    /// An earlier version fell back to the low bits of a millisecond timestamp.
+    /// That is the wrong fallback twice over — predictable to anyone who knows
+    /// roughly when the app was installed, and *colliding* between two installs
+    /// in the same millisecond, which would make two devices derive the same
+    /// moment times. UUIDs are also system-random and cannot collide.
     private static func generate() -> Data {
         var bytes = [UInt8](repeating: 0, count: 32)
-        // `SecRandomCopyBytes` cannot meaningfully fail on iOS; the fallback
-        // keeps the precondition above satisfied rather than returning short data.
-        guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
-            return Data((0..<32).map { UInt8(truncatingIfNeeded: Int64(Date().timeIntervalSince1970 * 1000) &+ Int64($0)) })
+        for _ in 0..<3
+        where SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess {
+            return Data(bytes)
         }
-        return Data(bytes)
+        // Degraded but unique and unguessable-by-clock. The secret is not a
+        // credential (see above) — it exists so the schedule is stable — so
+        // this is a survivable substitution rather than an emergency.
+        var uuidBytes = Data()
+        while uuidBytes.count < 32 {
+            uuidBytes.append(contentsOf: withUnsafeBytes(of: UUID().uuid) { Array($0) })
+        }
+        return uuidBytes.prefix(32)
     }
 
     // MARK: - Keychain

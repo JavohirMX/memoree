@@ -165,7 +165,7 @@ struct CameraView: View {
                let frontImage = UIImage(data: pair.front.data) {
                 Image(uiImage: backImage)
                     .resizable()
-                    .aspectRatio(contentMode: .fill)
+                    .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
 
@@ -174,7 +174,7 @@ struct CameraView: View {
                 } label: {
                     Image(uiImage: frontImage)
                         .resizable()
-                        .aspectRatio(contentMode: .fill)
+                        .scaledToFill()
                         .frame(width: 108)
                         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inset))
                         .overlay {

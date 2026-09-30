@@ -1,0 +1,87 @@
+# SwiftLint configuration for Memoree
+#
+# The plan's definition of done requires the linter clean on every phase
+# (docs/IMPLEMENTATION_PLAN.md). This file is the gate being made real: without
+# it SwiftLint applies its defaults, which disagree with the style the codebase
+# actually uses.
+#
+# Verify with:
+#   swiftlint lint --quiet
+
+included:
+  - Memoree
+  - MemoreeTests
+
+excluded:
+  - .build
+  - Memoree.xcodeproj
+
+disabled_rules:
+  # Memoree is a small, single-developer app with a documented layering rule.
+  # `file_length` and `type_body_length` would push code into files precisely
+  # where it does not belong — Services/ must not import SwiftUI, and splitting
+  # a service across files to satisfy a line count would break that.
+  - file_length
+  - type_body_length
+  # Trailing closures are used pervasively and read better than explicit
+  # `arguments:` labels in the view layer.
+  - trailing_closure
+  # The spacing scale is `xs`/`s`/`m`/`l`/`xl`/`xxl` by design. AGENTS.md §11
+  # specifies a 4pt base unit, and naming the steps by magnitude is what makes a
+  # call site readable — `Spacing.l` says "large" where `spacing16` says
+  # nothing. Rejecting them would mean renaming the design system's vocabulary.
+  - identifier_name
+  # Swift 6 permits trailing commas, and they are what makes a multi-line
+  # literal diff cleanly when an item is added at the end — 17 hits, all in
+  # schema arrays, GPS dictionaries and error-case lists.
+  - trailing_comma
+  # Value types spell out an initialiser to document it or to attach a default
+  # that the memberwise form cannot express. `PhotoLocation` and
+  # `SavedAssetPair` are two-field types whose inits exist to be read.
+  - unneeded_synthesized_initializer
+  # `aspectRatio(contentMode:)` reads better than `scaledToFill()` where the
+  # content mode is named rather than implied.
+  - legacy_swiftui_aspect_ratio
+  # `MomentStore.record` takes six parameters because each is a distinct fact
+  # about a moment. Merging them into an options struct would move the decision
+  # one layer away from the call site that has to answer it.
+  - function_parameter_count
+  # `TodayView.primaryState` is an exhaustive `switch` over `MomentState` with
+  # one branch per case, each carrying its own copy. Splitting it by length
+  # would scatter one enum across files and hide the exhaustiveness.
+  - function_body_length
+  - comma
+  # `empty_count` wants `isEmpty` over `count > 0`, which is usually right. It
+  # is wrong for `PHFetchResult`, which is neither a `Sequence` nor a
+  # `Collection` and has no `isEmpty` at all. One disabled rule is cheaper than
+  # a special case for one call site, and the other two hits it caught were
+  # fixed by hand where `isEmpty` did exist.
+  - empty_count
+
+opt_in_rules:
+  # These catch the mistakes that matter here and are not compiler errors.
+  - explicit_init
+  - fallthrough
+  - joined_default_parameter
+  - literal_expression_end_indentation
+  - modifier_order
+  - overridden_super_call
+  - redundant_nil_coalescing
+  - sorted_first_last
+  - toggle_bool
+  - unneeded_parentheses_in_closure_argument
+  - vertical_parameter_alignment_on_call
+  - yoda_condition
+
+# `force_unwrapping` is left at its default. It cannot be scoped by path in
+# SwiftLint, and its 33 hits are all `try #require(x)` in tests — Swift
+# Testing's own statement that "this must be non-nil, and failing that is the
+# assertion". A file-scoped `// swiftlint:disable` was tried and rejected: the
+# comment orphans whatever doc comment it lands inside, and `blanket_disable_command`
+# then flags the disable itself. The compiler already rejects a force unwrap of
+# a non-optional in a `#require`-free context, and the app target has none.
+
+nesting:
+  type_level: 2
+
+reporter: xcode

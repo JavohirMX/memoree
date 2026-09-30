@@ -250,6 +250,9 @@ struct PhotoKitLibrary: PhotoLibraryService {
     }
 
     func assetExists(_ identifier: String) async -> Bool {
+        // `count > 0` rather than `!isEmpty`: `PHFetchResult` is neither a
+        // `Sequence` nor a `Collection`, so it has no `isEmpty`. `empty_count`
+        // wants the other spelling; the compiler has the final say.
         PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).count > 0
     }
 

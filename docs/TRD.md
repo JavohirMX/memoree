@@ -9,19 +9,51 @@
 | Component | Version | Status |
 | --- | --- | --- |
 | macOS | 27.0 (26A428) | available |
-| Xcode | 27.0 at `/Applications/Xcode.app` | installed, **not selected** |
+| Xcode | 27.0 at `/Applications/Xcode.app` | installed |
 | iOS SDK | 27.0 | available |
-| Command Line Tools | 15-series at `/Library/Developer/CommandLineTools` | **currently active** |
+| Command Line Tools | 15-series at `/Library/Developer/CommandLineTools` | superseded |
 | Swift | 6.4 | available |
 
-`xcode-select -p` currently returns the CommandLineTools path, which has **no iOS SDK**.
-Every `xcodebuild` invocation fails until this is corrected. This is prerequisite step zero.
+`xcode-select` must point at Xcode, not the CommandLineTools. This is not optional and not
+cosmetic, and it fails in a way that looks like something else:
 
 ```sh
 sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer
-xcodebuild -version   # must report Xcode 27.0
+xcode-select -p                  # must print /Applications/Xcode.app/Contents/Developer
+xcodebuild -version              # must report Xcode 27.0
 xcrun --sdk iphoneos --show-sdk-path
 ```
+
+**Setting `DEVELOPER_DIR` is not a substitute.** It makes `xcodebuild` itself find the right
+toolchain, but `xcodebuild` then shells out to `xcrun`, and `xcrun` resolves its utilities
+through `xcode-select` — so any command that shells out fails with
+`xcrun: error: unable to find utility "devicectl", not a developer tool or in PATH`. That
+message names a missing tool rather than a misconfigured selector, which is why it is worth
+recording: the fix is the `sudo` line above, not a `PATH` tweak.
+
+Two consequences, both observed on this machine:
+
+- **SwiftLint does not run** without it. The Homebrew binary resolves `sourcekitdInProc`
+  through the active developer dir and crashes on startup otherwise, so
+  `swiftlint lint` failing was a toolchain symptom, not a broken install.
+- **Device tests cannot run** without it, for the `devicectl` reason above.
+
+Also required before the first device build: launch Xcode once and accept the licence, then
+set the development team under Signing & Capabilities.
+
+### The development team
+
+`DEVELOPMENT_TEAM` must be the `OU` of the local **Apple Development** certificate — the
+signing team — and not the ten-character identifier in the certificate's common name. Those
+are the same value for organisation teams and different for individual ones, so copying the
+value out of the certificate's subject line produces a team Xcode has no account for:
+
+```
+No Account for Team "…". Add a new account in Accounts settings…
+```
+
+A wrong value here cannot be worked around by passing `-allowProvisioningUpdates`; the flag
+only permits profile generation for a team Xcode already holds credentials for.
 
 Also required before the first device build: launch Xcode once and accept the licence, then
 set the development team under Signing & Capabilities.
@@ -62,12 +94,13 @@ Memoree/
 │   │   │   ├── LocalMomentScheduler.swift
 │   │   │   └── NotificationService.swift
 │   │   ├── Capture/
-│   │   │   ├── PhotoCaptureService.swift   # protocol
-│   │   │   ├── SequentialCaptureService.swift
+│   │   │   ├── CapturePhotoService.swift    # protocol, CapturedPhoto/Pair, CaptureError
+│   │   │   ├── CaptureFormatSelector.swift   # pure 3:4 math + device wrapper
 │   │   │   ├── CaptureSessionController.swift
-│   │   │   ├── CameraSwitcher.swift
-│   │   │   ├── BTSRecorder.swift
-│   │   │   └── CompositeRenderer.swift
+│   │   │   ├── SequentialCaptureService.swift
+│   │   │   ├── InMemoryCaptureService.swift  # test double, ships in the app target
+│   │   │   ├── BTSRecorder.swift             # Phase 7
+│   │   │   └── CompositeRenderer.swift       # Phase 8
 │   │   ├── PhotoLibrary/
 │   │   │   ├── PhotoLibraryService.swift   # protocol
 │   │   │   └── PhotoKitLibrary.swift
@@ -297,6 +330,15 @@ or green image. Implement as a `CheckedContinuation` fed by
 `AVCaptureVideoDataOutput` — or, cheaper, by polling
 `session.connections.filter { $0.isEnabled }.isEmpty == false` plus a short settle delay.
 Prefer the real frame signal; a fixed sleep is the first thing that will flake.
+
+**How the delivered frame is identified.** By `AVCaptureConnection.inputPorts` — the port of
+the input actually attached *now* — rather than by a generation counter. A counter read on the
+delivery callback is not sufficient, and the reason is worth stating because the failure is
+silent: a frame from the outgoing camera, already in flight when the swap happened, is delivered
+afterwards, and by then the counter reads the *new* generation. The stale frame is therefore
+accepted and the front photo comes out black — the exact failure the sleep was meant to prevent,
+arriving through a different door. Port identity does not change retroactively, so a frame from
+the removed camera is recognised however late it arrives.
 
 ### 5.3 Format selection
 
@@ -616,7 +658,7 @@ upload.
 | Scheduler | Pure-function unit tests against golden HMAC vectors; notification-refill invariant test at 0/19/20/64 pending |
 | Streaks | Table-driven tests for DST boundaries, month rollover, delete-recompute, today-not-yet-missed |
 | Day identifiers | Round-trip tests across DST transitions and a timezone change |
-| Capture | Manual on device. **Cannot be tested in the simulator** — `isMultiCamSupported` is permanently false there and the camera does not exist |
+| Capture | `LiveCaptureTests` on device, including a 20-run reliability check. **Cannot be tested in the simulator** — `AVCaptureDevice.default` returns nil there and the camera does not exist. `LiveCaptureRunGuardTests` fails a simulator run so the skip cannot pass silently |
 | PhotoKit | Simulator for permission flows; real device for actual writes and EXIF verification |
 | Network-free | Airplane-mode test on device; `nm -u` binary audit; a unit test asserting no `URLSession` is constructed by any production type |
 

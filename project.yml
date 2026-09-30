@@ -40,7 +40,13 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.javohirmx.memoree
         INFOPLIST_FILE: Memoree/Resources/Info.plist
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 6VU7H3YG5W
+        # The team of the Apple ID actually signed in to this machine, which is
+        # the `OU` on the local "Apple Development" certificate — not the
+        # ten-character identifier in the certificate's common name, which is
+        # the same value only for organisation teams. Signing fails with
+        # "No Account for Team" when these disagree, so a wrong value here
+        # cannot be worked around by passing -allowProvisioningUpdates.
+        DEVELOPMENT_TEAM: MBB9BRZ67
         CODE_SIGN_IDENTITY: Apple Development
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -68,7 +74,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.javohirmx.memoree.tests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: 6VU7H3YG5W
+        DEVELOPMENT_TEAM: MBB9BRZ67
 
 schemes:
   Memoree:

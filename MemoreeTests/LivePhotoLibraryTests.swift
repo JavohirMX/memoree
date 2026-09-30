@@ -170,7 +170,7 @@ struct LivePhotoLibraryTests {
         let recovered = try #require(PhotoMetadataInjector.readLocation(from: readBack))
         #expect(abs(recovered.latitude - 48.8584) < 0.0001)
         #expect(abs(recovered.longitude - 2.2945) < 0.0001)
-        #expect(readBack.count > 0)
+        #expect(!readBack.isEmpty)
     }
 
     @Test("Written assets appear in a thumbnail request")

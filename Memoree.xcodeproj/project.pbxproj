@@ -13,6 +13,7 @@
 		327B27CFE4914EF5E75880FE /* DayIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B9524535B2EE546BAF7097 /* DayIdentifier.swift */; };
 		39366A37A503647A4F201D89 /* ModelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10996EA935C292F9CE77FD5E /* ModelContainer.swift */; };
 		425E674601FFCC9151C647DC /* MomentDerivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9280538F4369959B511B4C1 /* MomentDerivation.swift */; };
+		511E1387F92595CA9F14D137 /* LiveCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98914ADFD0E6A30199AC5A4 /* LiveCaptureTests.swift */; };
 		5AC2B802CC989B4F59D69251 /* StreakCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45BAB1D7A1EBB5F67634695 /* StreakCalculator.swift */; };
 		618027A8FB30C4300E912A90 /* CaptureSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2993F4EC3F7F7A178D8AFDC /* CaptureSessionController.swift */; };
 		6936FB2C72079B4E8A4BD00C /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E6E755E1E0B16876C316A0B /* NotificationService.swift */; };
@@ -44,6 +45,7 @@
 		B37DF3D57CE4EC96162ACFB3 /* InMemoryCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD917757A35E12DEED178444 /* InMemoryCaptureService.swift */; };
 		B4783B23B97C022C35378B1E /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05C2F17AB8004A19D55463C5 /* OnboardingView.swift */; };
 		B7AE3A2FCEF4174BD99795D4 /* PhotoMetadataInjectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C035884EA3B2B9DB84A89A50 /* PhotoMetadataInjectorTests.swift */; };
+		BA18B7831DE29F9F25345A46 /* LiveCaptureRunGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2640CD8561278E8B43B8AC0A /* LiveCaptureRunGuard.swift */; };
 		BF8605C36D78E0B26128DA12 /* LocalMomentScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609A5ED40E5FA08F137784E6 /* LocalMomentScheduler.swift */; };
 		C0D5F17637628465CB35ABB7 /* TimeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D79602718EE76F9F8966369 /* TimeWindow.swift */; };
 		C4A361D451653D25E8868764 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7F78EA51E71A3AC4786D36 /* Models.swift */; };
@@ -81,6 +83,7 @@
 		1B664FC8EC0CC2A5B0B55912 /* MomentStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentStateTests.swift; sourceTree = "<group>"; };
 		1D9DE8AAABD3004BA4E6EA79 /* SequentialCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SequentialCaptureService.swift; sourceTree = "<group>"; };
 		21BC6C3408F1736BBDA50E67 /* InstallSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallSecret.swift; sourceTree = "<group>"; };
+		2640CD8561278E8B43B8AC0A /* LiveCaptureRunGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCaptureRunGuard.swift; sourceTree = "<group>"; };
 		3F2906DD6D53CF13021B3AC0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		41C850F72B4380ABB936E5E1 /* Phase0SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase0SmokeTests.swift; sourceTree = "<group>"; };
 		4912B255E2F82A9D704B492C /* CameraHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraHostView.swift; sourceTree = "<group>"; };
@@ -116,6 +119,7 @@
 		E202B3B165C41A78B433ADBA /* PhotoKitLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoKitLibrary.swift; sourceTree = "<group>"; };
 		E2701E38ABA829E678DFCDBC /* TodayViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayViewModel.swift; sourceTree = "<group>"; };
 		E45BAB1D7A1EBB5F67634695 /* StreakCalculator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakCalculator.swift; sourceTree = "<group>"; };
+		E98914ADFD0E6A30199AC5A4 /* LiveCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveCaptureTests.swift; sourceTree = "<group>"; };
 		EAC28B1E7C8F3F853EC884F9 /* PhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryService.swift; sourceTree = "<group>"; };
 		EE2D87D34201EE7274FC5352 /* Memoree.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Memoree.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		FA6B76ACD80C3AC9C27826CD /* MomentState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentState.swift; sourceTree = "<group>"; };
@@ -230,6 +234,8 @@
 				A1B5AFEE9F9B3EDB08A4A10E /* CaptureFlowTests.swift */,
 				FD0FDA697F178A25B29523B9 /* CaptureFormatSelectorTests.swift */,
 				C7693115792547B94510B657 /* DayIdentifierTests.swift */,
+				2640CD8561278E8B43B8AC0A /* LiveCaptureRunGuard.swift */,
+				E98914ADFD0E6A30199AC5A4 /* LiveCaptureTests.swift */,
 				1200D457820C6A13D292EF47 /* LivePhotoLibraryTests.swift */,
 				6181DAD5BD1416D9C47784D2 /* LivePhotoRunGuard.swift */,
 				7A59071CE45EB050FA861B6D /* MomentDerivationTests.swift */,
@@ -383,11 +389,11 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					5852D24B17F47FC29FA6EAB7 = {
-						DevelopmentTeam = 6VU7H3YG5W;
+						DevelopmentTeam = MBB9BRZ67;
 						ProvisioningStyle = Automatic;
 					};
 					61B5A7D36AED4FA53A42EB06 = {
-						DevelopmentTeam = 6VU7H3YG5W;
+						DevelopmentTeam = MBB9BRZ67;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -473,6 +479,8 @@
 				ABAA28677DF4A8D030EEEC92 /* CaptureFlowTests.swift in Sources */,
 				A16CEAF2FCF9464D075666B3 /* CaptureFormatSelectorTests.swift in Sources */,
 				7D2C64E697C7C5970CA89227 /* DayIdentifierTests.swift in Sources */,
+				BA18B7831DE29F9F25345A46 /* LiveCaptureRunGuard.swift in Sources */,
+				511E1387F92595CA9F14D137 /* LiveCaptureTests.swift in Sources */,
 				AF4B5A80BCFCBB8A9E21CAAE /* LivePhotoLibraryTests.swift in Sources */,
 				A632C1A434FD18FF4C50E080 /* LivePhotoRunGuard.swift in Sources */,
 				77717203E14D72AD646041D1 /* MomentDerivationTests.swift in Sources */,
@@ -505,7 +513,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6VU7H3YG5W;
+				DEVELOPMENT_TEAM = MBB9BRZ67;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Memoree/Resources/Info.plist;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
@@ -530,7 +538,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 6VU7H3YG5W;
+				DEVELOPMENT_TEAM = MBB9BRZ67;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -553,7 +561,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6VU7H3YG5W;
+				DEVELOPMENT_TEAM = MBB9BRZ67;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Memoree/Resources/Info.plist;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
@@ -701,7 +709,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 6VU7H3YG5W;
+				DEVELOPMENT_TEAM = MBB9BRZ67;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (

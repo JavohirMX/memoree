@@ -175,11 +175,16 @@ struct MomentDerivationTests {
     }
 
     @Test("The HMAC message is stable and field-delimited")
-    func messageIsStable() {
-        let day = DayIdentifier(string: "2026-09-30")!
+    func messageIsStable() throws {
+        let day = try #require(DayIdentifier(string: "2026-09-30"))
         let message = MomentDerivation.message(
             for: day, window: Self.window, windowDuration: 120)
-        let text = String(decoding: message, as: UTF8.self)
+        // The failable initialiser rather than `String(decoding:as:)`, which
+        // substitutes U+FFFD for invalid bytes. A malformed message would then
+        // fail as a confusing text mismatch instead of saying plainly that the
+        // bytes are not UTF-8 at all — and the message is pure ASCII by
+        // construction, so requiring a successful decode asserts that too.
+        let text = try #require(String(bytes: message, encoding: .utf8))
         #expect(text == "memoree.moment.v1|2026-09-30|660|1380|120")
     }
 

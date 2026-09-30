@@ -14,24 +14,41 @@ Each phase ends with a runnable app on device. A phase is not done until it runs
 
 **Definition of done, every phase:**
 - Builds clean with zero warnings
-- `swiftlint` (or SwiftFormat) clean
+- `swiftlint lint --quiet` clean
 - New logic has unit tests that pass
 - Runs on a physical device, not just the simulator
 - Any new failure mode is handled, not merely avoided
+
+> The linter gate was a fiction until Phase 4: SwiftLint was installed but crashed on startup,
+> and there was no config file, so "swiftlint clean" had never been checked by anything.
+> `.swiftlint.yml` now exists and the gate passes. The rules that are off are off for a stated
+> reason in the file, not silently.
 
 ---
 
 ## Phase 0 — Toolchain and skeleton
 
-**Why first:** `xcode-select` currently points at Command Line Tools, which has no iOS SDK.
+**Why first:** `xcode-select` pointed at Command Line Tools, which has no iOS SDK.
 Nothing can be built until this is fixed, and the failure message is misleading.
+
+> **`DEVELOPER_DIR` is not a substitute for the `xcode-select` switch.** Setting the environment
+> variable makes `xcodebuild` find the right toolchain, but `xcodebuild` shells out to `xcrun`,
+> and `xcrun` resolves its utilities through `xcode-select`. Anything that shells out then fails
+> with `xcrun: error: unable to find utility "devicectl", not a developer tool or in PATH` — a
+> message that names a missing tool rather than a misconfigured selector, and cost an hour to
+> read correctly in Phase 4.
+>
+> Two things were blocked on this and looked like unrelated problems: **SwiftLint crashed on
+> startup** (its Homebrew binary resolves `sourcekitdInProc` through the active developer dir),
+> and **device tests could not run**. Both worked immediately after the switch. A broken
+> linter is a toolchain symptom, not a broken install.
 
 | Task | Notes |
 | --- | --- |
 | Switch developer directory | `sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer` |
 | Verify iOS SDK | `xcrun --sdk iphoneos --show-sdk-path` must print a path |
 | Launch Xcode once, accept licence | Required before code signing |
-| Set development team | Signing & Capabilities → your Apple ID team |
+| Set development team | Signing & Capabilities → your Apple ID team. Must be the certificate's `OU`, not the identifier in its common name — see TRD §1 |
 | `git init`, first commit | Non-negotiable; do this before writing code |
 | Create `project.yml` for XcodeGen | App target + unit test target |
 | Commit generated `.xcodeproj` | So contributors do not need XcodeGen |
@@ -185,6 +202,23 @@ property of the host rather than of configuration.
 **The second highest-risk phase.** Build and debug this before the Today screen, because it
 will consume the most time and you want the remaining phases to be uneventful.
 
+> **Status: code complete; exit criterion needs hardware.** 156 tests in 20 suites pass on the
+> simulator except the two live-run guards, which fail there by design so a green run cannot be
+> mistaken for a verified one.
+>
+> To close the phase on hardware:
+>
+> ```sh
+> export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+> xcodebuild test -project Memoree.xcodeproj -scheme Memoree \
+>   -destination 'platform=iOS,id=<your device>' \
+>   -only-testing:MemoreeTests/LiveCaptureTests \
+>   -allowProvisioningUpdates DEVELOPMENT_TEAM=<your team>
+> ```
+>
+> The 20-run reliability test is the gate. It prints its iteration count and every failure
+> unconditionally, so a pass carries its own evidence.
+
 | Task | Notes |
 | --- | --- |
 | `CaptureSessionController` | Dedicated queue, never main. Ownership documented. |
@@ -208,6 +242,60 @@ length.
 mirrored, correctly-sized front+back pair. Run it 20 times without a failure. If it flakes, it
 is the frame-wait on step 7 — fix it before moving on.
 **Estimate:** 3–4 days. Do not rush this.
+
+### Progress as of 2026-09-30
+
+Done and verified on the simulator — 27 capture tests, zero warnings:
+
+- `CapturePhotoService` protocol, `CapturedPhoto`/`CapturedPair`, `CaptureError` with all nine
+  cases carrying user-facing copy, and `isRetryable` distinguishing transient failures from a
+  permission the user must change in Settings
+- `CaptureFormatSelector`, split so the 3:4 arithmetic is pure over `CMVideoDimensions` and
+  unit-tested without a camera
+- `CaptureSessionController` — session on `capture.session`, never main; the frame-wait;
+  `mediaServicesWereReset` rebuild, reachable from `simulateMediaServicesReset()`
+- `SequentialCaptureService` — the full ten-step sequence, owning the ordering so no caller can
+  swap without waiting
+- `CameraViewModel`, `CameraView`, `CameraPreview`, composite preview, unlimited retakes
+- `TodayView.action()` replaced: the shutter is gated on `MomentState.allowsCapture`, so the
+  FR-5 early-post refusal is structural rather than a disabled button
+- `InMemoryCaptureService` in the app target, so the whole flow is testable with no hardware
+- `LiveCaptureTests` + `LiveCaptureRunGuardTests`, device-only, including the 20-run check
+
+**ADR-018 — the preview crosses the layer boundary as a `CALayer`.** Two rules were in tension:
+"Features contains no AVFoundation" and "a preview must be on screen". The service owns the
+`AVCaptureVideoPreviewLayer` and exposes it as a bare `CALayer`; `Features` wraps that in a
+`UIViewRepresentable` importing only SwiftUI and QuartzCore. Neither import rule gets an
+exception carved out.
+
+**Three API corrections against the iOS 27 SDK.** `isFormatSampleRateAndResolutionSupported` no
+longer exists, so the underlying `videoSupportedFrameRateRanges` are read directly.
+`photoQualityPrioritization` lives on `AVCapturePhotoSettings`, not on the output.
+`AVError.deviceInUseByAnotherClient` is now `deviceInUseByAnotherApplication`.
+
+**Defect avoided: the frame-wait identified frames by generation, which is wrong.** A counter
+read on the delivery callback returns the *new* generation by the time an in-flight frame from
+the outgoing camera is delivered, so the stale frame is accepted and the front photo comes out
+black — the exact failure a `sleep` was meant to prevent, arriving through a different door. The
+wait identifies a frame by `AVCaptureConnection.inputPorts` instead, which does not change
+retroactively. This was caught while writing it, not by a test, and is the reason the 20-run
+device check is not optional.
+
+**Two naming traps, both of which read as syntax errors rather than mistakes.** A view method may
+not share a name with the enum case it is dispatched from: `func permissionDenied` shadowed
+`Phase.permissionDenied` and stopped `case .permissionDenied: permissionDenied` from parsing.
+And `UIView.layer` is get-only, so the preview surface is added as a sublayer rather than
+adopted — correct here only because the service hands it over unattached.
+
+**Not done, and deliberately.** `commit()` stops at the Photos write. `MomentStore.record` and
+the streak recompute are Phase 5's orchestration. Stopping there means the shutter leads
+somewhere real rather than to a dead end (AGENTS.md §6), and it proves the Phase 3 write path on
+hardware in the same run.
+
+**Outstanding:** the 20-run device check, and the human confirmation that the front image is
+mirrored and the rear is not. The mirroring test asserts the mechanism held rather than claiming
+a visual verdict — a selfie is close to symmetric, so only a person can confirm it reads as a
+mirror.
 
 ---
 
@@ -245,8 +333,10 @@ Done and verified on a running simulator:
   moment could ever fire. Onboarding now requests it, and the Today footer reports
   "Reminders off" in amber when it is absent.
 
-Not yet: the capture button. Deliberately absent rather than rendered disabled — a button
-that looks live and does nothing is a dead end (AGENTS.md §6). Phase 4 supplies it.
+Not yet: recording the moment itself. Phase 4 supplies the shutter and the camera, and its
+`commit()` writes the pair to Photos — but `MomentStore.record`, the streak recompute, and the
+captured state in the UI all remain Phase 5 work. Until then a capture is saved to the library
+and not yet in the archive.
 
 Observed on the simulator: today's moment derived at **21:54**, inside the 11:00–23:00
 default window, stable across launches, countdown ticking 1:27:52 → 1:26:46. That is
