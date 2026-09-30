@@ -395,11 +395,11 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					5852D24B17F47FC29FA6EAB7 = {
-						DevelopmentTeam = MBB9BRZ67;
+						DevelopmentTeam = MBBD9BRZ67;
 						ProvisioningStyle = Automatic;
 					};
 					61B5A7D36AED4FA53A42EB06 = {
-						DevelopmentTeam = MBB9BRZ67;
+						DevelopmentTeam = MBBD9BRZ67;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -521,7 +521,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MBB9BRZ67;
+				DEVELOPMENT_TEAM = MBBD9BRZ67;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Memoree/Resources/Info.plist;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
@@ -546,7 +546,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = MBB9BRZ67;
+				DEVELOPMENT_TEAM = MBBD9BRZ67;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (
@@ -569,7 +569,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = MBB9BRZ67;
+				DEVELOPMENT_TEAM = MBBD9BRZ67;
 				ENABLE_PREVIEWS = YES;
 				INFOPLIST_FILE = Memoree/Resources/Info.plist;
 				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
@@ -717,7 +717,7 @@
 			buildSettings = {
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = MBB9BRZ67;
+				DEVELOPMENT_TEAM = MBBD9BRZ67;
 				GENERATE_INFOPLIST_FILE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = (

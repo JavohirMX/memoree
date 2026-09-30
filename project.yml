@@ -46,7 +46,19 @@ targets:
         # the same value only for organisation teams. Signing fails with
         # "No Account for Team" when these disagree, so a wrong value here
         # cannot be worked around by passing -allowProvisioningUpdates.
-        DEVELOPMENT_TEAM: MBB9BRZ67
+        #
+        # Read it rather than copying it out of the common name, which says
+        # `(6VU7H3YG5W)` and is the *individual* identifier:
+        #
+        #     security find-certificate -c "Apple Development: <you>" -p \
+        #         | openssl x509 -noout -subject
+        #     subject=UID=UJ239AQ3NZ, CN=Apple Development: javohirmx@gmail.com
+        #         (6VU7H3YG5W), OU=MBBD9BRZ67, …
+        #
+        # The two differ by one character, and a simulator build never signs —
+        # so the wrong value survives every local test run and only fails when
+        # someone finally tries a device.
+        DEVELOPMENT_TEAM: MBBD9BRZ67
         CODE_SIGN_IDENTITY: Apple Development
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
@@ -74,7 +86,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.javohirmx.memoree.tests
         GENERATE_INFOPLIST_FILE: YES
         CODE_SIGN_STYLE: Automatic
-        DEVELOPMENT_TEAM: MBB9BRZ67
+        # Same team as the app, and it must be the same team: the test bundle
+        # is injected into Memoree.app, so a mismatch here is not caught at
+        # build time — it fails at "unable to install" with a message that
+        # names the app rather than the bundle.
+        DEVELOPMENT_TEAM: MBBD9BRZ67
 
 schemes:
   Memoree:
