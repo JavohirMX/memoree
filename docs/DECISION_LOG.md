@@ -654,6 +654,72 @@ completion-handler timeout, the manual deadline could be replaced by it.
 
 ---
 
+## ADR-021 — Sequential capture is user-paced, and the order is random
+
+**Status:** Accepted · **Date:** 2026-09-30 · **Supersedes the *ordering* in ADR-003**
+
+**Context.** ADR-003 chose sequential capture over `AVCaptureMultiCamSession`, and that choice
+stands. What it also specified, by way of describing the implementation, was an **order**:
+capture rear, reconfigure, capture front, restore rear. The first build took that literally and
+exposed it as one method — `capturePair()` — so a single shutter press produced both photographs
+automatically, in sequence, with the user watching a progress spinner.
+
+That is not the mechanic. The sequence is something the user performs:
+
+1. The camera opens on **one** camera.
+2. They compose, and press the shutter. That photograph is taken.
+3. The **other** camera comes up.
+4. They compose, and press again. The moment is complete.
+
+Two shutter presses, and the second is what switches the camera. The user sees the switch
+happen and composes with what they see next.
+
+**Decision.** Capture is user-paced and the opening camera is **random per moment**.
+`capturePair()` is deleted rather than kept as a convenience.
+
+**Rationale for deleting it.** A single call that captures both halves hides the only
+interesting part of the sequence — the swap is a user-visible event with a live preview on the
+far side of it — and it makes "reshoot just this one half" inexpressible, because an atomic
+pair has no halves to reshoot. Both properties are load-bearing, so the convenience was not
+worth it.
+
+**Rationale for randomising the order.** The product's premise is that you do not know when the
+moment arrives: the delivery time is random, the window is two minutes, and the photograph is
+unretouched. Fixing which camera you start on would reintroduce exactly the kind of
+predictability the rest of the design removes, for no gain — the user gets both halves either
+way.
+
+**Consequences.**
+- `startSession(on:)` and `switchCamera(to:)` are on the protocol. The swap is no longer hidden
+  inside a higher-level call, which is how it got skipped the first time.
+- The view model owns the sequence: which camera opened, which is live, and what has been
+  captured. The service answers one question at a time.
+- **The reliability gate became a real test.** It previously swapped the camera forty times in
+  about twenty seconds and reported 18/20 then 15/20, with an AVFoundation internal assert in
+  the log. That was not a product defect — it is a stress pattern the app never produces, and
+  the isolated measurement of the same mechanism was 0 failures in 40 at half a second each.
+  User pacing gives the sensor the settle time it wants, and the 5s frame deadline now has real
+  headroom rather than being the thing under test.
+- While shooting, the large view is the **live** camera and the photograph already taken sits in
+  the top-left square. It is not tappable there: the large view has to stay live to compose
+  with. Tap-to-swap is the review behaviour, where both slots are photographs.
+- Reshooting one half is a **separate control** from the swap tap, because that tap is already
+  taken. Overloading one target with two meanings would make the common action unpredictable.
+- **ADR-013 needs revisiting.** Behind-the-Scenes records only the primary camera, which was
+  "the rear" by definition. It is now whichever camera the user shot first.
+
+**Alternatives rejected.** Keeping `capturePair()` as a convenience wrapper — see above. Always
+opening on the rear — reintroduces predictability the rest of the design avoids, and the
+instruction was explicit. Letting the user pick the opening camera before shooting — a control
+for something the product deliberately does not let you plan. Randomising per shutter press
+rather than per moment — the order would flicker while composing.
+
+**Reversal trigger.** If a user reports wanting to know in advance which camera opens, that is a
+product change rather than a bug, and it should be a new ADR rather than an edit to this one.
+BTS following the random order is a Phase 7 decision.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

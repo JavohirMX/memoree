@@ -310,20 +310,40 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 }
 ```
 
-Configuration sequence for each shutter:
+### 5.2.1 The sequence is the user's
+
+**Two shutter presses, two photographs (ADR-021).** The second press is what
+switches the camera, and the opening camera is random per moment.
+
+The camera screen opens on one camera. The first press photographs it, and the
+other camera then comes up while the photograph just taken sits in the top-left
+square. The second press photographs that one, and the moment moves to review.
+
+The service therefore answers one question at a time — `startSession(on:)`,
+`captureCurrentPhoto()`, `switchCamera(to:)` — and the view model owns the order.
+There is deliberately no `capturePair()`: a single call that captures both halves
+would hide the swap, which is a user-visible event, and would make "reshoot just
+this one half" inexpressible.
+
+Internally, the swap is:
 
 ```
-1. output.capturePhoto(with: rearSettings, delegate: self)      // rear
-2. await delegate callback for rear data
-3. session.beginConfiguration()
-4. session.removeInput(currentInput)
-5. session.addInput(newInput)                                   // front
-6. await connection on sessionQueue of .runtimeError == nil
-7. await first delivered frame from the front input
-8. output.capturePhoto(with: frontSettings, delegate: self)    // front
-9. await delegate callback for front data
-10. session.beginConfiguration(); restore rear input           // return to rear
+1. session.beginConfiguration()
+2. session.removeInput(currentInput)
+3. guard session.canAddInput(newInput)          // NO if checked while the old
+4. session.addInput(newInput)                   // input is still attached
+5. session.commitConfiguration()
+6. re-apply the 3:4 activeFormat to the new device
+7. await first delivered frame from the new input
 ```
+
+**Steps 3 and 4 have two constraints, and both were violated before one was
+satisfied.** `canAddInput` must be called *inside* `beginConfiguration` — outside
+it, while the session is running, it returns NO for the front camera every time.
+It must also be called *after* `removeInput`: a session already holding one video
+input will not accept a second from a different device, so checking first
+returns NO every time. Both arrangements were shipped by accident and both
+reported `noInputAvailable(.front)` twenty times out of twenty on a real device.
 
 Step 7 is not optional. Capturing before the front sensor has delivered a frame yields a black
 or green image. Implement as a `CheckedContinuation` fed by
@@ -396,7 +416,24 @@ BeReal's geometry, from their published ad guidelines:
 
 - Rear: full-bleed, 3:4
 - Front: inset, top-left, **14pt corner radius**, overlapping the rear
-- Tap the inset (or double-tap the frame) to swap which is primary
+- Tap the inset to swap which is primary
+
+**Which photograph is "primary" is random per moment** (ADR-021), so the large
+one is whichever the user shot second — the one they were looking at when they
+finished.
+
+Two states, and they are not the same screen:
+
+- **Shooting.** The large view is the *live* camera; the photograph already taken
+  sits in the inset. The inset is **not tappable** here: the large view has to
+  stay live, because it is what the user is composing with. Promoting the inset
+  would cover the camera they are about to shoot.
+- **Review.** Both slots are photographs. Tapping the small one promotes it and
+  the other drops into the square.
+
+Reshooting a single half is a separate control, not a tap target, because that
+tap is already taken by swapping. Overloading one target with two meanings makes
+the common action unpredictable.
 
 Implemented as a ZStack in SwiftUI over the two `UIImage`s. The composite is **only** rendered
 on demand for sharing (FR-14); it is never written to Photos, because the user chose two
