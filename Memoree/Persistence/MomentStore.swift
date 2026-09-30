@@ -86,6 +86,11 @@ final class MomentStore {
     /// Tombstoned moments are excluded, which is what makes deleting a moment
     /// recompute the streak immediately (ADR-008): the row stops being visible
     /// to the calculator without any cached value needing invalidating.
+    ///
+    /// The asset identifiers come along because a screen holding a
+    /// `MomentFacts` needs them to show the photographs, and `Moment` is not
+    /// `Sendable` — a view cannot hold one and cross an isolation boundary with
+    /// it. Both halves travel together or not at all.
     func facts() -> [MomentFacts] {
         allMoments.map { moment in
             MomentFacts(
@@ -96,9 +101,23 @@ final class MomentStore {
                 capturedAt: moment.capturedAt,
                 windowEndsAt: moment.windowEndsAt,
                 retakeCount: moment.retakeCount,
-                hasBTS: moment.hasBTS
+                hasBTS: moment.hasBTS,
+                assets: Self.assets(of: moment)
             )
         }
+    }
+
+    /// The pair, or `nil` when the moment has no photographs on record.
+    ///
+    /// Half a pair is treated as no pair. The write path cannot produce it — both
+    /// assets are created in one `performChanges` block — so if only one is
+    /// present, the moment is not displayable and reporting half of it would
+    /// just move the "cannot happen" decision to every caller.
+    static func assets(of moment: Moment) -> SavedAssetPair? {
+        guard let back = moment.backAssetIdentifier,
+              let front = moment.frontAssetIdentifier
+        else { return nil }
+        return SavedAssetPair(back: back, front: front)
     }
 
     /// Every statistic the app displays, computed fresh from the archive.

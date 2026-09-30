@@ -82,7 +82,12 @@ struct PhotoLocation: Sendable, Equatable {
 }
 
 /// The identifiers of a saved moment pair.
-struct SavedAssetPair: Sendable, Equatable {
+///
+/// `Hashable` because it rides along inside `MomentFacts`, which is. It is two
+/// strings and nothing else, so the conformance is free — and making the
+/// snapshot `Hashable` is what lets a view diff it for redraws without
+/// holding onto a non-`Sendable` managed object.
+struct SavedAssetPair: Sendable, Equatable, Hashable {
     let back: String
     let front: String
 

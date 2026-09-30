@@ -16,12 +16,50 @@ protocol NotificationService: Sendable {
     /// Number of moment notifications currently pending.
     func pendingCount() async -> Int
 
+    /// Whether the user has agreed to be reminded.
+    ///
+    /// A denied state is a supported outcome, not an error: with no server
+    /// nothing can re-notify the user later, so the app has to stay fully
+    /// usable without the reminder (AGENTS.md §9, TRD §9).
+    func authorizationStatus() async -> NotificationAuthorization
+
+    /// Asks for permission. Returns whether it was granted.
+    ///
+    /// Never blocks on a dialog the test host cannot dismiss.
+    func requestAuthorization() async -> Bool
+
     /// Removes every notification Memoree has scheduled.
     ///
     /// Used on account-equivalent events — there are none — and by tests. It
     /// deliberately does NOT call `removeAllPendingNotificationRequests()`,
     /// which would also clear items this app never scheduled.
     func clearAll() async
+}
+
+/// Mirrors `UNAuthorizationStatus` without leaking UserNotifications into the
+/// call sites that only need to branch on the outcome.
+///
+/// The same pattern as `CameraAuthorizationStatus` and
+/// `PhotoAuthorizationStatus`. It did not exist at first, and the cost of that
+/// was concrete: `TodayViewModel` and `OnboardingView` both reached the real
+/// status through `as? UserNotificationService`, so a test double could never
+/// drive them — every test silently took the "not the production type" branch
+/// while appearing to exercise the real path.
+enum NotificationAuthorization: Sendable, Equatable {
+    /// Not yet asked.
+    case notDetermined
+    /// Granted explicitly.
+    case authorized
+    /// Granted provisionally — delivered quietly, without a prompt. Quiet
+    /// delivery is not useful for a reminder, but the user did not say no.
+    case provisional
+    /// The user said no. Everything else in the app still works.
+    case denied
+
+    /// Whether a reminder will actually reach the user.
+    var willDeliver: Bool {
+        self == .authorized || self == .provisional
+    }
 }
 
 /// Production `NotificationService`.
@@ -77,8 +115,8 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
         }
     }
 
-    func authorizationStatus() async -> UNAuthorizationStatus {
-        await center.notificationSettings().authorizationStatus
+    func authorizationStatus() async -> NotificationAuthorization {
+        await center.notificationSettings().authorizationStatus.asMemoree
     }
 
     // MARK: - Horizon
@@ -170,5 +208,27 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
         let minutes = Int((duration / 60).rounded())
         if minutes <= 1 { return "1 minute" }
         return "\(minutes) minutes"
+    }
+}
+
+// MARK: - Narrowing
+
+extension UNAuthorizationStatus {
+
+    /// Apple's enum, narrowed to Memoree's.
+    ///
+    /// `.ephemeral` is App Clips only and never reaches this app, but it has to
+    /// be handled exhaustively, and mapping it to `.authorized` would claim a
+    /// delivery guarantee it does not make. It maps to `.denied` instead: a
+    /// reminder that cannot be delivered is a reminder that will not be.
+    var asMemoree: NotificationAuthorization {
+        switch self {
+        case .notDetermined: return .notDetermined
+        case .authorized: return .authorized
+        case .provisional: return .provisional
+        case .denied: return .denied
+        case .ephemeral: return .denied
+        @unknown default: return .denied
+        }
     }
 }

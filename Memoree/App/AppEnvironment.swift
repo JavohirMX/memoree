@@ -39,6 +39,7 @@ final class AppEnvironment {
 
     init(
         container: ModelContainer? = nil,
+        momentScheduler: MomentScheduler? = nil,
         notificationService: NotificationService? = nil,
         photoLibrary: PhotoLibraryService? = nil,
         captureService: CapturePhotoService? = nil
@@ -48,8 +49,15 @@ final class AppEnvironment {
 
         let context = ModelContext(resolved)
         self.momentStore = MomentStore(context: context)
-        self.momentScheduler = LocalMomentScheduler(secret: InstallSecret())
-        self.notificationService = notificationService ?? UserNotificationService(scheduler: momentScheduler)
+        // Injectable because this is the composition root, and a root that
+        // cannot be given a fake is a root that cannot be tested: the default
+        // reads the Keychain and derives a real moment time, so any test of the
+        // Today screen would be asserting on whatever the Keychain happened to
+        // hold on that run.
+        self.momentScheduler = momentScheduler
+            ?? LocalMomentScheduler(secret: InstallSecret())
+        self.notificationService = notificationService
+            ?? UserNotificationService(scheduler: self.momentScheduler)
         self.photoLibrary = photoLibrary ?? PhotoKitLibrary()
         self._captureService = captureService
 

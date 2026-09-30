@@ -28,6 +28,28 @@ final class TodayViewModel {
     /// not an error (AGENTS.md §9).
     private(set) var notificationsAuthorized = false
 
+    /// Today's moment, read back out of the user's photo library.
+    ///
+    /// **The first thing in the app that reads from Photos.** Everything up to
+    /// here only writes. This is TRD §6.5's read path, and it is the reason the
+    /// row stores `PHAsset.localIdentifier` values at all: the photographs are
+    /// the user's, and Memoree streams them back rather than keeping copies
+    /// (ADR-007).
+    ///
+    /// The rear is large and the front is inset, which is the geometry TRD §5.6
+    /// states. The random opening camera (ADR-021) decided *which* the user shot
+    /// first, not which one is prominent — that is a review-screen behaviour,
+    /// and the review screen is the only place where both slots are photographs.
+    private(set) var todayImages: (large: UIImage, inset: UIImage)?
+
+    /// Today's photographs are gone from Photos.
+    ///
+    /// The user may have deleted them deliberately — that is their library, and
+    /// Memoree never reached back into it (ADR-008). The moment is still a real
+    /// moment and still in the archive; it just has nothing to show, and saying
+    /// so beats rendering an empty black rectangle that reads as a bug.
+    private(set) var todayMissingFromPhotos = false
+
     /// Diagnostics for the Settings screen: how many notifications are pending.
     private(set) var pendingNotificationCount = 0
 
@@ -35,14 +57,38 @@ final class TodayViewModel {
     private(set) var cameraAvailable = false
 
     private let environment: AppEnvironment
+
+    /// The clock.
+    ///
+    /// Injected rather than read from `Date()` at each use, because `now` is
+    /// the input to every derived value on this screen — the state, the
+    /// countdown, the day rollover, and whether the photographs to show belong
+    /// to today. A view model that reads the real clock cannot be tested at a
+    /// chosen time at all.
+    ///
+    /// This was not theoretical. The model took a `now: Date` in its initialiser
+    /// and then overwrote it with `Date()` on the first `reload()` — so a test
+    /// could construct the exact state it wanted and watch the real clock
+    /// replace it a line later. Every one of these tests failed that way first.
+    private let clock: @Sendable () -> Date
+
     private var ticker: Task<Void, Never>?
 
-    init(environment: AppEnvironment, now: Date = Date()) {
+    init(
+        environment: AppEnvironment,
+        now: @escaping @Sendable () -> Date = { Date() }
+    ) {
         self.environment = environment
-        self.now = now
-        self.interval = environment.interval(for: DayIdentifier(date: now))
-        self.todayMoment = environment.momentStore.facts().last { $0.day.isToday }
-        self.summary = environment.momentStore.summary()
+        self.clock = now
+
+        let current = now()
+        let today = DayIdentifier(date: current)
+        self.now = current
+        self.interval = environment.interval(for: today)
+        // Compared against `today` explicitly rather than through `isToday`,
+        // which asks the system clock. Same clock as everything else here.
+        self.todayMoment = environment.momentStore.facts().last { $0.day == today }
+        self.summary = environment.momentStore.summary(today: today)
     }
 
     // MARK: - Derived state
@@ -122,7 +168,7 @@ final class TodayViewModel {
     /// in Settings, and re-resolves the day identity so the state rolls over at
     /// local midnight rather than at UTC midnight.
     func refreshNow() {
-        let current = Date()
+        let current = clock()
         let today = DayIdentifier(date: current)
 
         // Day rollover: the window and moment both belong to a specific day.
@@ -130,23 +176,68 @@ final class TodayViewModel {
             interval = environment.interval(for: today)
             todayMoment = environment.momentStore.facts().last { $0.day == today }
             summary = environment.momentStore.summary(today: today)
+            Task { await loadTodayImages() }
         }
         now = current
     }
 
-    /// Full refresh: state, streak, and notification diagnostics.
+    /// Full refresh: state, streak, notification diagnostics, and today's pair.
     func reload() async {
         refreshNow()
-        summary = environment.momentStore.summary()
+        summary = environment.momentStore.summary(today: DayIdentifier(date: now))
         notificationsAuthorized = await refreshAuthorization()
         pendingNotificationCount = await environment.notificationService.pendingCount()
+        await loadTodayImages()
+    }
+
+    /// Streams today's two photographs back out of Photos.
+    ///
+    /// Awaited from `reload()` rather than fired off, so a caller that reloads
+    /// and immediately renders sees the photographs. The images are small — a
+    /// screen-sized downsample, not the original 3–5 MB — because the originals
+    /// are already on the device in the user's own library, and copying them
+    /// here would be a pointless use of memory (TRD §6.5, ADR-007).
+    private func loadTodayImages() async {
+        guard let moment = todayMoment,
+              let back = moment.assets?.back,
+              let front = moment.assets?.front
+        else {
+            todayImages = nil
+            todayMissingFromPhotos = false
+            return
+        }
+
+        let size = Self.compositeTargetSize
+        async let large = environment.photoLibrary.image(for: back, targetSize: size)
+        async let inset = environment.photoLibrary.image(for: front, targetSize: size)
+        let (largeImage, insetImage) = await (large, inset)
+
+        if let largeImage, let insetImage {
+            todayImages = (large: largeImage, inset: insetImage)
+            todayMissingFromPhotos = false
+        } else {
+            todayImages = nil
+            // Only call it missing if the assets are genuinely gone. A `nil`
+            // because a request has not resolved yet is a different claim, and a
+            // moment that still has its photographs must never be described as
+            // having lost them.
+            let backExists = await environment.photoLibrary.assetExists(back)
+            let frontExists = await environment.photoLibrary.assetExists(front)
+            todayMissingFromPhotos = !(backExists && frontExists)
+        }
+    }
+
+    /// The size the composite asks Photos for.
+    ///
+    /// Derived from the screen rather than hardcoded, so it is right on an
+    /// iPhone SE and on a Pro Max without a second number to keep honest.
+    private static var compositeTargetSize: CGSize {
+        let scale = UIScreen.main.scale
+        return CGSize(width: 520 * scale, height: 693 * scale)
     }
 
     private func refreshAuthorization() async -> Bool {
-        guard let service = environment.notificationService as? UserNotificationService
-        else { return notificationsAuthorized }
-        let status = await service.authorizationStatus()
-        return status == .authorized || status == .provisional
+        await environment.notificationService.authorizationStatus().willDeliver
     }
 
     // MARK: - Derived helpers

@@ -13,6 +13,7 @@ struct TodayView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var model: TodayViewModel?
     @State private var isShowingCamera = false
+    @State private var isConfirmingRecapture = false
 
     var body: some View {
         // The lifecycle modifiers hang off the outermost container, never off
@@ -37,7 +38,45 @@ struct TodayView: View {
             CameraHostView { isShowingCamera = false }
                 .environment(environment)
         }
+        // Reload when the camera closes, not when this view appears.
+        //
+        // `refreshNow()` only re-reads `todayMoment` on a day rollover, so
+        // without this the screen keeps whatever it had when it was created:
+        // capture a moment, dismiss, and you are still looking at "It's time"
+        // with a streak that never moved. Cancelling without capturing is
+        // harmless — the reload finds the same state it already had.
+        .onChange(of: isShowingCamera) { _, isShowing in
+            guard !isShowing else { return }
+            Task { await self.model?.reload() }
+        }
+        .confirmationDialog(
+            Self.recaptureTitle,
+            isPresented: $isConfirmingRecapture,
+            titleVisibility: .visible
+        ) {
+            Button("Capture again") { isShowingCamera = true }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(Self.recaptureMessage)
+        }
     }
+
+    private static let recaptureTitle = "Capture again?"
+
+    /// Says the cost of the tap before the tap, not after.
+    ///
+    /// Re-capturing writes a second pair to Photos and replaces the archive
+    /// row. The earlier pair stays in the camera roll — permanently, because
+    /// Memoree holds **add-only** authorisation and physically cannot delete an
+    /// asset it created (ADR-008). That is not a bug to be fixed later; it is
+    /// the cost of the ownership thesis, and the user is entitled to know it
+    /// before they commit rather than after.
+    private static let recaptureMessage = """
+        Today's moment will be replaced in your archive.
+
+        The two photos already in your library stay there. Memoree never \
+        deletes from Photos.
+        """
 
     // MARK: - Content
 
@@ -45,6 +84,11 @@ struct TodayView: View {
     private func content(_ model: TodayViewModel) -> some View {
         VStack(spacing: 0) {
             header(model)
+
+            if model.state.isCaptured {
+                todayComposite(model)
+                    .padding(.bottom, Theme.Spacing.xl)
+            }
 
             Spacer(minLength: Theme.Spacing.xl)
 
@@ -77,6 +121,51 @@ struct TodayView: View {
             Spacer()
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: - Today's moment
+
+    /// Today's pair, streamed back out of the user's own library.
+    ///
+    /// **Not tappable.** There is nowhere for it to go yet — the archive is
+    /// Phase 6 — and a control that looks live and does nothing is a dead end
+    /// (AGENTS.md §6). It carries an accessibility label instead, because two
+    /// unlabelled images are worse than silence: they invite a tap that does
+    /// nothing.
+    ///
+    /// Three states, and all of them are real: captured with both photographs
+    /// present, captured with them deleted from Photos, and captured with the
+    /// read still in flight.
+    @ViewBuilder
+    private func todayComposite(_ model: TodayViewModel) -> some View {
+        if let images = model.todayImages {
+            MomentComposite(
+                large: images.large,
+                inset: images.inset,
+                insetWidth: 96
+            )
+            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            .frame(maxHeight: 360)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(MomentComposite.accessibilityLabel)
+        } else if model.todayMissingFromPhotos {
+            Text("Today's photos are no longer in your library. The moment is still in your archive.")
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Spacing.xxl)
+                .background(Theme.Color.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        } else {
+            // The read has not resolved. A flat placeholder is honest here; a
+            // spinner would imply work that is usually a few milliseconds.
+            Theme.Color.surface
+                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                .frame(maxHeight: 360)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                .accessibilityHidden(true)
+        }
     }
 
     // MARK: - Primary state
@@ -164,10 +253,16 @@ struct TodayView: View {
     private func action(_ model: TodayViewModel) -> some View {
         if model.state.allowsCapture {
             PrimaryButton(title: model.shutterTitle) {
-                isShowingCamera = true
+                // Re-capture goes through a confirmation, because it orphans the
+                // previous pair in Photos and the user cannot get it back.
+                if model.state.isCaptured {
+                    isConfirmingRecapture = true
+                } else {
+                    isShowingCamera = true
+                }
             }
             .accessibilityHint(model.state.isCaptured
-                ? "Replaces today's moment"
+                ? "Replaces today's moment. The earlier photos stay in your library."
                 : "Opens the camera")
         }
     }

@@ -65,10 +65,11 @@ struct LivePhotoLibraryTests {
 
     /// Executed-test count for this run.
     ///
-    /// `nonisolated(unsafe)` because `LivePhotoRunGuardTests` is not
-    /// `@MainActor` and must read it. Safe: the counter has its own lock, and it
-    /// carries no state beyond an integer.
-    nonisolated(unsafe) private static let runCounter = RunCounter()
+    /// `nonisolated` because `LivePhotoRunGuardTests` is not `@MainActor` and
+    /// must read it. Plain rather than `nonisolated(unsafe)`: `RunCounter` is
+    /// `Sendable` and has its own lock, so the compiler can prove this one is
+    /// safe — and an unnecessary escape hatch is one more thing to keep an eye on.
+    nonisolated private static let runCounter = RunCounter()
 
     /// Executed-test count for this run.
     nonisolated static var runCount: Int { runCounter.value }

@@ -54,10 +54,12 @@ struct LiveCaptureTests {
 
     /// How many live tests actually executed, as opposed to skipped.
     ///
-    /// `nonisolated(unsafe)` because the suite is `@MainActor` and the guard is
-    /// not, so it cannot read a main-actor static. The counter carries its own
-    /// lock and holds nothing but an integer.
-    nonisolated(unsafe) private static let runCounter = RunCounter()
+    /// `nonisolated` so the guard — which is not main-actor isolated — can read
+    /// it. Plain rather than `nonisolated(unsafe)`: `RunCounter` is `Sendable`
+    /// and carries its own lock, so the compiler can prove this one is safe.
+    /// An earlier version reached for the `unsafe` escape hatch out of habit,
+    /// and the SDK was right to say it was not needed.
+    nonisolated private static let runCounter = RunCounter()
 
     nonisolated static var runCount: Int { runCounter.count }
 

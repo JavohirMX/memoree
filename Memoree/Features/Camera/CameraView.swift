@@ -169,41 +169,21 @@ struct CameraView: View {
 
     /// BeReal's composite geometry: one photograph large, the other inset
     /// top-left at a 14pt radius. Tapping the inset promotes it.
+    ///
+    /// The geometry itself lives in `MomentComposite` because the Today screen
+    /// draws the same thing, and two copies of a composite is how one of them
+    /// ends up with a different inset width.
     private func composite(_ model: CameraViewModel) -> some View {
-        ZStack(alignment: .topLeading) {
-            if let prominent = model.prominentPhoto,
-               let image = UIImage(data: prominent.data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .clipped()
-            } else {
-                Theme.Color.canvas
-            }
-
-            if let inset = model.insetReviewPhoto,
-               let image = UIImage(data: inset.data) {
-                Button {
-                    model.swapProminent()
-                } label: {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: 108)
-                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inset))
-                        .overlay {
-                            RoundedRectangle(cornerRadius: Theme.Radius.inset)
-                                .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
-                        }
-                }
-                .buttonStyle(.plain)
-                .padding(Theme.Spacing.m)
-                .accessibilityLabel("Swap the two photos")
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
+        MomentComposite(
+            large: model.prominentPhoto.flatMap { UIImage(data: $0.data) },
+            inset: model.insetReviewPhoto.flatMap { UIImage(data: $0.data) },
+            insetWidth: 108,
+            onTapInset: { model.swapProminent() }
+        )
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(MomentComposite.accessibilityLabel)
+        .accessibilityHint("Double tap to swap which photo is large")
+        .accessibilityAddTraits(.isButton)
     }
 
     /// Post, or reshoot one half.
@@ -246,7 +226,10 @@ struct CameraView: View {
                 .font(Theme.Typography.screenTitle)
                 .foregroundStyle(Theme.Color.textPrimary)
 
-            Text("Your photos are in your library.")
+            // Both facts, because both are true and the user has just done two
+            // things. Saying only "in your library" undersells the second, and
+            // saying only "archived" hides the one they can go and check.
+            Text("The moment is in your archive, and both photos are in your library.")
                 .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Color.textSecondary)
                 .multilineTextAlignment(.center)

@@ -226,9 +226,7 @@ struct OnboardingView: View {
     }
 
     private func requestNotificationPermission() async {
-        guard let service = environment.notificationService as? UserNotificationService
-        else { return }
-        _ = await service.requestAuthorization()
+        _ = await environment.notificationService.requestAuthorization()
     }
 
     private func requestCameraPermission() async {

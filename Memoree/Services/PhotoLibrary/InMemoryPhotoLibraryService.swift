@@ -112,11 +112,26 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
         }
     }
 
+    /// Decodes what it was given, so the read path returns real pixels.
+    ///
+    /// This used to return `nil` unconditionally with a comment saying tests
+    /// assert the *call* rather than the result. That was true while nothing
+    /// consumed the result — but the Today screen's composite is the first thing
+    /// that does, and a double that always answers `nil` would have made every
+    /// one of its states unreachable in a test. A double that cannot exercise
+    /// the code it stands in for is a double that hides bugs.
+    ///
+    /// Returns `nil` for anything not written through `saveMomentPair`, and for
+    /// identifiers the user is modelled as having deleted — which is how the
+    /// "missing from Photos" path gets tested at all.
     func image(for identifier: String, targetSize: CGSize) async -> UIImage? {
-        // No real pixels: tests assert that the call was made, not what it
-        // returned. Returning nil is honest rather than fabricating an image.
-        _ = targetSize
-        return lock.withLock { state.missingIdentifiers.contains(identifier) ? nil : nil }
+        lock.withLock {
+            guard !state.missingIdentifiers.contains(identifier),
+                  let data = state.storedBytes[identifier],
+                  let image = UIImage(data: data)
+            else { return nil }
+            return image
+        }
     }
 
     func assetExists(_ identifier: String) async -> Bool {

@@ -36,6 +36,20 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
     let retakeCount: Int
     let hasBTS: Bool
 
+    /// The two `PHAsset.localIdentifier`s the photographs were written under.
+    ///
+    /// Carried here so a screen holding a `MomentFacts` can display the moment
+    /// without reaching for the managed object. The archive, the Today screen's
+    /// composite, detail, and share all need these, and every one of them was
+    /// going to re-fetch the row to get them.
+    ///
+    /// Nil on **both** halves together or not at all. A moment with one half
+    /// and no other is not a state the write path can produce — the two assets
+    /// are created in one `performChanges` block, so either both land or
+    /// neither does (TRD §6.2) — and modelling the impossible case would only
+    /// invite a caller to handle it.
+    let assets: SavedAssetPair?
+
     init(
         id: UUID,
         day: DayIdentifier,
@@ -43,7 +57,8 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
         capturedAt: Date,
         windowEndsAt: Date,
         retakeCount: Int,
-        hasBTS: Bool
+        hasBTS: Bool,
+        assets: SavedAssetPair? = nil
     ) {
         self.id = id
         self.day = day
@@ -52,6 +67,7 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
         self.windowEndsAt = windowEndsAt
         self.retakeCount = retakeCount
         self.hasBTS = hasBTS
+        self.assets = assets
     }
 
     /// How long after the window closed this moment was captured.
