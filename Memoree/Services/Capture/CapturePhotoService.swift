@@ -16,10 +16,18 @@ import QuartzCore
 /// than an `AVCaptureVideoPreviewLayer` — see ADR-018 for why, and for the
 /// alternative that would have required an exception to the import rule.
 ///
-/// Class-bound because `previewLayer` is a stored reference held across the
-/// session's lifetime, and because the session controller must be able to
-/// hand out the same surface for its whole life rather than a copy per read.
-protocol CapturePhotoService: AnyObject {
+/// Class-bound and `Sendable` for two reasons:
+///
+/// - `previewLayer` is a stored reference held across the session's lifetime,
+///   so the service must be able to hand out the same surface for its whole
+///   life rather than a copy per read.
+/// - The service is created in the `@MainActor` composition root and used from
+///   the camera's own queues, so it crosses isolation domains. Every
+///   implementation is thread-safe by construction: `SequentialCaptureService`
+///   confines all mutable state to the session controller's serial queue, and
+///   `InMemoryCaptureService` guards its state with a lock. Making that a
+///   protocol requirement means a future implementation cannot quietly opt out.
+protocol CapturePhotoService: AnyObject, Sendable {
 
     /// The live preview surface.
     ///

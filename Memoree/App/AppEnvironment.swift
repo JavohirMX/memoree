@@ -16,10 +16,33 @@ final class AppEnvironment {
     let momentScheduler: MomentScheduler
     let notificationService: NotificationService
 
+    /// The production capture service. Built lazily so the first launch does
+    /// not open a camera session before the user has asked for one.
+    let photoLibrary: PhotoLibraryService
+    private var _captureService: CapturePhotoService?
+
+    /// The capture service.
+    ///
+    /// `lazy` because constructing a `CaptureSessionController` creates an
+    /// `AVCaptureSession`, and doing that on launch — before the user has
+    /// granted camera access or opened the camera screen — is work with no
+    /// purpose and a real cost in power on first run.
+    var captureService: CapturePhotoService {
+        if let existing = _captureService { return existing }
+        let created = SequentialCaptureService()
+        _captureService = created
+        return created
+    }
+
     /// Resolved lazily so the first launch does not block on Keychain I/O.
     private var didRefreshHorizon = false
 
-    init(container: ModelContainer? = nil, notificationService: NotificationService? = nil) throws {
+    init(
+        container: ModelContainer? = nil,
+        notificationService: NotificationService? = nil,
+        photoLibrary: PhotoLibraryService? = nil,
+        captureService: CapturePhotoService? = nil
+    ) throws {
         let resolved = try container ?? Persistence.makeContainer()
         self.container = resolved
 
@@ -27,6 +50,8 @@ final class AppEnvironment {
         self.momentStore = MomentStore(context: context)
         self.momentScheduler = LocalMomentScheduler(secret: InstallSecret())
         self.notificationService = notificationService ?? UserNotificationService(scheduler: momentScheduler)
+        self.photoLibrary = photoLibrary ?? PhotoKitLibrary()
+        self._captureService = captureService
 
         #if DEBUG
         // Development affordance: skip first-run so the Today screen can be

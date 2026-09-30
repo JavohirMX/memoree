@@ -88,6 +88,15 @@ final class TodayViewModel {
         "\(streak) \(streak == 1 ? "day" : "days")"
     }
 
+    /// The shutter's label, which differs when a moment already exists today.
+    ///
+    /// Re-capture is allowed and replaces the day (ADR-011: unlimited retakes,
+    /// no deletion limit), so the button says so rather than pretending this
+    /// is the first attempt.
+    var shutterTitle: String {
+        state.isCaptured ? "Capture again" : "Capture"
+    }
+
     // MARK: - Lifecycle
 
     /// Starts the once-a-second tick while the screen is on-screen.

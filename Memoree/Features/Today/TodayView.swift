@@ -12,6 +12,7 @@ struct TodayView: View {
 
     @Environment(AppEnvironment.self) private var environment
     @State private var model: TodayViewModel?
+    @State private var isShowingCamera = false
 
     var body: some View {
         // The lifecycle modifiers hang off the outermost container, never off
@@ -32,6 +33,10 @@ struct TodayView: View {
             await created.reload()
         }
         .onDisappear { self.model?.stopTicking() }
+        .fullScreenCover(isPresented: $isShowingCamera) {
+            CameraHostView { isShowingCamera = false }
+                .environment(environment)
+        }
     }
 
     // MARK: - Content
@@ -145,15 +150,26 @@ struct TodayView: View {
 
     // MARK: - Action
 
-    /// The shutter appears once the camera exists.
+    /// The shutter.
     ///
-    /// Deliberately absent until then rather than rendered disabled: a button
-    /// that looks live and does nothing is a dead end, and AGENTS.md §6 requires
-    /// every affordance to lead somewhere. Phase 4 replaces this with the real
-    /// capture flow.
+    /// Present only when capture is actually possible. The states that offer it
+    /// are exactly `MomentState.allowsCapture` — so the FR-5 early-post refusal
+    /// is structural: there is no affordance to disable, because the state
+    /// resolver has already decided the window has not opened (TRD §8).
+    ///
+    /// Phase 5 shipped this as an `EmptyView()` on purpose. A button that looks
+    /// live and does nothing is a dead end (AGENTS.md §6), so the affordance was
+    /// withheld until something stood behind it. Phase 4 supplies that.
     @ViewBuilder
     private func action(_ model: TodayViewModel) -> some View {
-        EmptyView()
+        if model.state.allowsCapture {
+            PrimaryButton(title: model.shutterTitle) {
+                isShowingCamera = true
+            }
+            .accessibilityHint(model.state.isCaptured
+                ? "Replaces today's moment"
+                : "Opens the camera")
+        }
     }
 
     // MARK: - Footer

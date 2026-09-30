@@ -17,8 +17,12 @@ import Foundation
 /// two layers invites a caller to swap without waiting, which produces a black
 /// or green front photo with no error anywhere. This type owns the whole
 /// sequence so that ordering cannot be got wrong by a caller.
-final class SequentialCaptureService: CapturePhotoService {
+final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
 
+    // `@unchecked Sendable` because `CapturePhotoService: Sendable` is
+    // satisfied here by confinement, not by immutability: the only stored
+    // property is a `let` reference to a controller whose mutable state is
+    // confined to its own serial queue (AGENTS.md §5).
     private let controller: CaptureSessionController
 
     init(controller: CaptureSessionController = CaptureSessionController()) {
