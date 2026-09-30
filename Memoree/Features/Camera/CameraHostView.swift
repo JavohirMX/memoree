@@ -27,7 +27,8 @@ struct CameraHostView: View {
             guard model == nil else { return }
             let created = CameraViewModel(
                 service: environment.captureService,
-                photoLibrary: environment.photoLibrary
+                photoLibrary: environment.photoLibrary,
+                record: environment.makeMomentRecorder()
             )
             self.model = created
         }

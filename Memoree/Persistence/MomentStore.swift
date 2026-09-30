@@ -254,8 +254,18 @@ final class MomentStore {
 
     // MARK: - Persistence
 
+    /// The single choke point every mutation in this type passes through.
+    ///
+    /// Narrowing to `StoreError` here rather than at each call site is what
+    /// makes the error user-presentable: SwiftData's own errors are excellent
+    /// in a log and useless on a screen, and they are the only thing that
+    /// would otherwise reach `CameraViewModel`'s error mapping.
     private func save() throws {
         guard context.hasChanges else { return }
-        try context.save()
+        do {
+            try context.save()
+        } catch {
+            throw StoreError.wrapping(error)
+        }
     }
 }

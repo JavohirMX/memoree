@@ -89,6 +89,36 @@ final class AppEnvironment {
         return derived
     }
 
+    /// Records an accepted pair as a moment.
+    ///
+    /// Built here, and only here, because this is the one place that can see
+    /// both the store and the derived window. The camera screen cannot reach
+    /// `Persistence` to do it itself, and a `Services` type may not import
+    /// `Persistence` at all (AGENTS.md §3) — so the operation is handed across
+    /// as a closure rather than reached for.
+    ///
+    /// The window is resolved **here rather than by the caller** because
+    /// lateness is derived from it inside `MomentStore.record`, and the whole
+    /// point of that derivation is that no caller can disagree with it. Passing
+    /// an interval in from the camera would put that guarantee one refactor away
+    /// from being lost.
+    func makeMomentRecorder() -> MomentRecorder {
+        let store = momentStore
+        let calendar = Calendar.current
+
+        return { capture in
+            let day = DayIdentifier(date: capture.capturedAt, calendar: calendar)
+            try store.record(
+                day: day,
+                interval: self.interval(for: day),
+                capturedAt: capture.capturedAt,
+                retakeCount: capture.retakeCount,
+                backAssetIdentifier: capture.assets.back,
+                frontAssetIdentifier: capture.assets.front
+            )
+        }
+    }
+
     // MARK: - Horizon maintenance
 
     /// Tops up the notification horizon and persists newly resolved days.

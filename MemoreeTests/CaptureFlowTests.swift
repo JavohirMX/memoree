@@ -308,9 +308,19 @@ struct CaptureFlowTests {
         await model.commit()
 
         #expect(model.isFailed)
-        // Retryable: nothing was lost, the photographs are still in memory.
+
+        // Both assertions below are ones the version of this test that only
+        // checked `phase != .permissionDenied` would have missed. That version
+        // passed while `retry()` was clearing `captured` on every attempt, which
+        // destroyed the pair in precisely the case where nothing had been lost.
+        // The comment in this very test has always said so; the code disagreed.
+        #expect(model.captured[.back] != nil, "a failed write must not discard the photographs")
+        #expect(model.captured[.front] != nil)
+
         await model.retry()
-        #expect(model.phase != .permissionDenied)
+
+        #expect(model.phase == .saved, "the retry re-runs the commit, not the shutter")
+        #expect(library.savedPairCount == 1, "and it writes to Photos exactly once")
     }
 
     // MARK: - Failure handling

@@ -78,23 +78,70 @@ final class CameraViewModel {
     private let service: CapturePhotoService
     private let photoLibrary: PhotoLibraryService
 
+    /// Persists an accepted pair as a moment.
+    ///
+    /// `nil` means the camera screen stops at the library write — which is what
+    /// SwiftUI previews and any test not exercising the full loop want. It is a
+    /// legal state rather than a failure: a moment in Photos with no archive
+    /// row is exactly what a half-finished commit looks like, and the recovery
+    /// path below already knows how to describe one.
+    private let record: MomentRecorder?
+
     /// Injected in tests so the camera order can be made deterministic.
     /// Production randomises it per moment.
     private let chooseFirstCamera: () -> CameraPosition
+
+    /// The clock.
+    ///
+    /// Injected because a moment's time is a load-bearing fact — it decides
+    /// lateness, and therefore whether the streak grows (ADR-009) — and a test
+    /// that reaches for `Date()` is asserting on when it happened to run.
+    private let now: @Sendable () -> Date
+
+    // MARK: - Commit state
+
+    /// The identifiers the pair was written under, once it has been.
+    ///
+    /// Memoised, and the reason `retry()` does not write to Photos twice. A
+    /// moment is two steps — write the assets, then record the row — and only
+    /// the second can fail after the first has succeeded. Forgetting that would
+    /// leave a duplicate pair in the user's camera roll every time the archive
+    /// write hiccupped.
+    private var writtenAssets: SavedAssetPair?
+
+    /// Whether the current failure came from a commit rather than a capture.
+    ///
+    /// Without this, `retry()` cannot tell the two apart: a failed *write* and
+    /// a failed *capture* both leave `writtenAssets` nil and the pair intact,
+    /// and answering "re-arm the shutter" for a failed commit sends the user
+    /// back to the camera with photographs already on disk. One boolean, and
+    /// the retry rule stops needing case analysis.
+    private var isCommitting = false
+
+    /// When the most recent photograph was taken.
+    ///
+    /// The moment is complete when the last outstanding half is shot, so this
+    /// is the capture that closed it — and after a reshoot, the reshoot, which
+    /// is when the pair was most recently whole. See `CommittedCapture.capturedAt`.
+    private var lastCaptureAt: Date?
 
     // MARK: - Init
 
     init(
         service: CapturePhotoService,
         photoLibrary: PhotoLibraryService,
-        chooseFirstCamera: (() -> CameraPosition)? = nil
+        record: MomentRecorder? = nil,
+        chooseFirstCamera: (() -> CameraPosition)? = nil,
+        now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.service = service
         self.photoLibrary = photoLibrary
+        self.record = record
         self.previewLayer = service.previewLayer
         self.chooseFirstCamera = chooseFirstCamera ?? {
             CameraPosition.allCases.randomElement() ?? .back
         }
+        self.now = now
     }
 
     // MARK: - Lifecycle
@@ -165,6 +212,7 @@ final class CameraViewModel {
                 // First press on this camera: photograph it.
                 let photo = try await service.captureCurrentPhoto()
                 captured[livePosition] = photo
+                lastCaptureAt = now()
 
                 if captured.count == CameraPosition.allCases.count {
                     enterReview()
@@ -201,10 +249,16 @@ final class CameraViewModel {
     ///
     /// The other photograph is kept — that is the entire point of being able to
     /// do this. Only the chosen half is discarded.
+    ///
+    /// Any write already made is forgotten, because the pair it covered no
+    /// longer exists. Nothing is deleted from Photos to compensate (ADR-008);
+    /// those assets simply become orphans the user owns, which the re-capture
+    /// notice on the Today screen states up front.
     func reshoot(_ position: CameraPosition) async {
         guard let kept = captured[position.opposite] else { return }
         phase = .working
         retakeCount += 1
+        invalidateCommit()
 
         do {
             try await service.switchCamera(to: position)
@@ -222,6 +276,7 @@ final class CameraViewModel {
         phase = .working
         captured = [:]
         prominentPosition = nil
+        invalidateCommit()
         let opening = chooseFirstCamera()
         firstPosition = opening
         livePosition = opening
@@ -234,41 +289,96 @@ final class CameraViewModel {
         }
     }
 
-    /// Writes the reviewed pair to Photos.
+    /// Writes the reviewed pair to Photos and records it as a moment.
     ///
-    /// Stops at the library: recording the moment itself — `MomentStore.record`
-    /// and the streak recompute — is Phase 5's orchestration, not capture's.
-    /// Ending here means the shutter leads somewhere real rather than to a dead
-    /// end (AGENTS.md §6), and it proves the Phase 3 write path on hardware.
+    /// **Two steps, in this order, and the order is the decision.**
+    ///
+    /// Photos first, then the archive row. The alternative — record, then write
+    /// — looks tidier because it means the moment exists before the riskier
+    /// operation, but it has a much worse failure. A crash between the two
+    /// leaves an archive entry whose images do not exist, which renders as
+    /// "missing from Photos" and tells the user a moment was saved when nothing
+    /// was. This order's failure leaves two photographs in a library the user
+    /// owns, made by an add-only permission that could never delete them anyway
+    /// (ADR-008). One is inert; the other lies.
+    ///
+    /// Only the second step can fail after the first succeeds, which is what
+    /// `writtenAssets` remembers and what `retry()` acts on.
     func commit() async {
-        guard phase == .review,
-              let back = captured[.back],
-              let front = captured[.front]
-        else { return }
+        guard let pair = capturedPair, phase == .review else { return }
+        isCommitting = true
         phase = .working
+        await performCommit(pair)
+    }
 
+    /// The commit itself, shared with `retry()` so the two cannot drift.
+    ///
+    /// Re-entrant by design: `writtenAssets` is only non-`nil` once the library
+    /// write has succeeded, so re-running after a *record* failure skips
+    /// straight past it rather than writing a second pair.
+    private func performCommit(_ pair: CapturedPair) async {
         do {
-            // No location passed. The write path and EXIF injector support it,
-            // but there is no `CLLocationManager` in the app; that decision is
-            // deferred to Phase 10 rather than faked here.
-            _ = try await photoLibrary.saveMomentPair(
-                backData: back.data,
-                frontData: front.data,
-                location: nil
-            )
+            if writtenAssets == nil {
+                // No location passed. The write path and EXIF injector support
+                // it, but there is no `CLLocationManager` in the app; that
+                // decision is deferred to Phase 10 rather than faked here
+                // (ADR-016, Q1).
+                writtenAssets = try await photoLibrary.saveMomentPair(
+                    backData: pair.back.data,
+                    frontData: pair.front.data,
+                    location: nil
+                )
+            }
+            try await recordMoment(pair)
+            isCommitting = false
             phase = .saved
         } catch {
             phase = Self.phase(for: error)
         }
     }
 
+    /// Hands the finished pair to the archive.
+    ///
+    /// A no-op when no recorder was injected, which is what makes the camera
+    /// screen usable — and testable — without a persistence layer.
+    private func recordMoment(_ pair: CapturedPair) async throws {
+        guard let record, let assets = writtenAssets else { return }
+        try await record(
+            CommittedCapture(
+                back: pair.back,
+                front: pair.front,
+                assets: assets,
+                capturedAt: lastCaptureAt ?? now(),
+                retakeCount: retakeCount
+            )
+        )
+    }
+
+    /// Forgets any library write, because the pair it covered no longer exists.
+    private func invalidateCommit() {
+        writtenAssets = nil
+        lastCaptureAt = nil
+        isCommitting = false
+    }
+
     // MARK: - Recovery
 
     /// Retries after a recoverable failure.
+    ///
+    /// **Never discards the photographs.** An earlier version cleared `captured`
+    /// on every retry, which quietly destroyed both halves after a library write
+    /// failed — the exact case its own test called "nothing was lost, the
+    /// photographs are still in memory". The test passed anyway because it only
+    /// asserted that the phase was not `.permissionDenied`, which is a
+    /// statement about permissions and not about the pair.
+    ///
+    /// The rule is one line and needs no case analysis: **re-run whichever step
+    /// failed.** A commit failure re-runs the commit, which is safe to repeat
+    /// because the library write is memoised. Anything else re-arms the shutter
+    /// on the camera that failed, keeping whatever was already shot.
     func retry() async {
         guard isFailed else { return }
-        captured = [:]
-        prominentPosition = nil
+
         if case .failed(_, let retryable) = phase, !retryable {
             // Not retryable: a permission the user must change in Settings.
             // Re-running would produce the same answer, so say so plainly
@@ -276,6 +386,14 @@ final class CameraViewModel {
             phase = .permissionDenied
             return
         }
+
+        phase = .working
+
+        if isCommitting, let pair = capturedPair {
+            await performCommit(pair)
+            return
+        }
+
         do {
             try await service.switchCamera(to: livePosition)
             phase = .shooting
@@ -314,6 +432,16 @@ final class CameraViewModel {
     }
 
     var canCapture: Bool { phase == .shooting }
+
+    /// Both halves, or `nil` when either is still outstanding.
+    ///
+    /// A moment is only a moment when both photographs exist, so this is the
+    /// gate on every path that treats the pair as a finished thing rather than
+    /// as work in progress.
+    var capturedPair: CapturedPair? {
+        guard let back = captured[.back], let front = captured[.front] else { return nil }
+        return CapturedPair(back: back, front: front)
+    }
 
     /// The camera the user is composing with, in words.
     var livePositionDescription: String {
@@ -376,9 +504,17 @@ final class CameraViewModel {
         if let libraryError = error as? LibraryError {
             return .failed(
                 message: libraryError.errorDescription ?? "Something went wrong.",
-                // A library write failure is worth retrying: the photos are
-                // still in memory and nothing was lost.
+                // A library write failure is worth retrying: the photographs
+                // are still in memory and nothing was lost.
                 isRetryable: true
+            )
+        }
+        if let storeError = error as? StoreError {
+            return .failed(
+                message: storeError.errorDescription ?? "Something went wrong.",
+                // Reached only once the photographs are already in Photos, so
+                // the message says so and the retry cannot lose them.
+                isRetryable: storeError.isRetryable
             )
         }
         return .failed(message: error.localizedDescription, isRetryable: true)
