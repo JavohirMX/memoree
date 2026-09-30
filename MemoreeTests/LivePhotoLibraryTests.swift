@@ -9,46 +9,116 @@ import UniformTypeIdentifiers
 
 /// Phase 3 exit criterion — a real write to the user's actual photo library.
 ///
-/// **Runs whenever add-only access has been granted, and skips otherwise.** There
-/// is deliberately no environment-variable gate.
+/// **Runs when the host can actually do it, and reports loudly when it cannot.**
 ///
-/// The first version of this file gated on `MEMOREE_LIVE_PHOTO_TESTS=1`, to
-/// avoid `PHPhotoLibrary.requestAuthorization(for: .addOnly)` blocking forever
-/// when TCC holds no decision and nobody can dismiss the dialog. That hazard was
-/// real, but the fix was to stop *requesting* authorisation: reading
-/// `authorizationStatus` is non-blocking and always returns. With the blocking
-/// call gone, a gate only obscures things — and it turns out `xcodebuild` does
-/// not propagate shell environment variables into the test process at all, so
-/// the documented way to enable the suite silently did nothing and the tests
-/// passed in a millisecond having verified nothing.
+/// ## Why these are skipped by default
 ///
-/// Grant access, then run:
+/// The iOS simulator's Photos library service does not work. Verified directly,
+/// with raw PhotoKit and no Memoree code in the path:
 ///
-///     xcrun simctl privacy booted grant photos com.javohirmx.memoree   # simulator
-///     xcodebuild test -project Memoree.xcodeproj -scheme Memoree \
-///       -destination 'platform=iOS,name=<your device>'
+/// - `PHPhotoLibrary.authorizationStatus(for: .addOnly)` returns `.authorized`
+///   once `simctl privacy grant photos-add` has been applied — note the service
+///   is `photos-add`, not `photos`; `.addOnly` and `.readWrite` read different
+///   TCC entries.
+/// - `performChanges` then completes with `success = true` and `error = nil`,
+///   and `placeholderForCreatedAsset` returns a well-formed identifier.
+/// - No asset is ever created. Polling for ten seconds shows zero assets and
+///   zero `PHPhotoLibraryChangeObserver` callbacks, and the simulator's
+///   `Library/Photos/Photos.sqlite` does not exist. `photolibraryd` is not
+///   running in the runtime.
 ///
-/// On a physical device, tap through the permission prompt once.
+/// So the API contract is satisfied and the operation is silently discarded.
+/// Any test asserting on this in the simulator would pass or fail depending on
+/// timing alone, which is worse than not running.
 ///
-/// A skipped test reports as passed in Swift Testing, so check the run's
-/// assertion count, not just its exit status.
+/// These tests therefore require a physical device. On hardware, grant the
+/// Photos prompt once when it appears, then:
 ///
-/// These tests write visible fixtures and never delete them. Memoree has
-/// add-only authorisation, and its rule that it never removes anything from the
-/// user's library (ADR-008) applies to its own test code too.
+/// ```sh
+/// export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+/// xcodebuild test -project Memoree.xcodeproj -scheme Memoree \
+///   -destination 'platform=iOS,name=<your device>' \
+///   -only-testing:MemoreeTests/LivePhotoLibraryTests
+/// ```
+///
+/// ## Why a skip must not look like a pass
+///
+/// Swift Testing reports a test that returns early as **passed**. That is how
+/// these four tests came to "pass" in one millisecond while asserting nothing —
+/// a green run that verified nothing is the worst possible outcome, so each skip
+/// prints an unmistakable line and the count is stated here rather than implied.
+///
+/// ## Fixtures are never deleted
+///
+/// These tests write visible photos into the camera roll and leave them there.
+/// Memoree holds add-only authorisation, and its rule that it never removes
+/// anything from the user's library (ADR-008) applies to its own test code too.
 @Suite("Phase 3 — live Photos write", .serialized)
 @MainActor
 struct LivePhotoLibraryTests {
 
     private static let fixtureName = "Memoree Phase 3 Fixture"
 
-    /// Whether add-only access has already been granted.
+    /// How many live tests actually executed, as opposed to skipped.
     ///
-    /// Reads status only. Never calls `requestAuthorization`, which would
-    /// suspend until a human dismissed the dialog — impossible in a test host.
-    private var hasAddOnlyAccess: Bool {
-        let status = PHPhotoLibrary.authorizationStatus(for: .addOnly)
-        return status == .authorized || status == .limited
+    /// Read by `LivePhotoRunGuardTests` so a skipped suite cannot pass unnoticed.
+
+    /// Executed-test count for this run.
+    ///
+    /// `nonisolated(unsafe)` because `LivePhotoRunGuardTests` is not
+    /// `@MainActor` and must read it. Safe: the counter has its own lock, and it
+    /// carries no state beyond an integer.
+    nonisolated(unsafe) private static let runCounter = RunCounter()
+
+    /// Executed-test count for this run.
+    nonisolated static var runCount: Int { runCounter.value }
+
+    /// Lock-guarded so the counter is safe under parallel suite execution.
+    private final class RunCounter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        var value: Int {
+            lock.lock(); defer { lock.unlock() }
+            return count
+        }
+        func increment() {
+            lock.lock(); count += 1; lock.unlock()
+        }
+    }
+
+    /// True only on a host whose Photos library actually persists writes.
+    ///
+    /// Checks the on-disk database rather than the authorisation status, because
+    /// the simulator reports `.authorized` and then discards everything.
+    private var canPersistPhotos: Bool {
+        #if targetEnvironment(simulator)
+        // Photos.sqlite is created by photolibraryd on first use. Its absence is
+        // the reliable signal that this host cannot store a photo.
+        let store = URL(fileURLWithPath: NSHomeDirectory())
+            .appendingPathComponent("Library/Photos/Photos.sqlite")
+        return FileManager.default.fileExists(atPath: store.path)
+        #else
+        return PHPhotoLibrary.authorizationStatus(for: .addOnly) == .authorized
+            || PHPhotoLibrary.authorizationStatus(for: .addOnly) == .limited
+        #endif
+    }
+
+    /// Prints an unmistakable skip notice and returns false.
+    private func requirePhotoLibrary() -> Bool {
+        guard canPersistPhotos else {
+            print("""
+
+            ╔══════════════════════════════════════════════════════════════╗
+            ║  LIVE PHOTO TESTS SKIPPED — they asserted nothing.            ║
+            ║  This host cannot persist to a Photos library.               ║
+            ║  Requires a physical device; the simulator cannot do it.     ║
+            ╚══════════════════════════════════════════════════════════════╝
+
+            """)
+            return false
+        }
+        Self.runCounter.increment()
+        return true
     }
 
     /// A solid-colour JPEG carrying known EXIF.
@@ -78,10 +148,7 @@ struct LivePhotoLibraryTests {
 
     @Test("Two fixture assets are written and both identifiers resolve")
     func writesTwoRealAssets() async throws {
-        guard hasAddOnlyAccess else {
-            // Skipped, not failed: add-only access has not been granted.
-            return
-        }
+        guard requirePhotoLibrary() else { return }
 
         let library = PhotoKitLibrary()
         let back = try makeJPEG(red: 0.9, green: 0.4, blue: 0.1)
@@ -93,26 +160,22 @@ struct LivePhotoLibraryTests {
 
         #expect(pair.back != pair.front)
 
-        // Both identifiers must resolve to real assets immediately after the
-        // write. This is the check that would catch a wrong
-        // `placeholderForCreatedAsset` capture.
+        // The check that would catch a wrong `placeholderForCreatedAsset`
+        // capture: the identifiers must resolve to real assets immediately.
         #expect(await library.assetExists(pair.back))
         #expect(await library.assetExists(pair.front))
 
-        // And the bytes must come back with the coordinates intact.
+        // Bytes come back with the coordinates intact.
         let readBack = try await library.data(for: pair.back)
         let recovered = try #require(PhotoMetadataInjector.readLocation(from: readBack))
         #expect(abs(recovered.latitude - 48.8584) < 0.0001)
         #expect(abs(recovered.longitude - 2.2945) < 0.0001)
-
-        // The original bytes must not have been recompressed into something
-        // unreadable.
         #expect(readBack.count > 0)
     }
 
     @Test("Written assets appear in a thumbnail request")
     func thumbnailResolves() async throws {
-        guard hasAddOnlyAccess else { return }
+        guard requirePhotoLibrary() else { return }
 
         let library = PhotoKitLibrary()
         let back = try makeJPEG(red: 0.2, green: 0.8, blue: 0.3)
@@ -120,8 +183,8 @@ struct LivePhotoLibraryTests {
         let pair = try await library.saveMomentPair(
             backData: back, frontData: back, location: nil)
 
-        // A cell-sized target. This is the exact path the archive grid uses, so
-        // it also proves the continuation resumes rather than hanging.
+        // A cell-sized target: the exact path the archive grid uses, so this also
+        // proves the continuation resumes rather than hanging.
         let thumbnail = await library.image(
             for: pair.back, targetSize: CGSize(width: 120, height: 160))
 
@@ -133,7 +196,7 @@ struct LivePhotoLibraryTests {
 
     @Test("The optional album is created and receives both assets")
     func albumReceivesAssets() async throws {
-        guard hasAddOnlyAccess else { return }
+        guard requirePhotoLibrary() else { return }
 
         let library = PhotoKitLibrary()
         let image = try makeJPEG(red: 0.5, green: 0.5, blue: 0.8)
@@ -142,28 +205,24 @@ struct LivePhotoLibraryTests {
             backData: image, frontData: image, location: nil)
 
         let albumID = try await library.addAssets(
-            [pair.back, pair.front], toAlbumNamed: "Memoree")
+            [pair.back, pair.front], toAlbumNamed: Self.fixtureName)
         #expect(albumID != nil)
 
-        // Fetching by the returned identifier must find a real collection.
         let albums = PHAssetCollection.fetchAssetCollections(
             withLocalIdentifiers: [try #require(albumID)], options: nil)
         #expect(albums.count == 1)
 
-        // `PHAssetCollection` does not expose its assets directly; fetch them
-        // with a fetch request scoped to the collection.
+        // `PHAssetCollection` does not expose its assets; fetch them by collection.
         let collection = try #require(albums.firstObject)
         let members = PHAsset.fetchAssets(in: collection, options: nil)
-        let identifiers = (0..<members.count).compactMap {
-            members.object(at: $0).localIdentifier
-        }
+        let identifiers = (0..<members.count).compactMap { members.object(at: $0).localIdentifier }
         #expect(identifiers.contains(pair.back))
         #expect(identifiers.contains(pair.front))
     }
 
     @Test("Asking for the album twice does not create a duplicate")
     func albumIsNotDuplicated() async throws {
-        guard hasAddOnlyAccess else { return }
+        guard requirePhotoLibrary() else { return }
 
         let library = PhotoKitLibrary()
         let first = try await library.ensureAlbum(named: Self.fixtureName)

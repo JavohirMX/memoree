@@ -110,27 +110,46 @@ HEIC and EXIF is far easier with a known input.
 **Exit:** a test method writes two images to the real Photos app on device, with GPS metadata
 correctly attached, and returns usable `localIdentifier`s.
 
-> **Status: code complete, exit criterion NOT yet met.** The four live tests are
-> written and compile, but have never executed against a real library. They report
-> as *passed* when they skip, so a green run does not mean they ran — check the
-> assertion count. Two reasons they can't run unattended:
+> **Status: code complete and proven wherever proof is possible; exit criterion
+> needs hardware.** 109 tests pass on the simulator. The four live tests skip there,
+> and `LivePhotoRunGuardTests` **fails the run** while they are skipped, so a green
+> simulator run cannot be mistaken for a verified one.
 >
-> 1. `xcrun simctl privacy grant photos` reports success but TCC still reads
->    `notDetermined` inside the test process on the iOS 27 simulator. Confirmed by
->    probing `PHPhotoLibrary.authorizationStatus(for: .addOnly)` directly.
-> 2. On a device, access must be granted once by hand through the system prompt.
+> The simulator cannot do it. Verified with raw PhotoKit and no Memoree code in the
+> path:
 >
-> Run them on hardware to close this phase out:
+> - `xcrun simctl privacy grant photos-add` (note `photos-add`, not `photos` —
+>   `.addOnly` and `.readWrite` are separate TCC entries) yields
+>   `authorizationStatus == .authorized`.
+> - `performChanges` then completes with `success = true, error = nil` and returns a
+>   well-formed `localIdentifier`.
+> - Nothing is created. Ten seconds of polling shows zero assets and zero
+>   `PHPhotoLibraryChangeObserver` callbacks, and `Library/Photos/Photos.sqlite` never
+>   appears. `photolibraryd` is not running in the runtime.
+>
+> The API contract is satisfied and the operation is silently discarded.
+>
+> To close the phase on hardware:
 >
 > ```sh
 > export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 > xcodebuild test -project Memoree.xcodeproj -scheme Memoree \
->   -destination 'platform=iOS,name=<your device>' \
->   -only-testing:MemoreeTests/LivePhotoLibraryTests
+>   -destination 'platform=iOS,name=<your device>'
 > ```
 >
-> Approve the Photos prompt when it appears. Two `Memoree Phase 3 Fixture` photos
-> will be written to the camera roll and are not deleted automatically.
+> Approve the Photos prompt once. Two `Memoree Phase 3 Fixture` photos are written to
+> the camera roll and are not deleted automatically. On a device the guard passes,
+> because the live tests genuinely execute.
+
+**A skipped test that reports as passed is a defect.** Swift Testing counts an
+early `return` as a pass, which is how four live tests "passed" in one millisecond
+having asserted nothing — twice. First behind a `MEMOREE_LIVE_PHOTO_TESTS` gate that
+`xcodebuild` never propagates into the test process, then because the simulator
+discards writes. Mitigations now in place: each skip prints an unmistakable banner,
+and `LivePhotoRunGuardTests` fails the run unless at least one live test executed.
+The guard deliberately does not read an environment variable — the first version
+did, and a single misplaced XML element in the scheme silently disabled the very
+check meant to prevent exactly this.
 
 **Defect found: GPS removal was a no-op.** `CGImageDestinationAddImageFromSource` re-reads
 the source's own EXIF *after* the properties dictionary is applied, so removing the GPS key
@@ -153,8 +172,9 @@ entire suite for ten minutes rather than failing.
 It then gated on `MEMOREE_LIVE_PHOTO_TESTS=1`, which looked safer but was worse:
 `xcodebuild` does not propagate shell environment variables into the test process, so the
 documented way to enable the suite silently did nothing and the four tests "passed" in a
-millisecond having verified nothing. The gate now reads `authorizationStatus` only, which never
-blocks, so the tests run whenever access exists and skip honestly otherwise.
+millisecond having verified nothing. The gate now checks whether the host can actually persist
+a photo — `Photos.sqlite` on the simulator, authorisation status on a device — which is a
+property of the host rather than of configuration.
 
 **Estimate:** 1.5 days.
 
