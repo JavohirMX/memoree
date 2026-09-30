@@ -1,0 +1,484 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		7080EB08D115C298DA6A4DC3 /* CountdownFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52602E359E6E99263148A8C4 /* CountdownFormatter.swift */; };
+		7804D3A3AE0077FF82EB24B8 /* Phase0SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41C850F72B4380ABB936E5E1 /* Phase0SmokeTests.swift */; };
+		B0194A5C4102AEF88F64B031 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7496C466FD117EDA4ADDC142 /* PrivacyInfo.xcprivacy */; };
+		D8AC26DCE621CAA9480E74BC /* MemoreeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */; };
+		E32BD94B7ECE4173F2A19BB2 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681A069A1655E5049AA96A53 /* Theme.swift */; };
+		FEE977BF36F8ED4CDC1218D9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F2906DD6D53CF13021B3AC0 /* Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C893672BCFE46D9BB7A9CE61 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 43F6F12C9680BE67B9633B9F /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 61B5A7D36AED4FA53A42EB06;
+			remoteInfo = Memoree;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1800C5C7A854A63427366F27 /* MemoreeTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MemoreeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		3F2906DD6D53CF13021B3AC0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		41C850F72B4380ABB936E5E1 /* Phase0SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase0SmokeTests.swift; sourceTree = "<group>"; };
+		52602E359E6E99263148A8C4 /* CountdownFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountdownFormatter.swift; sourceTree = "<group>"; };
+		681A069A1655E5049AA96A53 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		7496C466FD117EDA4ADDC142 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		9D9F9E41C492578A061999B5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoreeApp.swift; sourceTree = "<group>"; };
+		EE2D87D34201EE7274FC5352 /* Memoree.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Memoree.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXGroup section */
+		1119A2967D140C38B01F1560 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				3F2906DD6D53CF13021B3AC0 /* Assets.xcassets */,
+				9D9F9E41C492578A061999B5 /* Info.plist */,
+				7496C466FD117EDA4ADDC142 /* PrivacyInfo.xcprivacy */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		266217A1E5A1E94B51DB1C22 /* Memoree */ = {
+			isa = PBXGroup;
+			children = (
+				B9231DB624B16D273528F4EE /* App */,
+				B6A4FDB09AF1C898DC6C45E6 /* DesignSystem */,
+				1119A2967D140C38B01F1560 /* Resources */,
+				75D982021B44DFCBAF9A46F9 /* Support */,
+			);
+			path = Memoree;
+			sourceTree = "<group>";
+		};
+		75D982021B44DFCBAF9A46F9 /* Support */ = {
+			isa = PBXGroup;
+			children = (
+				52602E359E6E99263148A8C4 /* CountdownFormatter.swift */,
+			);
+			path = Support;
+			sourceTree = "<group>";
+		};
+		8557D00BDC24A4A1B570FB4B = {
+			isa = PBXGroup;
+			children = (
+				266217A1E5A1E94B51DB1C22 /* Memoree */,
+				ABD82013CC0A3C1D34E999E1 /* MemoreeTests */,
+				C8BF7B86B63B57FBFEFD9E4F /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		ABD82013CC0A3C1D34E999E1 /* MemoreeTests */ = {
+			isa = PBXGroup;
+			children = (
+				41C850F72B4380ABB936E5E1 /* Phase0SmokeTests.swift */,
+			);
+			path = MemoreeTests;
+			sourceTree = "<group>";
+		};
+		B6A4FDB09AF1C898DC6C45E6 /* DesignSystem */ = {
+			isa = PBXGroup;
+			children = (
+				681A069A1655E5049AA96A53 /* Theme.swift */,
+			);
+			path = DesignSystem;
+			sourceTree = "<group>";
+		};
+		B9231DB624B16D273528F4EE /* App */ = {
+			isa = PBXGroup;
+			children = (
+				CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		C8BF7B86B63B57FBFEFD9E4F /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				EE2D87D34201EE7274FC5352 /* Memoree.app */,
+				1800C5C7A854A63427366F27 /* MemoreeTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		5852D24B17F47FC29FA6EAB7 /* MemoreeTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 3D8527873C0449B1DA2CE627 /* Build configuration list for PBXNativeTarget "MemoreeTests" */;
+			buildPhases = (
+				3BC628454DAB8829E0EE6E8E /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				FC95382568BD217950B11165 /* PBXTargetDependency */,
+			);
+			name = MemoreeTests;
+			packageProductDependencies = (
+			);
+			productName = MemoreeTests;
+			productReference = 1800C5C7A854A63427366F27 /* MemoreeTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		61B5A7D36AED4FA53A42EB06 /* Memoree */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = BE2A650E3E5A17CFC2F82FF1 /* Build configuration list for PBXNativeTarget "Memoree" */;
+			buildPhases = (
+				38319AFA392D993ABDFC766E /* Sources */,
+				79C0D5199C98BB79E1E3F474 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = Memoree;
+			packageProductDependencies = (
+			);
+			productName = Memoree;
+			productReference = EE2D87D34201EE7274FC5352 /* Memoree.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		43F6F12C9680BE67B9633B9F /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					5852D24B17F47FC29FA6EAB7 = {
+						DevelopmentTeam = 6VU7H3YG5W;
+						ProvisioningStyle = Automatic;
+					};
+					61B5A7D36AED4FA53A42EB06 = {
+						DevelopmentTeam = 6VU7H3YG5W;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 9DCEA535571B669B6F36E805 /* Build configuration list for PBXProject "Memoree" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 8557D00BDC24A4A1B570FB4B;
+			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
+			productRefGroup = C8BF7B86B63B57FBFEFD9E4F /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				61B5A7D36AED4FA53A42EB06 /* Memoree */,
+				5852D24B17F47FC29FA6EAB7 /* MemoreeTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		79C0D5199C98BB79E1E3F474 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FEE977BF36F8ED4CDC1218D9 /* Assets.xcassets in Resources */,
+				B0194A5C4102AEF88F64B031 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		38319AFA392D993ABDFC766E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7080EB08D115C298DA6A4DC3 /* CountdownFormatter.swift in Sources */,
+				D8AC26DCE621CAA9480E74BC /* MemoreeApp.swift in Sources */,
+				E32BD94B7ECE4173F2A19BB2 /* Theme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		3BC628454DAB8829E0EE6E8E /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7804D3A3AE0077FF82EB24B8 /* Phase0SmokeTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		FC95382568BD217950B11165 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 61B5A7D36AED4FA53A42EB06 /* Memoree */;
+			targetProxy = C893672BCFE46D9BB7A9CE61 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		2893526D408BAFE552506C76 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6VU7H3YG5W;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = Memoree/Resources/Info.plist;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.javohirmx.memoree;
+				PRODUCT_NAME = Memoree;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Release;
+		};
+		784DAA02986B008DD18FB0B6 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 6VU7H3YG5W;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.javohirmx.memoree.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Memoree.app/Memoree";
+			};
+			name = Debug;
+		};
+		7AC767E3783D6CE7A27B0BE8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 6VU7H3YG5W;
+				ENABLE_PREVIEWS = YES;
+				INFOPLIST_FILE = Memoree/Resources/Info.plist;
+				INFOPLIST_KEY_UIUserInterfaceStyle = Dark;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 0.1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.javohirmx.memoree;
+				PRODUCT_NAME = Memoree;
+				SDKROOT = iphoneos;
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
+		};
+		B0818B3C1C12CF39C12C4351 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		E6687A3CE31C7C280CCFBF00 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		F198038D695355EEE8BB6AEF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 6VU7H3YG5W;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.javohirmx.memoree.tests;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Memoree.app/Memoree";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3D8527873C0449B1DA2CE627 /* Build configuration list for PBXNativeTarget "MemoreeTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				784DAA02986B008DD18FB0B6 /* Debug */,
+				F198038D695355EEE8BB6AEF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		9DCEA535571B669B6F36E805 /* Build configuration list for PBXProject "Memoree" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E6687A3CE31C7C280CCFBF00 /* Debug */,
+				B0818B3C1C12CF39C12C4351 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		BE2A650E3E5A17CFC2F82FF1 /* Build configuration list for PBXNativeTarget "Memoree" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7AC767E3783D6CE7A27B0BE8 /* Debug */,
+				2893526D408BAFE552506C76 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 43F6F12C9680BE67B9633B9F /* Project object */;
+}

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  Memoree — Privacy Manifest
+
+	  Per docs/TRD.md §12 and AGENTS.md §2.1.
+
+	  NSPrivacyCollectedDataTypes is deliberately EMPTY, and that is the
+	  honest answer rather than a convenient one:
+
+	    - Location is captured into local metadata and never transmitted
+	      off-device. Apple does not treat device-local-only storage as
+	      "collection".
+	    - Photos are WRITTEN to the user's library, not collected by us.
+	    - There are no accounts, so there is nothing to transmit.
+
+	  NSPrivacyTracking is false and NSPrivacyTrackingDomains is empty: the
+	  app has no analytics, no advertising identifier, and makes no network
+	  requests of any kind.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<!--
+	  Required Reason APIs.
+
+	  NSUserDefaults is included defensively. If it is not actually used,
+	  remove this key — an over-declared required-reason API is a review
+	  rejection. Kept here because NSUbiquitousKeyValueStore / scene
+	  restoration state and SwiftData defaults are easy to introduce by
+	  accident. Verify with a binary audit before TestFlight upload
+	  (docs/TRD.md §13: nm -u).
+	-->
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

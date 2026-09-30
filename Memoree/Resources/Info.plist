@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>$(DEVELOPMENT_LANGUAGE)</string>
+	<key>CFBundleExecutable</key>
+	<string>$(EXECUTABLE_NAME)</string>
+	<key>CFBundleIdentifier</key>
+	<string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+	<key>CFBundleInfoDictionaryVersion</key>
+	<string>6.0</string>
+	<key>CFBundleName</key>
+	<string>$(PRODUCT_NAME)</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleShortVersionString</key>
+	<string>$(MARKETING_VERSION)</string>
+	<key>CFBundleVersion</key>
+	<string>$(CURRENT_PROJECT_VERSION)</string>
+	<key>LSRequiresIPhoneOS</key>
+	<true/>
+
+	<!-- Dark only. The app has no light appearance and no colorScheme branch
+	     anywhere in its code (AGENTS.md §2.6, ADR-012). -->
+	<key>UIUserInterfaceStyle</key>
+	<string>Dark</string>
+
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+
+	<!-- Universal links are deliberately absent: Memoree makes no network calls
+	     and registers no custom URL scheme (AGENTS.md §2.1). -->
+
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+
+	<!-- ── Privacy usage strings ───────────────────────────────────────────
+	     Every one of these is load-bearing and must match docs/TRD.md §12.
+	     The add-only photo library claim is literally true: the app never
+	     calls requestAuthorization(for: .readWrite) and never enumerates the
+	     library beyond asset identifiers it already owns. -->
+
+	<key>NSCameraUsageDescription</key>
+	<string>Memoree uses the camera to capture your moment — the scene and you, at the same time. Photos never leave your device.</string>
+
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Memoree saves each moment you capture to your photo library. It never reads your library.</string>
+
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Memoree needs permission to add the moments you capture to your photo library.</string>
+
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Memoree records a few seconds of sound with Behind the Scenes, so your moment has audio. This is optional.</string>
+
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Memoree can attach your coordinates to a moment if you ask it to. They stay on this device and are never sent anywhere.</string>
+
+	<!-- Deliberately absent:
+	     NSUserTrackingUsageDescription  — Memoree does no tracking (ADR-001)
+	     NSLocationAlwaysUsageDescription — "WhenInUse" only, never background
+	     NSUserTracking                  — see PrivacyInfo.xcprivacy
+	     -->
+</dict>
+</plist>
