@@ -1,5 +1,7 @@
 import Testing
 
+@testable import Memoree
+
 /// Phase 0 smoke test.
 ///
 /// Its only job is to prove the test target links, runs, and can see the app

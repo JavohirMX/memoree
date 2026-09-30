@@ -7,10 +7,24 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		327B27CFE4914EF5E75880FE /* DayIdentifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12B9524535B2EE546BAF7097 /* DayIdentifier.swift */; };
+		39366A37A503647A4F201D89 /* ModelContainer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10996EA935C292F9CE77FD5E /* ModelContainer.swift */; };
+		425E674601FFCC9151C647DC /* MomentDerivation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9280538F4369959B511B4C1 /* MomentDerivation.swift */; };
+		6936FB2C72079B4E8A4BD00C /* NotificationService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E6E755E1E0B16876C316A0B /* NotificationService.swift */; };
 		7080EB08D115C298DA6A4DC3 /* CountdownFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52602E359E6E99263148A8C4 /* CountdownFormatter.swift */; };
+		77717203E14D72AD646041D1 /* MomentDerivationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A59071CE45EB050FA861B6D /* MomentDerivationTests.swift */; };
 		7804D3A3AE0077FF82EB24B8 /* Phase0SmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41C850F72B4380ABB936E5E1 /* Phase0SmokeTests.swift */; };
+		7D2C64E697C7C5970CA89227 /* DayIdentifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7693115792547B94510B657 /* DayIdentifierTests.swift */; };
+		8ADAA829C099B4B26F68E3E3 /* InstallSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21BC6C3408F1736BBDA50E67 /* InstallSecret.swift */; };
+		8FF7EA9287B8FB42D82B5A81 /* TimeWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8514C8D3577F9E36C200AC00 /* TimeWindowTests.swift */; };
+		A953353882546F0AA624A9BB /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81691AD301F716B16E4B474D /* AppEnvironment.swift */; };
 		B0194A5C4102AEF88F64B031 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 7496C466FD117EDA4ADDC142 /* PrivacyInfo.xcprivacy */; };
+		BF8605C36D78E0B26128DA12 /* LocalMomentScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 609A5ED40E5FA08F137784E6 /* LocalMomentScheduler.swift */; };
+		C0D5F17637628465CB35ABB7 /* TimeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D79602718EE76F9F8966369 /* TimeWindow.swift */; };
+		C4A361D451653D25E8868764 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7F78EA51E71A3AC4786D36 /* Models.swift */; };
 		D8AC26DCE621CAA9480E74BC /* MemoreeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */; };
+		DE7C566CDBDFF1C8B2EF3618 /* MomentScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40D78D181FFAE159925978D /* MomentScheduler.swift */; };
+		E268F4F88BAE60299330A810 /* MomentStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = DDEB9BC5157F7C822A1BF283 /* MomentStore.swift */; };
 		E32BD94B7ECE4173F2A19BB2 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 681A069A1655E5049AA96A53 /* Theme.swift */; };
 		FEE977BF36F8ED4CDC1218D9 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3F2906DD6D53CF13021B3AC0 /* Assets.xcassets */; };
 /* End PBXBuildFile section */
@@ -26,14 +40,28 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		10996EA935C292F9CE77FD5E /* ModelContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelContainer.swift; sourceTree = "<group>"; };
+		12B9524535B2EE546BAF7097 /* DayIdentifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayIdentifier.swift; sourceTree = "<group>"; };
 		1800C5C7A854A63427366F27 /* MemoreeTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = MemoreeTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		21BC6C3408F1736BBDA50E67 /* InstallSecret.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InstallSecret.swift; sourceTree = "<group>"; };
 		3F2906DD6D53CF13021B3AC0 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		41C850F72B4380ABB936E5E1 /* Phase0SmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Phase0SmokeTests.swift; sourceTree = "<group>"; };
 		52602E359E6E99263148A8C4 /* CountdownFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountdownFormatter.swift; sourceTree = "<group>"; };
+		609A5ED40E5FA08F137784E6 /* LocalMomentScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMomentScheduler.swift; sourceTree = "<group>"; };
 		681A069A1655E5049AA96A53 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		7496C466FD117EDA4ADDC142 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		7A59071CE45EB050FA861B6D /* MomentDerivationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentDerivationTests.swift; sourceTree = "<group>"; };
+		81691AD301F716B16E4B474D /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
+		8514C8D3577F9E36C200AC00 /* TimeWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWindowTests.swift; sourceTree = "<group>"; };
+		9D79602718EE76F9F8966369 /* TimeWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWindow.swift; sourceTree = "<group>"; };
 		9D9F9E41C492578A061999B5 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		9E6E755E1E0B16876C316A0B /* NotificationService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationService.swift; sourceTree = "<group>"; };
+		A9280538F4369959B511B4C1 /* MomentDerivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentDerivation.swift; sourceTree = "<group>"; };
+		C40D78D181FFAE159925978D /* MomentScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentScheduler.swift; sourceTree = "<group>"; };
+		C7693115792547B94510B657 /* DayIdentifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayIdentifierTests.swift; sourceTree = "<group>"; };
+		CC7F78EA51E71A3AC4786D36 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoreeApp.swift; sourceTree = "<group>"; };
+		DDEB9BC5157F7C822A1BF283 /* MomentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentStore.swift; sourceTree = "<group>"; };
 		EE2D87D34201EE7274FC5352 /* Memoree.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Memoree.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -48,12 +76,31 @@
 			path = Resources;
 			sourceTree = "<group>";
 		};
+		137B1F140DE2DCE3090472F1 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				CD1B85B57BB242699203DC4A /* Scheduler */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		210B872CAA6E1ED99E916622 /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				CC7F78EA51E71A3AC4786D36 /* Models.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
 		266217A1E5A1E94B51DB1C22 /* Memoree */ = {
 			isa = PBXGroup;
 			children = (
 				B9231DB624B16D273528F4EE /* App */,
 				B6A4FDB09AF1C898DC6C45E6 /* DesignSystem */,
+				210B872CAA6E1ED99E916622 /* Models */,
+				DF928460D3A329767EB2E602 /* Persistence */,
 				1119A2967D140C38B01F1560 /* Resources */,
+				137B1F140DE2DCE3090472F1 /* Services */,
 				75D982021B44DFCBAF9A46F9 /* Support */,
 			);
 			path = Memoree;
@@ -63,6 +110,8 @@
 			isa = PBXGroup;
 			children = (
 				52602E359E6E99263148A8C4 /* CountdownFormatter.swift */,
+				12B9524535B2EE546BAF7097 /* DayIdentifier.swift */,
+				9D79602718EE76F9F8966369 /* TimeWindow.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -79,7 +128,10 @@
 		ABD82013CC0A3C1D34E999E1 /* MemoreeTests */ = {
 			isa = PBXGroup;
 			children = (
+				C7693115792547B94510B657 /* DayIdentifierTests.swift */,
+				7A59071CE45EB050FA861B6D /* MomentDerivationTests.swift */,
 				41C850F72B4380ABB936E5E1 /* Phase0SmokeTests.swift */,
+				8514C8D3577F9E36C200AC00 /* TimeWindowTests.swift */,
 			);
 			path = MemoreeTests;
 			sourceTree = "<group>";
@@ -95,6 +147,7 @@
 		B9231DB624B16D273528F4EE /* App */ = {
 			isa = PBXGroup;
 			children = (
+				81691AD301F716B16E4B474D /* AppEnvironment.swift */,
 				CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */,
 			);
 			path = App;
@@ -107,6 +160,27 @@
 				1800C5C7A854A63427366F27 /* MemoreeTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		CD1B85B57BB242699203DC4A /* Scheduler */ = {
+			isa = PBXGroup;
+			children = (
+				21BC6C3408F1736BBDA50E67 /* InstallSecret.swift */,
+				609A5ED40E5FA08F137784E6 /* LocalMomentScheduler.swift */,
+				A9280538F4369959B511B4C1 /* MomentDerivation.swift */,
+				C40D78D181FFAE159925978D /* MomentScheduler.swift */,
+				9E6E755E1E0B16876C316A0B /* NotificationService.swift */,
+			);
+			path = Scheduler;
+			sourceTree = "<group>";
+		};
+		DF928460D3A329767EB2E602 /* Persistence */ = {
+			isa = PBXGroup;
+			children = (
+				10996EA935C292F9CE77FD5E /* ModelContainer.swift */,
+				DDEB9BC5157F7C822A1BF283 /* MomentStore.swift */,
+			);
+			path = Persistence;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -204,9 +278,20 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A953353882546F0AA624A9BB /* AppEnvironment.swift in Sources */,
 				7080EB08D115C298DA6A4DC3 /* CountdownFormatter.swift in Sources */,
+				327B27CFE4914EF5E75880FE /* DayIdentifier.swift in Sources */,
+				8ADAA829C099B4B26F68E3E3 /* InstallSecret.swift in Sources */,
+				BF8605C36D78E0B26128DA12 /* LocalMomentScheduler.swift in Sources */,
 				D8AC26DCE621CAA9480E74BC /* MemoreeApp.swift in Sources */,
+				39366A37A503647A4F201D89 /* ModelContainer.swift in Sources */,
+				C4A361D451653D25E8868764 /* Models.swift in Sources */,
+				425E674601FFCC9151C647DC /* MomentDerivation.swift in Sources */,
+				DE7C566CDBDFF1C8B2EF3618 /* MomentScheduler.swift in Sources */,
+				E268F4F88BAE60299330A810 /* MomentStore.swift in Sources */,
+				6936FB2C72079B4E8A4BD00C /* NotificationService.swift in Sources */,
 				E32BD94B7ECE4173F2A19BB2 /* Theme.swift in Sources */,
+				C0D5F17637628465CB35ABB7 /* TimeWindow.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -214,7 +299,10 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7D2C64E697C7C5970CA89227 /* DayIdentifierTests.swift in Sources */,
+				77717203E14D72AD646041D1 /* MomentDerivationTests.swift in Sources */,
 				7804D3A3AE0077FF82EB24B8 /* Phase0SmokeTests.swift in Sources */,
+				8FF7EA9287B8FB42D82B5A81 /* TimeWindowTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
