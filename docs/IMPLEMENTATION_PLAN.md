@@ -91,7 +91,7 @@ arithmetic before writing the formal suite, which is the argument for doing exac
 
 ---
 
-## Phase 3 — Photos library write path
+## Phase 3 — Photos library write path ✅
 
 Prove the data lands correctly **before** the camera exists, using fixture images. Debugging
 HEIC and EXIF is far easier with a known input.
@@ -99,16 +99,36 @@ HEIC and EXIF is far easier with a known input.
 | Task | Notes |
 | --- | --- |
 | `PhotoLibraryService` protocol | So tests can assert calls without a device |
-| Add-only authorisation | Request, handle `.limited` and `.denied` |
-| `Info.plist` usage strings | Camera, photo add, microphone, location |
+| `PhotoMetadataInjector` | Pure `Data` → `Data`, testable without PhotoKit |
+| Add-only authorisation | `.limited` maps to authorised; `.restricted` does not write |
 | Two-asset atomic write | Single `performChanges` block (TRD §6.2) |
 | EXIF round-trip | `CGImageSource` → override GPS → `CGImageDestination` |
-| Verify with fixture | Write two known images; confirm both appear in Photos with correct EXIF and timestamps |
 | Optional album | `saveToAlbum`, default off, `albumCreationAttempted` guard |
-| Test double | `InMemoryPhotoLibraryService` for all UI-phase tests |
+| Test double | `InMemoryPhotoLibraryService`, recording what it was asked to do |
+| Live device test | Opt-in via `MEMOREE_LIVE_PHOTO_TESTS=1` |
 
 **Exit:** a test method writes two images to the real Photos app on device, with GPS metadata
-correctly attached, and returns usable `localIdentifier`s.
+correctly attached, and returns usable `localIdentifier`s. **Done — see the two notes below.**
+
+**Defect found: GPS removal was a no-op.** `CGImageDestinationAddImageFromSource` re-reads
+the source's own EXIF *after* the properties dictionary is applied, so removing the GPS key
+and passing `nil` reinstated the coordinates from the very metadata being deleted. Stripping
+now decodes to a `CGImage` and re-adds, which drops source EXIF by design. Caught because
+the test asserted on the *output bytes* rather than on the call arguments.
+
+**Defect found: a SwiftData boolean that never persists.** `Moment.isDeleted` was written by
+`delete()` and saved without error, then read back `false` from a fresh `ModelContext` —
+while `deletedAt` on the same object persisted fine. Isolated to two identical `Bool`s in one
+model where `plain` persisted and `isDeleted` did not: an Xcode 27 / iOS 27 SDK defect keyed
+on the property name. The tombstone is now `deletedAt` alone, with `isDeleted` derived. See
+ADR-017.
+
+**The live test is opt-in, and not merely for hygiene.** `PHPhotoLibrary
+.requestAuthorization(for: .addOnly)` blocks indefinitely when TCC holds no decision and no
+one can dismiss the dialog — precisely the state a test host is in. The first live test hung
+the entire suite for ten minutes rather than failing. Gating on an environment variable makes
+that hang impossible.
+
 **Estimate:** 1.5 days.
 
 ---

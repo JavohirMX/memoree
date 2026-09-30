@@ -401,6 +401,65 @@ Four items were not settled in research and are being implemented as stated assu
 
 ---
 
+## ADR-017 — Tombstone is a date, not a boolean
+
+**Status:** Accepted · **Date:** 2026-09-30 · **Worked around a toolchain defect**
+
+**Context.** `Moment` carried both `isDeleted: Bool` and `deletedAt: Date?`. Phase 2
+added a test asserting that deleting a moment tombstones the row, and it failed — but not
+the way a store bug usually fails. The write saved without error, `deletedAt` persisted
+correctly, and `isDeleted` read back `false`.
+
+Isolating it took several passes, each ruling the next hypothesis out:
+
+| Hypothesis | Result |
+| --- | --- |
+| In-memory container limitation | Reproduced against a file-backed store |
+| My `MomentStore.save()` guard skipping the save | `deletedAt` on the same object saved fine |
+| A `#Predicate` on a stale value | The predicate `$0.isDeleted` matched a row whose value read `false` |
+| Two `@Attribute(.unique)` properties | A model with two uniques persisted correctly |
+| Property count | A 14-property model persisted correctly, a 16-property one did not |
+| `TimeInterval` / optional `Double` members | A model with neither still failed |
+| An optional never assigned in `init` | The simpler model without one also failed |
+
+**The decisive test.** Two structurally identical `Bool`s in one model, differing only in
+name:
+
+```swift
+@Model final class TNames {
+    @Attribute(.unique) var id: UUID
+    var plain: Bool      // persisted correctly
+    var isDeleted: Bool   // never persisted
+    var when: Date?
+}
+```
+
+`plain = true` survived the save and read back `true` from a fresh `ModelContext`.
+`isDeleted = true` on the same object, in the same save, read back `false`.
+
+This is a defect in the Xcode 27 / iOS 27 SDK's SwiftData schema handling, keyed on the
+property name. Nothing in Memoree causes it.
+
+**Decision.** Store only `deletedAt` and derive `isDeleted` as a computed property. The
+stored boolean is gone.
+
+**Consequences.**
+- `#Predicate` blocks must test `deletedAt == nil` / `!= nil`; SwiftData predicates cannot
+  call computed properties. Four call sites updated.
+- The model is smaller and, more importantly, has no duplicated state — two fields meaning
+  the same thing is one more thing that can disagree with itself.
+- A regression test asserts the tombstone from a **fresh `ModelContext`**, because reading
+  the in-memory instance can mask this class of failure entirely.
+
+**Alternatives rejected.** Renaming the property — it would work around one spelling rather
+than remove the duplication, and the bug would return under the next name. Forcing a write
+via `context.rollback()` then re-assigning — treating a symptom.
+
+**Reversal trigger.** If Apple fixes the defect and a future toolchain persists booleans
+correctly, the derived property remains the better model. No reason to restore the field.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

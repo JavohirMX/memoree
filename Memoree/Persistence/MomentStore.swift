@@ -30,7 +30,7 @@ final class MomentStore {
     /// All live moments, newest first.
     var allMoments: [Moment] {
         let descriptor = FetchDescriptor<Moment>(
-            predicate: #Predicate { !$0.isDeleted },
+            predicate: #Predicate { $0.deletedAt == nil },
             sortBy: [SortDescriptor(\.capturedAt, order: .reverse)]
         )
         return (try? context.fetch(descriptor)) ?? []
@@ -40,7 +40,7 @@ final class MomentStore {
     func moment(for day: DayIdentifier) -> Moment? {
         let target = day.rawValue
         let descriptor = FetchDescriptor<Moment>(
-            predicate: #Predicate { $0.dayIdentifier == target && !$0.isDeleted }
+            predicate: #Predicate { $0.dayIdentifier == target && $0.deletedAt == nil }
         )
         return try? context.fetch(descriptor).first
     }
@@ -52,7 +52,7 @@ final class MomentStore {
     func moments(on day: DayIdentifier) -> [Moment] {
         let target = day.rawValue
         let descriptor = FetchDescriptor<Moment>(
-            predicate: #Predicate { $0.dayIdentifier == target && !$0.isDeleted },
+            predicate: #Predicate { $0.dayIdentifier == target && $0.deletedAt == nil },
             sortBy: [SortDescriptor(\.capturedAt)]
         )
         return (try? context.fetch(descriptor)) ?? []
@@ -67,7 +67,7 @@ final class MomentStore {
     /// reference. Memoree still never touches the user's library (ADR-008).
     var tombstonedMoments: [Moment] {
         let descriptor = FetchDescriptor<Moment>(
-            predicate: #Predicate { $0.isDeleted },
+            predicate: #Predicate { $0.deletedAt != nil },
             sortBy: [SortDescriptor(\.deletedAt, order: .reverse)]
         )
         return (try? context.fetch(descriptor)) ?? []
@@ -204,7 +204,6 @@ final class MomentStore {
     /// The Photos assets are **not** deleted — they belong to the user
     /// (ADR-008). Only Memoree's record goes.
     func delete(_ moment: Moment) throws {
-        moment.isDeleted = true
         moment.deletedAt = Date()
         try save()
     }

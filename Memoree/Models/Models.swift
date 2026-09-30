@@ -51,10 +51,26 @@ final class Moment {
     var backAssetIdentifier: String?
     var frontAssetIdentifier: String?
 
-    /// Tombstone. Deleting a moment removes this row only — the Photos assets
-    /// are the user's files and are deliberately left in place (ADR-008).
-    var isDeleted: Bool
+    /// When this moment was deleted, or `nil` if it is live.
+    ///
+    /// The tombstone is this date alone. An earlier version also stored a
+    /// parallel `isDeleted: Bool`, and that boolean silently failed to persist
+    /// on the Xcode 27 / iOS 27 SDK — setting it to `true` saved without error
+    /// and read back `false` from a fresh `ModelContext`, including against a
+    /// file-backed store. Isolated to two structurally identical booleans in
+    /// one model, where a property named `plain` persisted correctly and one
+    /// named `isDeleted` never did, so the cause is the property name in the
+    /// toolchain's schema handling rather than anything in this code.
+    ///
+    /// Deriving the flag from the date removes the duplicated state entirely,
+    /// which is better modelling regardless: two fields meaning the same thing
+    /// is one more thing that can disagree with itself. See ADR-017.
     var deletedAt: Date?
+
+    /// Whether this moment has been deleted from the archive.
+    ///
+    /// Computed, never stored.
+    var isDeleted: Bool { deletedAt != nil }
 
     init(
         id: UUID = UUID(),
@@ -90,7 +106,6 @@ final class Moment {
         self.btsAssetIdentifier = btsAssetIdentifier
         self.backAssetIdentifier = backAssetIdentifier
         self.frontAssetIdentifier = frontAssetIdentifier
-        self.isDeleted = false
     }
 }
 

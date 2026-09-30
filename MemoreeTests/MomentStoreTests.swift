@@ -142,9 +142,42 @@ struct MomentStoreTests {
         // The row is tombstoned, not erased: the Photos asset identifier is
         // retained because Memoree never deletes from the user's library
         // (ADR-008). A future "deleted moments" view would show it.
+        //
+        // Asserted on a **freshly fetched** instance. SwiftData does not refresh
+        // an already-materialised object after `context.save()`, so reading
+        // `isDeleted` back off the instance passed to `delete` reports the
+        // stale `false` even though the row is correctly tombstoned. The
+        // predicate fetch is the authoritative read.
         let tombstone = try #require(store.tombstonedMoments.first)
         #expect(tombstone.backAssetIdentifier == "keep-me")
+        #expect(tombstone.deletedAt != nil)
+        #expect(tombstone.isDeleted, "isDeleted is derived from deletedAt")
+    }
+
+    @Test("The tombstone survives a fresh ModelContext")
+    func tombstonePersists() throws {
+        // Regression guard. The tombstone used to be a stored `isDeleted: Bool`,
+        // which silently failed to persist on this SDK: the write saved without
+        // error and read back `false` from a brand-new context. Asserting only on
+        // the in-memory instance would have missed it.
+        let container = try Persistence.inMemoryContainer()
+        let context = ModelContext(container)
+        let store = MomentStore(context: context)
+        let d = try day("2026-09-30")
+
+        try store.record(
+            day: d, interval: interval(d), capturedAt: interval(d).start,
+            retakeCount: 0, backAssetIdentifier: "keep-me", frontAssetIdentifier: nil
+        )
+        try store.delete(try #require(store.moment(for: d)))
+
+        // A separate context sees the committed state, not the cached instance.
+        let verifyingContext = ModelContext(container)
+        let rows = try verifyingContext.fetch(
+            FetchDescriptor<Moment>(predicate: #Predicate { $0.deletedAt != nil }))
+        let tombstone = try #require(rows.first)
         #expect(tombstone.isDeleted)
+        #expect(tombstone.backAssetIdentifier == "keep-me")
     }
 
     @Test("Deleting today's on-time moment resets the streak immediately")
