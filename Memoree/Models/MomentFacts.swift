@@ -24,6 +24,15 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
     let isOnTime: Bool
 
     let capturedAt: Date
+
+    /// When today's window closed.
+    ///
+    /// Carried so `lateBy` can be derived correctly. An earlier version omitted
+    /// it and computed lateness against local midnight, which reported a moment
+    /// captured ten minutes late as roughly fourteen hours late — because
+    /// midnight-to-window-end is most of a day.
+    let windowEndsAt: Date
+
     let retakeCount: Int
     let hasBTS: Bool
 
@@ -32,6 +41,7 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
         day: DayIdentifier,
         isOnTime: Bool,
         capturedAt: Date,
+        windowEndsAt: Date,
         retakeCount: Int,
         hasBTS: Bool
     ) {
@@ -39,13 +49,17 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
         self.day = day
         self.isOnTime = isOnTime
         self.capturedAt = capturedAt
+        self.windowEndsAt = windowEndsAt
         self.retakeCount = retakeCount
         self.hasBTS = hasBTS
     }
 
-    /// Lateness, for display. Zero when on time.
+    /// How long after the window closed this moment was captured.
+    ///
+    /// Zero when on time. Derived rather than stored so it cannot disagree with
+    /// the window it is measured against.
     var lateBy: TimeInterval {
-        isOnTime ? 0 : max(0, capturedAt.timeIntervalSince(day.date))
+        isOnTime ? 0 : max(0, capturedAt.timeIntervalSince(windowEndsAt))
     }
 }
 

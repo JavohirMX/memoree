@@ -25,11 +25,14 @@ struct CurrentStreakTests {
 
     private func facts(_ rows: [(String, Bool)]) -> [MomentFacts] {
         rows.map { row in
-            MomentFacts(
+            let day = DayIdentifier(string: row.0, calendar: calendar)!
+            let capturedAt = day.date.addingTimeInterval(14 * 3600)
+            return MomentFacts(
                 id: UUID(),
-                day: DayIdentifier(string: row.0, calendar: calendar)!,
+                day: day,
                 isOnTime: row.1,
-                capturedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                capturedAt: capturedAt,
+                windowEndsAt: capturedAt.addingTimeInterval(120),
                 retakeCount: 0,
                 hasBTS: false
             )
@@ -156,12 +159,15 @@ struct CurrentStreakTests {
         var eastern = Calendar(identifier: .gregorian)
         eastern.timeZone = TimeZone(identifier: "America/New_York")!
 
-        let rows = ["2027-03-13", "2027-03-14", "2027-03-15"].map {
-            MomentFacts(
+        let rows: [MomentFacts] = ["2027-03-13", "2027-03-14", "2027-03-15"].map { raw in
+            let day = DayIdentifier(string: raw, calendar: eastern)!
+            let capturedAt = day.date.addingTimeInterval(14 * 3600)
+            return MomentFacts(
                 id: UUID(),
-                day: DayIdentifier(string: $0, calendar: eastern)!,
+                day: day,
                 isOnTime: true,
-                capturedAt: Date(timeIntervalSince1970: 1_700_000_000),
+                capturedAt: capturedAt,
+                windowEndsAt: capturedAt.addingTimeInterval(120),
                 retakeCount: 0,
                 hasBTS: false
             )
@@ -295,11 +301,13 @@ struct SummaryTests {
             let day = DayIdentifier(string: row.day, calendar: cal)!
             var components = cal.dateComponents([.year, .month, .day], from: day.date)
             components.hour = row.hour
+            let capturedAt = cal.date(from: components)!
             return MomentFacts(
                 id: UUID(),
                 day: day,
                 isOnTime: row.onTime,
-                capturedAt: cal.date(from: components)!,
+                capturedAt: capturedAt,
+                windowEndsAt: capturedAt.addingTimeInterval(120),
                 retakeCount: row.retakes,
                 hasBTS: row.bts
             )

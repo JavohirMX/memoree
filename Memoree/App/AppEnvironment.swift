@@ -27,6 +27,15 @@ final class AppEnvironment {
         self.momentStore = MomentStore(context: context)
         self.momentScheduler = LocalMomentScheduler(secret: InstallSecret())
         self.notificationService = notificationService ?? UserNotificationService(scheduler: momentScheduler)
+
+        #if DEBUG
+        // Development affordance: skip first-run so the Today screen can be
+        // inspected without walking the permission prompts. Debug builds only,
+        // so it can never ship.
+        if ProcessInfo.processInfo.arguments.contains("-MemoreeSkipOnboarding") {
+            momentStore.settings().onboardingComplete = true
+        }
+        #endif
     }
 
     // MARK: - Moment resolution

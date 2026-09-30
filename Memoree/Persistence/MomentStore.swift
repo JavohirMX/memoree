@@ -94,6 +94,7 @@ final class MomentStore {
                     ?? DayIdentifier(date: moment.capturedAt, calendar: calendar),
                 isOnTime: !moment.isLate,
                 capturedAt: moment.capturedAt,
+                windowEndsAt: moment.windowEndsAt,
                 retakeCount: moment.retakeCount,
                 hasBTS: moment.hasBTS
             )

@@ -218,7 +218,10 @@ First real feature slice. Everything below it is presentation.
 | Task | Notes |
 | --- | --- |
 | `MomentState` enum | The six states from TRD §8, exhaustive |
-| State resolver | Pure function of `(now, settings, todayMoment)` — unit-testable |
+| `MomentStateResolver` | Pure function of `(now, interval, todayMoment, dayEnd)` — unit-testable |
+| `TodayViewModel` | Owns the only ticking clock; re-derives state once a second |
+| `OnboardingView` | Requests notification and camera authorisation, sets the moment window |
+| `RootView` routing | Onboarding once, then Today |
 | Countdown | `mm:ss`, **tabular figures**, amber under 30s |
 | Streak display | Flame + count, from `StreakCalculator` |
 | Camera presentation | Shown in `scheduled`, `open`, `lateAvailable`, `captured` |
@@ -228,8 +231,36 @@ First real feature slice. Everything below it is presentation.
 | Recording a moment | Orchestrate capture → Photos write → `MomentStore.record` → streak recompute |
 
 **Exit:** the complete daily loop works end to end on device. Capture, save, streak, archive
-entry.
-**Estimate:** 2 days.
+entry. **Estimate:** 2 days.
+
+### Progress as of 2026-09-30
+
+Done and verified on a running simulator:
+
+- `MomentState` + `MomentStateResolver`, with tests pinning the edges — the window is
+  inclusive at both ends, and `missed` must not fire before the day actually ends
+- `TodayViewModel`, including local-midnight day rollover
+- `TodayView`, `OnboardingView`, `RootView` routing, and design-system components
+- **A missing permission request.** The app never asked for notification authorisation, so no
+  moment could ever fire. Onboarding now requests it, and the Today footer reports
+  "Reminders off" in amber when it is absent.
+
+Not yet: the capture button. Deliberately absent rather than rendered disabled — a button
+that looks live and does nothing is a dead end (AGENTS.md §6). Phase 4 supplies it.
+
+Observed on the simulator: today's moment derived at **21:54**, inside the 11:00–23:00
+default window, stable across launches, countdown ticking 1:27:52 → 1:26:46. That is
+Phase 1's scheduler verified end to end on a running device.
+
+**Two defects found by screenshotting the running app**, neither of which a unit test could
+have caught:
+
+- The `.task` that *creates* the view model was attached inside the `if let model` branch
+  that renders only once the model exists, so it never ran and the screen stayed black.
+  Lifecycle modifiers now hang off the outermost container.
+- `MomentFacts.lateBy` measured against local midnight rather than the window's end,
+  reporting a moment captured ten minutes late as roughly fourteen hours late. `windowEndsAt`
+  is now carried on the value type.
 
 ---
 

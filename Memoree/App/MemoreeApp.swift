@@ -73,17 +73,23 @@ private struct StartupFailureView: View {
     }
 }
 
-/// Phase 0 placeholder; replaced by onboarding → Today routing in Phase 5.
+/// Routes between first-run setup and the Today screen.
+///
+/// Onboarding is shown once. There is no account, so "complete" is a single
+/// boolean in local settings rather than a session or a profile.
 struct RootView: View {
-    var body: some View {
-        ZStack {
-            Theme.Color.canvas
-                .ignoresSafeArea()
 
-            Text("Memoree")
-                .font(Theme.Typography.screenTitle)
-                .foregroundStyle(Theme.Color.textPrimary)
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        Group {
+            if environment.momentStore.settings().onboardingComplete {
+                TodayView()
+            } else {
+                OnboardingView()
+            }
         }
+        .animation(.default, value: environment.momentStore.settings().onboardingComplete)
     }
 }
 
