@@ -108,7 +108,29 @@ HEIC and EXIF is far easier with a known input.
 | Live device test | Opt-in via `MEMOREE_LIVE_PHOTO_TESTS=1` |
 
 **Exit:** a test method writes two images to the real Photos app on device, with GPS metadata
-correctly attached, and returns usable `localIdentifier`s. **Done — see the two notes below.**
+correctly attached, and returns usable `localIdentifier`s.
+
+> **Status: code complete, exit criterion NOT yet met.** The four live tests are
+> written and compile, but have never executed against a real library. They report
+> as *passed* when they skip, so a green run does not mean they ran — check the
+> assertion count. Two reasons they can't run unattended:
+>
+> 1. `xcrun simctl privacy grant photos` reports success but TCC still reads
+>    `notDetermined` inside the test process on the iOS 27 simulator. Confirmed by
+>    probing `PHPhotoLibrary.authorizationStatus(for: .addOnly)` directly.
+> 2. On a device, access must be granted once by hand through the system prompt.
+>
+> Run them on hardware to close this phase out:
+>
+> ```sh
+> export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+> xcodebuild test -project Memoree.xcodeproj -scheme Memoree \
+>   -destination 'platform=iOS,name=<your device>' \
+>   -only-testing:MemoreeTests/LivePhotoLibraryTests
+> ```
+>
+> Approve the Photos prompt when it appears. Two `Memoree Phase 3 Fixture` photos
+> will be written to the camera roll and are not deleted automatically.
 
 **Defect found: GPS removal was a no-op.** `CGImageDestinationAddImageFromSource` re-reads
 the source's own EXIF *after* the properties dictionary is applied, so removing the GPS key
@@ -123,11 +145,16 @@ model where `plain` persisted and `isDeleted` did not: an Xcode 27 / iOS 27 SDK 
 on the property name. The tombstone is now `deletedAt` alone, with `isDeleted` derived. See
 ADR-017.
 
-**The live test is opt-in, and not merely for hygiene.** `PHPhotoLibrary
-.requestAuthorization(for: .addOnly)` blocks indefinitely when TCC holds no decision and no
-one can dismiss the dialog — precisely the state a test host is in. The first live test hung
-the entire suite for ten minutes rather than failing. Gating on an environment variable makes
-that hang impossible.
+**The live test skip logic was wrong twice.** It first called `PHPhotoLibrary
+.requestAuthorization(for: .addOnly)`, which blocks indefinitely when TCC holds no decision and
+no one can dismiss the dialog — precisely a test host's state. The first live test hung the
+entire suite for ten minutes rather than failing.
+
+It then gated on `MEMOREE_LIVE_PHOTO_TESTS=1`, which looked safer but was worse:
+`xcodebuild` does not propagate shell environment variables into the test process, so the
+documented way to enable the suite silently did nothing and the four tests "passed" in a
+millisecond having verified nothing. The gate now reads `authorizationStatus` only, which never
+blocks, so the tests run whenever access exists and skip honestly otherwise.
 
 **Estimate:** 1.5 days.
 
