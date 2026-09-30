@@ -82,8 +82,17 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
     /// buffer that absorbs infrequent launches.
     static let refillThreshold = 20
 
-    private static let categoryIdentifier = "MEMORENT"
-    private static let identifierPrefix = "moment."
+    /// The category every moment reminder carries.
+    ///
+    /// Internal rather than private because `MemoreeAppDelegate` registers it
+    /// with the system centre at launch. It has no action buttons: the tap *is*
+    /// the action (TRD §9).
+    ///
+    /// It was `"MEMORENT"` until this was renamed. Nothing referenced the
+    /// string but this file and the system centre, so the typo was invisible —
+    /// and would have stayed invisible, because a category identifier that no
+    /// code ever looks up is not required to be correct.
+    static let categoryIdentifier = "MOMENT"
 
     // `@unchecked Sendable`: UNUserNotificationCenter is an Apple class that is
     // not annotated Sendable, but every method used here is documented
@@ -123,37 +132,34 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
 
     func refreshHorizon(window: TimeWindow, windowDuration: TimeInterval) async throws {
         let settings = await center.notificationSettings()
-        guard settings.authorizationStatus == .authorized
-                || settings.authorizationStatus == .provisional
-        else {
+        guard settings.authorizationStatus.asMemoree.willDeliver else {
             // Declined notifications are a supported state, not an error
             // (AGENTS.md §9). The app stays usable; only the reminder is lost.
             throw SchedulerError.notificationDenied
         }
 
-        let pending = await pendingRequests()
-        // Already full and above threshold: nothing to do. Avoids churn on every
-        // foreground.
-        guard pending.count < Self.horizonDays else { return }
+        let plan = NotificationHorizonPlanner.plan(
+            horizon: Self.horizonDays,
+            today: DayIdentifier(date: now()),
+            existing: await pendingRequests().map(\.identifier),
+            momentStart: { day in
+                scheduler.momentStart(
+                    for: day, window: window, windowDuration: windowDuration
+                )
+            }
+        )
+        guard !plan.isEmpty else { return }
 
-        let today = DayIdentifier(date: now())
-        var requests: [UNNotificationRequest] = []
-        requests.reserveCapacity(Self.horizonDays)
+        // Only the identifiers this app scheduled, and only the ones it is about
+        // to replace. Never `removeAllPendingNotificationRequests()`, which
+        // would clear anything else the system is holding for us.
+        center.removePendingNotificationRequests(
+            withIdentifiers: plan.identifiersToRemove
+        )
 
-        for offset in 0..<Self.horizonDays {
-            let day = today.offset(by: offset)
-            let start = scheduler.momentStart(
-                for: day, window: window, windowDuration: windowDuration
-            )
-            requests.append(makeRequest(for: day, at: start, windowDuration: windowDuration))
-        }
-
-        // Replace atomically-ish: remove the identifiers we are about to set,
-        // then add. Never removeAllPendingNotificationRequests().
-        let identifiers = requests.map(\.identifier)
-        center.removePendingNotificationRequests(withIdentifiers: identifiers)
-
-        for request in requests {
+        for day in plan.daysToSchedule {
+            guard let fireDate = plan.fireDates[day] else { continue }
+            let request = makeRequest(for: day, at: fireDate, windowDuration: windowDuration)
             try await center.add(request)
         }
     }
@@ -198,7 +204,7 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
         let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
 
         return UNNotificationRequest(
-            identifier: Self.identifierPrefix + day.rawValue,
+            identifier: NotificationHorizonPlanner.identifier(for: day),
             content: content,
             trigger: trigger
         )

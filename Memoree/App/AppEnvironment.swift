@@ -127,6 +127,29 @@ final class AppEnvironment {
         }
     }
 
+    /// A moment reminder was tapped and the camera should be presented.
+    ///
+    /// There is no URL scheme to route through — `Info.plist` deliberately
+    /// registers none, because Memoree makes no network calls (AGENTS.md §2.1) —
+    /// so the tap arrives from `MemoreeAppDelegate` and lands here as a flag.
+    ///
+    /// A flag rather than something the view reads once, because delivery is not
+    /// ordered against the scene: a cold launch sets it before `TodayView` has
+    /// registered an observer, and a foreground delivery sets it long after.
+    /// One flag plus `consumeCameraRequest()` covers both, and consuming it means
+    /// a later re-presentation of the screen does not re-open the camera for a
+    /// tap the user made minutes ago.
+    private(set) var pendingCameraRequest = false
+
+    /// Called from the notification delegate.
+    func requestCamera() {
+        pendingCameraRequest = true
+    }
+
+    func consumeCameraRequest() {
+        pendingCameraRequest = false
+    }
+
     // MARK: - Horizon maintenance
 
     /// Tops up the notification horizon and persists newly resolved days.

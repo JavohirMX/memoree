@@ -12,6 +12,15 @@ struct MemoreeApp: App {
     @State private var environment: AppEnvironment?
     @State private var startupError: String?
 
+    /// The notification delegate.
+    ///
+    /// Exists because `didFinishLaunchingWithOptions` is the only place a
+    /// `UNUserNotificationCenterDelegate` can be installed in time, and SwiftUI's
+    /// `App` has no such hook. The property wrapper is how SwiftUI owns it; the
+    /// local name is how the rest of the app reaches it to route a tapped
+    /// reminder once there is an environment to route into.
+    @UIApplicationDelegateAdaptor(MemoreeAppDelegate.self) private var appDelegate
+
     var body: some Scene {
         WindowGroup {
             Group {
@@ -37,6 +46,15 @@ struct MemoreeApp: App {
         do {
             let created = try AppEnvironment()
             environment = created
+
+            // Wired after construction, because it is the environment that has
+            // to be told. The delegate outlives the SwiftUI scene, which is why
+            // this is a closure it holds rather than a reference it takes — and
+            // why neither of them is a singleton: each has exactly one owner.
+            appDelegate.setOnMomentNotification { [weak created] in
+                created?.requestCamera()
+            }
+
             await created.refreshHorizonIfNeeded(force: true)
         } catch {
             startupError = error.localizedDescription

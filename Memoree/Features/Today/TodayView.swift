@@ -49,6 +49,19 @@ struct TodayView: View {
             guard !isShowing else { return }
             Task { await self.model?.reload() }
         }
+        // A tapped reminder opens the camera — the tap is the intent (TRD §9).
+        //
+        // Checked on appear as well as on change, because a cold launch
+        // delivers the tap *before* this observer is registered, and
+        // `.onChange` only fires for changes that happen after it exists.
+        // Reading the flag once on appearance is what makes a cold launch work;
+        // the observer is what makes a tap while the app is already running.
+        .task {
+            presentCameraIfRequested()
+        }
+        .onChange(of: environment.pendingCameraRequest) { _, _ in
+            presentCameraIfRequested()
+        }
         .confirmationDialog(
             Self.recaptureTitle,
             isPresented: $isConfirmingRecapture,
@@ -59,6 +72,17 @@ struct TodayView: View {
         } message: {
             Text(Self.recaptureMessage)
         }
+    }
+
+    /// Opens the camera if a reminder was tapped, and clears the request.
+    ///
+    /// Consumption is what makes this idempotent: `TodayView` reappears every
+    /// time the camera is dismissed, and a tap from twenty minutes ago should
+    /// not throw the user back into the camera screen on their next visit.
+    private func presentCameraIfRequested() {
+        guard environment.pendingCameraRequest else { return }
+        environment.consumeCameraRequest()
+        isShowingCamera = true
     }
 
     private static let recaptureTitle = "Capture again?"

@@ -110,7 +110,7 @@ struct MomentDerivationTests {
 
     @Test("Ten years of derived moments all land inside the configured window")
     func alwaysInsideWindow() throws {
-        var calendar = Calendar(identifier: .gregorian)
+        let calendar = Calendar(identifier: .gregorian)
         var cursor = try #require(DayIdentifier(string: "2026-01-01", calendar: calendar))
         let lower = Self.window.startMinutes * 60
         let upper = Self.window.endMinutes * 60
@@ -127,7 +127,7 @@ struct MomentDerivationTests {
 
     @Test("The distribution is not clumped toward any hour")
     func distributionIsSpread() {
-        var calendar = Calendar(identifier: .gregorian)
+        let calendar = Calendar(identifier: .gregorian)
         var cursor = DayIdentifier(string: "2026-01-01", calendar: calendar)!
         var buckets = [Int](repeating: 0, count: 12)   // 12 hourly buckets across the window
 
