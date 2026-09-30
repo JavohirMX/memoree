@@ -199,7 +199,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
     // MARK: - Lifecycle
 
-    func startSession() async throws {
+    func startSession(on position: CameraPosition) async throws {
         let status = authorizationStatus()
         guard status == .authorized || status == .notDetermined else {
             throw status == .restricted ? CaptureError.restricted : CaptureError.permissionDenied
@@ -209,7 +209,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             queue.async { [self] in
                 do {
-                    try configureSession()
+                    try configureSession(startingAt: position)
                     session.startRunning()
                     state = .running
                     c.resume()
@@ -259,7 +259,10 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                 activeInput = nil
 
                 do {
-                    try configureSession()
+                    // Reopens on whichever camera is live, so a rebuild after a
+                    // failed swap restores the camera the user was composing
+                    // with rather than a default.
+                    try configureSession(startingAt: activePosition)
                     session.startRunning()
                     state = .running
                     c.resume()
@@ -291,18 +294,20 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
     // MARK: - Capture
 
-    /// Captures one photograph from the input already attached at `position`.
+    /// Captures one photograph from the camera currently live.
     ///
-    /// Does not swap inputs — `SequentialCaptureService` owns the ordering,
-    /// because the swap and the frame-wait are one indivisible step.
-    func capturePhoto(at position: CameraPosition) async throws -> CapturedPhoto {
+    /// No position parameter, deliberately: the session is already on the
+    /// camera the user is composing with, and accepting a position separately
+    /// would let a caller ask for a camera that is not attached.
+    func captureCurrentPhoto() async throws -> CapturedPhoto {
         try await withCheckedThrowingContinuation { continuation in
             queue.async { [self] in
                 guard state == .running else {
                     continuation.resume(throwing: CaptureError.sessionReset)
                     return
                 }
-                guard activePosition == position, activeInput != nil else {
+                let position = activePosition
+                guard activeInput != nil else {
                     continuation.resume(throwing: CaptureError.noInputAvailable(position))
                     return
                 }
@@ -459,8 +464,8 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
     // MARK: - Configuration
 
-    /// Builds inputs and outputs. Must run on `queue`.
-    private func configureSession() throws {
+    /// Builds inputs and outputs, opening on `position`. Must run on `queue`.
+    private func configureSession(startingAt position: CameraPosition) throws {
         session.beginConfiguration()
         defer { session.commitConfiguration() }
 
@@ -479,7 +484,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
         session.addOutput(videoOutput)
 
-        try attachInput(at: .default)
+        try attachInput(at: position)
         try applyFormat(for: activePosition)
     }
 

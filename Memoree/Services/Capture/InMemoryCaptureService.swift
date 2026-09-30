@@ -8,11 +8,12 @@ import QuartzCore
 /// no capture hardware at all, so without this the entire capture flow would be
 /// untestable off-device (AGENTS.md §3, §7).
 ///
-/// Thread-safe: Swift Testing runs suites in parallel.
+/// Models the **user-paced** sequence of ADR-021: the caller captures one
+/// camera, then explicitly switches, then captures the other. It records what it
+/// was asked to do so tests assert the *calls* — that the swap happened on the
+/// second press and not the first — rather than merely that nothing crashed.
 ///
-/// Records what it was asked to do, so tests assert the *calls* — that a pair
-/// was captured in the right order, that the front was waited for — rather than
-/// merely that nothing crashed.
+/// Thread-safe: Swift Testing runs suites in parallel.
 final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
 
     private struct State {
@@ -22,13 +23,30 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         var stopCount = 0
         var rebuildCount = 0
         var configuredFormats: [CameraPosition] = []
+        /// Cameras captured, in the order the user shot them.
         var capturedPositions: [CameraPosition] = []
-        var swapCount = 0
+        /// Cameras switched to, in order. Should mirror `capturedPositions`
+        /// minus the first: one switch between the two shots.
+        var switchedTo: [CameraPosition] = []
+        /// Cameras the session was opened on.
+        var openedOn: [CameraPosition] = []
+        /// The camera live **right now**. Distinct from `openedOn.last`: after
+        /// `switchCamera(to:)` the two disagree, and reading the wrong one makes
+        /// a capture report the camera the user already left.
+        var livePosition: CameraPosition = .back
+        var switchCount = 0
         var capturePairCount = 0
-        /// Whether `waitForDeliveredFrame` was called before the front capture.
-        var didWaitForFrameBeforeFront = false
+        /// Whether a frame wait happened before each switch.
+        var didWaitForFrameBeforeSwitch = false
         var failureToThrow: CaptureError?
-        /// Injected delay before a pair is returned, for testing progress states.
+        /// Separate slots, because a test that wants to fail *the switch* must
+        /// not have that failure consumed by the capture which precedes it in
+        /// the same shutter press. One shared slot made that impossible to
+        /// express, and the resulting test failure was in the double, not the
+        /// model.
+        var captureFailure: CaptureError?
+        var switchFailure: CaptureError?
+        /// Injected delay, for testing progress states.
         var artificialDelay: TimeInterval = 0
     }
 
@@ -38,7 +56,7 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
 
     /// A real `AVCaptureVideoPreviewLayer` would need a live session, and a
     /// `CALayer` is what the view actually installs — so a plain layer is both
-    /// sufficient and honest. Tests assert on the layer's presence, not pixels.
+    /// sufficient and honest. Tests assert the layer's presence, not pixels.
     private let surface = CALayer()
 
     // MARK: - Test configuration
@@ -47,12 +65,23 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         lock.withLock { state.authorization = status }
     }
 
-    /// Makes the next capture call throw, for testing error states.
+    /// Makes the next capture throw, for testing error states.
     func failNextCapture(with error: CaptureError) {
-        lock.withLock { state.failureToThrow = error }
+        lock.withLock { state.captureFailure = error }
     }
 
-    /// Delays `capturePair`, so a test can observe the in-progress state.
+    /// Makes the next camera switch throw.
+    ///
+    /// Targeted separately from captures, and the separation is load-bearing
+    /// rather than tidy: the second half of a single shutter press does both, so
+    /// with one shared slot a test could never express "the photograph
+    /// succeeds and the camera switch does not" — the capture would always eat
+    /// the failure first.
+    func failNextSwitch(with error: CaptureError) {
+        lock.withLock { state.switchFailure = error }
+    }
+
+    /// Delays every operation, so a test can observe the in-progress state.
     func setArtificialDelay(_ delay: TimeInterval) {
         lock.withLock { state.artificialDelay = delay }
     }
@@ -65,10 +94,11 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
     var rebuildCount: Int { lock.withLock { state.rebuildCount } }
     var configuredFormats: [CameraPosition] { lock.withLock { state.configuredFormats } }
     var capturedPositions: [CameraPosition] { lock.withLock { state.capturedPositions } }
-    var swapCount: Int { lock.withLock { state.swapCount } }
-    var capturePairCount: Int { lock.withLock { state.capturePairCount } }
-    var didWaitForFrameBeforeFront: Bool {
-        lock.withLock { state.didWaitForFrameBeforeFront }
+    var switchedTo: [CameraPosition] { lock.withLock { state.switchedTo } }
+    var openedOn: [CameraPosition] { lock.withLock { state.openedOn } }
+    var switchCount: Int { lock.withLock { state.switchCount } }
+    var didWaitForFrameBeforeSwitch: Bool {
+        lock.withLock { state.didWaitForFrameBeforeSwitch }
     }
 
     // MARK: - CapturePhotoService
@@ -84,11 +114,16 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         return .authorized
     }
 
-    func startSession() async throws {
+    func startSession(on position: CameraPosition) async throws {
+        let delay = lock.withLock { state.artificialDelay }
+        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+
         try lock.withLock {
             try Self.throwIfNeeded(&state)
             state.isRunning = true
             state.startCount += 1
+            state.openedOn.append(position)
+            state.livePosition = position
         }
     }
 
@@ -114,37 +149,35 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         }
     }
 
-    func capturePhoto(at position: CameraPosition) async throws -> CapturedPhoto {
+    /// Records the switch and the frame-wait that must precede it.
+    ///
+    /// Step 7 of TRD §5.2: the wait happens between the switch and the next
+    /// capture. Recorded so a test can prove it was not skipped — capturing
+    /// before the sensor delivers yields a black or green photograph, silently.
+    func switchCamera(to position: CameraPosition) async throws {
+        let delay = lock.withLock { state.artificialDelay }
+        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+
         try lock.withLock {
-            try Self.throwIfNeeded(&state)
-            state.capturedPositions.append(position)
-            counter += 1
-            return Self.photo(position: position, sequence: counter)
+            try Self.throwSwitchIfNeeded(&state)
+            state.switchedTo.append(position)
+            state.switchCount += 1
+            state.livePosition = position
+            state.didWaitForFrameBeforeSwitch = true
         }
     }
 
-    /// Mirrors `SequentialCaptureService.capturePair()`, including the frame-wait
-    /// ordering, so a test can assert the sequence without a camera.
-    func capturePair() async throws -> CapturedPair {
-        let delay = lock.withLock { () -> TimeInterval in
-            state.capturePairCount += 1
-            return state.artificialDelay
-        }
-        if delay > 0 {
-            try await Task.sleep(for: .seconds(delay))
-        }
+    func captureCurrentPhoto() async throws -> CapturedPhoto {
+        let delay = lock.withLock { state.artificialDelay }
+        if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
 
-        let back = try await capturePhoto(at: .back)
-
-        lock.withLock {
-            state.swapCount += 1
-            // Step 7 of TRD §5.2: the wait happens between the swap and the
-            // front capture. Recorded so a test can prove it was not skipped.
-            state.didWaitForFrameBeforeFront = true
+        return try lock.withLock {
+            try Self.throwCaptureIfNeeded(&state)
+            counter += 1
+            let position = state.livePosition
+            state.capturedPositions.append(position)
+            return Self.photo(position: position, sequence: counter)
         }
-
-        let front = try await capturePhoto(at: .front)
-        return CapturedPair(back: back, front: front)
     }
 
     // MARK: - Helpers
@@ -155,6 +188,18 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         throw failure
     }
 
+    private static func throwCaptureIfNeeded(_ state: inout State) throws {
+        guard let failure = state.captureFailure else { return }
+        state.captureFailure = nil
+        throw failure
+    }
+
+    private static func throwSwitchIfNeeded(_ state: inout State) throws {
+        guard let failure = state.switchFailure else { return }
+        state.switchFailure = nil
+        throw failure
+    }
+
     /// A recognisable, correctly-shaped placeholder.
     ///
     /// Real 3:4 dimensions rather than 1×1, so a test that checks geometry
@@ -162,8 +207,8 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
     private static func photo(position: CameraPosition, sequence: Int) -> CapturedPhoto {
         CapturedPhoto(
             data: Data("mock-\(position.rawValue)-\(sequence)".utf8),
-            pixelWidth: 3024,
-            pixelHeight: 4032,
+            pixelWidth: 4032,
+            pixelHeight: 3024,     // sensor-native landscape; 3:4 either way
             position: position
         )
     }

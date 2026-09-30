@@ -3,12 +3,12 @@ import UIKit
 
 /// The camera screen.
 ///
-/// Full-bleed preview, a shutter, and — once a pair exists — BeReal's composite
-/// geometry: rear full-bleed with the front inset top-left at a 14pt radius,
-/// tappable to swap which is primary (TRD §5.6).
+/// One camera live at a time, and the user shoots each in turn (ADR-021). The
+/// photograph already taken sits in a small square while the other camera is
+/// live, and once both exist the review composite lets you tap the small one to
+/// swap which is large.
 ///
-/// Copy follows the Today screen's rule: state the facts, do not plead. A
-/// failure explains itself and offers a retry when a retry could work.
+/// Copy follows the Today screen's rule: state the facts, do not plead.
 struct CameraView: View {
 
     /// Injected by `CameraHostView`, which can read the environment. A `@State`
@@ -46,30 +46,22 @@ struct CameraView: View {
             failure(message: message, isRetryable: isRetryable, model: model)
         case .saved:
             saved
-        case .reviewing:
+        case .review:
             review(model)
-        case .idle, .starting, .capturing, .ready:
+        case .idle, .starting, .working, .shooting:
             live(model)
         }
     }
 
-    /// The live preview and the shutter.
+    /// The live preview, the inset, and the shutter.
     private func live(_ model: CameraViewModel) -> some View {
         VStack(spacing: 0) {
-            preview(model)
+            previewWithInset(model)
 
             Spacer(minLength: 0)
 
-            if model.phase == .capturing {
-                // A determinate-feeling state rather than a blank frame: the
-                // shutter is mid-sequence and the front camera is about to
-                // open. Copy states the fact rather than apologising for a wait.
-                Text("Capturing…")
-                    .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.textSecondary)
-                    .padding(.bottom, Theme.Spacing.l)
-            } else if model.phase == .starting {
-                Text("Opening the camera")
+            if !model.progressDescription.isEmpty {
+                Text(model.progressDescription)
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .padding(.bottom, Theme.Spacing.l)
@@ -79,12 +71,34 @@ struct CameraView: View {
         }
     }
 
-    private func preview(_ model: CameraViewModel) -> some View {
-        ZStack {
+    /// The live camera, with the photograph already taken in the top-left
+    /// square when there is one.
+    ///
+    /// The inset is **not** tappable here. The large view has to stay live —
+    /// it is what the user is composing with — and promoting the inset would
+    /// cover the camera they are about to shoot. Tapping to swap is the review
+    /// behaviour, where both slots are photographs.
+    private func previewWithInset(_ model: CameraViewModel) -> some View {
+        ZStack(alignment: .topLeading) {
             if let layer = model.previewLayer {
                 CameraPreview(layer: layer)
             } else {
                 Theme.Color.canvas
+            }
+
+            if let inset = model.insetPhoto,
+               let image = UIImage(data: inset.data) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 96)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inset))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Theme.Radius.inset)
+                            .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                    }
+                    .padding(Theme.Spacing.m)
+                    .allowsHitTesting(false)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -92,19 +106,28 @@ struct CameraView: View {
     }
 
     private func shutterRow(_ model: CameraViewModel) -> some View {
-        HStack {
-            Spacer()
+        VStack(spacing: Theme.Spacing.s) {
+            HStack {
+                Spacer()
 
-            shutterButton(model)
+                shutterButton(model)
 
-            Spacer()
+                Spacer()
+            }
+
+            // Which camera they are composing with. Stated as a fact, because
+            // the order is random per moment (ADR-021) and there is no other
+            // way to know which is live.
+            Text(model.livePositionDescription)
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textSecondary)
         }
         .padding(.vertical, Theme.Spacing.xl)
     }
 
     private func shutterButton(_ model: CameraViewModel) -> some View {
         Button {
-            Task { await model.capture() }
+            Task { await model.shutterPressed() }
         } label: {
             Circle()
                 .strokeBorder(Theme.Color.textPrimary, lineWidth: 3)
@@ -118,17 +141,17 @@ struct CameraView: View {
         .buttonStyle(.plain)
         .disabled(!model.canCapture)
         .opacity(model.canCapture ? 1 : 0.4)
-        .accessibilityLabel("Capture your moment")
-        // Honour Reduce Motion: the capture animation is decorative.
+        .accessibilityLabel("Take a photo")
         .animation(.default, value: model.canCapture)
     }
 
     // MARK: - Review
 
-    /// The captured pair, before it is written to Photos.
+    /// Both photographs exist. One large, one in a small square, tappable to
+    /// swap.
     private func review(_ model: CameraViewModel) -> some View {
         VStack(spacing: 0) {
-            compositePreview(model)
+            composite(model)
 
             Spacer(minLength: 0)
 
@@ -139,40 +162,32 @@ struct CameraView: View {
                     .padding(.bottom, Theme.Spacing.m)
             }
 
-            VStack(spacing: Theme.Spacing.m) {
-                PrimaryButton(title: "Post") {
-                    Task { await model.commit() }
-                }
-
-                Button("Retake") {
-                    Task { await model.retake() }
-                }
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
-            }
-            .padding(.bottom, Theme.Spacing.xl)
+            reviewActions(model)
+                .padding(.bottom, Theme.Spacing.xl)
         }
     }
 
-    /// BeReal's composite geometry: rear full-bleed, front inset top-left.
-    ///
-    /// The inset is tappable to swap which camera is primary. The pair itself
-    /// is always rear-then-front, so this changes only what is on screen.
-    private func compositePreview(_ model: CameraViewModel) -> some View {
+    /// BeReal's composite geometry: one photograph large, the other inset
+    /// top-left at a 14pt radius. Tapping the inset promotes it.
+    private func composite(_ model: CameraViewModel) -> some View {
         ZStack(alignment: .topLeading) {
-            if let pair = model.capturedPair,
-               let backImage = UIImage(data: pair.back.data),
-               let frontImage = UIImage(data: pair.front.data) {
-                Image(uiImage: backImage)
+            if let prominent = model.prominentPhoto,
+               let image = UIImage(data: prominent.data) {
+                Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
+            } else {
+                Theme.Color.canvas
+            }
 
+            if let inset = model.insetReviewPhoto,
+               let image = UIImage(data: inset.data) {
                 Button {
-                    model.togglePrimaryCamera()
+                    model.swapProminent()
                 } label: {
-                    Image(uiImage: frontImage)
+                    Image(uiImage: image)
                         .resizable()
                         .scaledToFill()
                         .frame(width: 108)
@@ -184,14 +199,42 @@ struct CameraView: View {
                 }
                 .buttonStyle(.plain)
                 .padding(Theme.Spacing.m)
-                .accessibilityLabel("Swap front and back")
-            } else {
-                // A pair exists but will not decode. Only reachable if the
-                // camera produced bytes that are not an image, which is a
-                // failure rather than a state to design for — so it says so
-                // rather than showing a silently blank frame.
-                Theme.Color.canvas
+                .accessibilityLabel("Swap the two photos")
             }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+    }
+
+    /// Post, or reshoot one half.
+    ///
+    /// Reshooting is a separate control rather than a tap target, because the
+    /// tap on the inset is already taken by swapping. Overloading one target
+    /// with two meanings would make the common action unpredictable.
+    private func reviewActions(_ model: CameraViewModel) -> some View {
+        VStack(spacing: Theme.Spacing.m) {
+            PrimaryButton(title: "Post") {
+                Task { await model.commit() }
+            }
+
+            Menu {
+                ForEach(CameraPosition.allCases, id: \.self) { position in
+                    Button(position == .front ? "Retake front" : "Retake back") {
+                        Task { await model.reshoot(position) }
+                    }
+                }
+                Button("Start over", role: .destructive) {
+                    Task { await model.startOver() }
+                }
+            } label: {
+                Text("Retake")
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+
+            Button("Cancel") { onDismiss() }
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textTertiary)
         }
     }
 
@@ -215,9 +258,8 @@ struct CameraView: View {
     }
 
     /// Named `noCameraAccess` rather than `permissionDenied`: the latter is an
-    /// enum case of `CameraViewModel.Phase`, and a method sharing that name
-    /// shadows it at the use site — `case .permissionDenied: permissionDenied`
-    /// stops parsing.
+    /// enum case of `CameraViewModel.Phase`, and a member sharing that name
+    /// shadows it at the use site.
     private var noCameraAccess: some View {
         VStack(spacing: Theme.Spacing.l) {
             Text("No camera access")

@@ -50,7 +50,7 @@ struct FrameWaitDiagnostics {
         if controller.authorizationStatus() != .authorized {
             _ = await controller.requestAuthorization()
         }
-        try await controller.startSession()
+        try await controller.startSession(on: .back)
 
         var waits: [TimeInterval] = []
         var failures: [String] = []

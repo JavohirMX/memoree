@@ -3,7 +3,7 @@ import CoreGraphics
 import Foundation
 import QuartzCore
 
-/// Captures the front-and-back pair that makes a moment.
+/// Captures the front-and-back pair that makes a moment, **one photo at a time**.
 ///
 /// A protocol so that UI work and tests never need a real camera (AGENTS.md §3).
 /// The simulator has no capture hardware at all, so this boundary is the only
@@ -45,22 +45,38 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// dismiss.
     func requestAuthorization() async -> CameraAuthorizationStatus
 
-    /// Starts the session and the preview.
+    /// Starts the session on `position`, and the preview with it.
+    ///
+    /// Which camera opens is **random per moment** (ADR-021): the user does not
+    /// know in advance which one they are composing with, which is the same
+    /// intent as the random delivery time.
     ///
     /// - Throws: `CaptureError` when no usable input exists. Callers must show
     ///   a recoverable state rather than a blank screen (AGENTS.md §6).
-    func startSession() async throws
+    func startSession(on position: CameraPosition) async throws
 
     /// Stops the session and tears down the preview. Idempotent.
     func stopSession() async
 
-    /// Captures one photograph from the given position.
+    /// Captures one photograph from the camera currently live.
     ///
-    /// Does **not** perform the input swap. `SequentialCaptureService` owns the
-    /// ordering, because the swap and the frame-wait are one indivisible step —
-    /// splitting them across two protocols invites exactly the race this design
-    /// exists to prevent.
-    func capturePhoto(at position: CameraPosition) async throws -> CapturedPhoto
+    /// No position parameter. By the time this is called the session is already
+    /// on the camera the user is composing with, and accepting a position
+    /// separately would allow a caller to ask for a camera that is not
+    /// attached.
+    func captureCurrentPhoto() async throws -> CapturedPhoto
+
+    /// Switches the live camera and waits for the new one to deliver a frame.
+    ///
+    /// **Not optional, and the reason it is on the protocol.** The caller is the
+    /// user's second shutter press, so this runs mid-sequence; capturing before
+    /// the new sensor has delivered anything yields a black or green
+    /// photograph — silently, and permanently (TRD §5.2, step 7).
+    ///
+    /// The wait is a real delivered frame, not a sleep. In the sequential
+    /// design this is the step most likely to flake, and the docs call that out
+    /// in four separate places.
+    func switchCamera(to position: CameraPosition) async throws
 
     /// Applies 3:4 format selection to the input at `position`.
     ///

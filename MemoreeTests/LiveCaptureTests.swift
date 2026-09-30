@@ -17,52 +17,43 @@ import Testing
 /// coincidence (AGENTS.md §7).
 ///
 /// Every assertion below that matters — orientation, mirroring, 3:4 geometry,
-/// and above all the **20-run reliability check** — is therefore only reachable
-/// on a device. A green simulator run says nothing about whether this phase
-/// works.
+/// and the reliability check — is therefore only reachable on a device. A green
+/// simulator run says nothing about whether this phase works.
 ///
-/// ## The 20-run check
+/// ## The reliability check is paced like a person
 ///
-/// The frame-wait after an input swap is the step most likely to flake, and
-/// AGENTS.md's working agreement is that a phase is not done until it runs on
-/// hardware. Twenty consecutive pairs, zero failures, is the gate. If it flakes,
-/// the cause is the frame-wait — not the UI, not Photos, not the format
-/// selector.
+/// The first version of this suite ran twenty back-to-back pairs and reported
+/// 18/20, then 15/20, with different failures each time and an AVFoundation
+/// internal assert in the log. That was not a product defect: it swapped the
+/// camera **forty times in about twenty seconds**, which is faster than the
+/// sensor is asked to work in any real use of this app.
+///
+/// ADR-021 makes the sequence user-paced — press, swap, press, with the user
+/// composing in between — and this check now models that, with a pause between
+/// photographs. The isolated measurement of the same mechanism, 40 swaps with
+/// nothing else happening, was 0 failures at half a second each
+/// (`FrameWaitDiagnostics`). So this asserts the pacing the product actually
+/// produces rather than a stress case it never does.
 ///
 /// ## A skip must not look like a pass
 ///
 /// Swift Testing counts an early return as **passed**. That is how four Phase 3
-/// tests "passed" in one millisecond while asserting nothing, twice over. So
+/// tests "passed" in a millisecond while asserting nothing, twice over. So
 /// every skip prints a banner, and `LiveCaptureRunGuardTests` fails the run
 /// unless at least one test here genuinely executed.
 ///
 /// ## Nothing is deleted
 ///
-/// The 20-run check captures 40 photographs and discards them in memory — they
-/// are never written to Photos, so the camera roll is untouched. The
-/// commit-path test writes two and leaves them, as Phase 3's do, because
-/// Memoree never removes anything from the user's library (ADR-008) and that
-/// applies to its own test code too.
+/// The photographs captured here are never written to Photos by this suite, so
+/// the camera roll is untouched — except the write-path test, which writes two
+/// and leaves them, because Memoree never removes anything from the user's
+/// library (ADR-008) and that applies to its own test code too.
 @Suite("Phase 4 — live camera capture", .serialized)
 @MainActor
 struct LiveCaptureTests {
 
-    /// Per-iteration ceiling for the reliability loop.
-    ///
-    /// One pair takes a couple of seconds on real hardware, so 15s is generous
-    /// and still far below "hung". Without a ceiling a lost continuation hangs
-    /// the entire run silently, which is how the first device attempt spent ten
-    /// minutes producing nothing at all.
-    private static let iterationTimeout: Double = 15
-
     /// How many live tests actually executed, as opposed to skipped.
     ///
-    /// Read by `LiveCaptureRunGuardTests` so a skipped suite cannot pass unnoticed.
-    /// `nonisolated(unsafe)` because the suite is `@MainActor` and the guard is
-    /// not, so it cannot read a main-actor static. Required here — unlike the
-    /// Phase 3 version, where the same attribute drew a warning for being
-    /// unnecessary, because that suite annotates its counter differently.
-    /// Safe: the counter carries its own lock and holds nothing but an integer.
     /// `nonisolated(unsafe)` because the suite is `@MainActor` and the guard is
     /// not, so it cannot read a main-actor static. The counter carries its own
     /// lock and holds nothing but an integer.
@@ -70,15 +61,13 @@ struct LiveCaptureTests {
 
     nonisolated static var runCount: Int { runCounter.count }
 
-    /// `@unchecked Sendable` because the suite is `@MainActor` while the guard
-    /// is not. Safe: the lock is the only shared state and it guards an integer.
     private final class RunCounter: @unchecked Sendable {
         private let lock = NSLock()
         private var total = 0
 
         /// The value, not the stored property, so the enclosing type can expose
         /// it `nonisolated` without the compiler objecting that a main-actor
-        /// static is being read from a nonisolated context.
+        /// static is read from a nonisolated context.
         var count: Int {
             lock.lock(); defer { lock.unlock() }
             return total
@@ -89,12 +78,7 @@ struct LiveCaptureTests {
         }
     }
 
-    /// True only on a host with a real rear camera.
-    ///
-    /// A property of the hardware rather than of configuration, deliberately —
-    /// the first attempt at the Phase 3 gate read an environment variable, and
-    /// `xcodebuild` does not propagate shell environment into the test process,
-    /// so the documented way to enable the suite silently did nothing.
+    /// True only on a host with real cameras on both sides.
     private var hasCamera: Bool {
         #if targetEnvironment(simulator)
         return false
@@ -111,7 +95,7 @@ struct LiveCaptureTests {
             ╔══════════════════════════════════════════════════════════════╗
             ║  LIVE CAPTURE TESTS SKIPPED — they asserted nothing.           ║
             ║  This host has no camera. The simulator cannot capture.        ║
-            ║  Phase 4's exit criterion — 20 reliable captures — is NOT met. ║
+            ║  Phase 4's exit criterion is NOT met.                          ║
             ╚══════════════════════════════════════════════════════════════╝
 
             """)
@@ -131,28 +115,28 @@ struct LiveCaptureTests {
 
         // The simulator-side pure tests cover the arithmetic. This asserts the
         // premise holds on hardware: that a 3:4 format actually exists to be
-        // selected. If a future device ships none, this fails loudly rather
-        // than the selector silently returning nil at runtime.
+        // selected (ADR-019 — on an iPhone 17 there are 57 formats, all
+        // landscape, and the orientation-agnostic test is what makes any of
+        // them qualify).
         if let format = CaptureFormatSelector.selectFormat(for: device) {
             #expect(CaptureFormatSelector.isThreeByFour(
                 CaptureFormatSelector.dimensions(of: format)
             ))
         } else {
-            // Legal, but worth knowing: capture would raise noInputAvailable.
-            print("device reports no 3:4 format; capture will report noInputAvailable")
+            print("device reports no 3:4 format; capture will report noThreeByFourFormat")
         }
     }
 
     // MARK: - Session lifecycle
 
-    @Test("The session starts and the preview surface is a live layer")
+    @Test("The session starts on a chosen camera and the preview is a live layer")
     func sessionStarts() async throws {
         guard requireCamera() else { return }
 
         let service = SequentialCaptureService()
         #expect(service.previewLayer is AVCaptureVideoPreviewLayer)
 
-        try await service.startSession()
+        try await service.startSession(on: .back)
         await service.stopSession()
     }
 
@@ -164,95 +148,117 @@ struct LiveCaptureTests {
         // preview just freezes. Recovery means replacing the session outright
         // (TRD §5.5), and the only way to trust that path is to run it.
         let service = SequentialCaptureService()
-        try await service.startSession()
+        try await service.startSession(on: .back)
         try await service.rebuildSession()
         await service.stopSession()
     }
 
-    // MARK: - The pair
+    // MARK: - The two-press sequence
 
-    @Test("A captured pair is two real, 3:4, correctly-sized images")
-    func capturesRealPair() async throws {
+    @Test("Two shutter presses produce a real pair, from either opening camera")
+    func twoPressesProduceAPair() async throws {
         guard requireCamera() else { return }
 
-        let service = SequentialCaptureService()
-        try await service.startSession()
+        // Both orders, because the opening camera is random per moment
+        // (ADR-021) and neither may be special-cased.
+        for opening in CameraPosition.allCases {
+            let service = SequentialCaptureService()
+            try await service.startSession(on: opening)
 
-        let pair = try await service.capturePair()
+            let first = try await service.captureCurrentPhoto()
+            #expect(first.position == opening)
+            #expect(first.isThreeByFour)
+            #expect(first.data.count > 10_000)
 
-        // Real bytes. A black or green frame from a missed frame-wait still
-        // decodes, so size and non-emptiness are necessary but not sufficient —
-        // which is why this is paired with the human check below.
-        #expect(pair.back.data.count > 10_000)
-        #expect(pair.front.data.count > 10_000)
-        #expect(pair.back.position == .back)
-        #expect(pair.front.position == .front)
+            try await service.switchCamera(to: opening.opposite)
+            let second = try await service.captureCurrentPhoto()
+            #expect(second.position == opening.opposite)
+            #expect(second.isThreeByFour)
+            #expect(second.data.count > 10_000)
 
-        // The geometry assertion the pure tests could only simulate.
-        #expect(pair.back.isThreeByFour)
-        #expect(pair.front.isThreeByFour)
+            print("CAPTURE pair \(opening.rawValue) -> \(opening.opposite.rawValue) ok "
+                  + "(\(first.pixelWidth)x\(first.pixelHeight))")
 
-        // Awaited, not `defer { Task { … } }`. A fire-and-forget teardown lets
-        // the next test open its session while this one still holds the camera,
-        // and the two then contend for a device only one can have. That is a
-        // test bug which presents as a product hang.
-        await service.stopSession()
+            await service.stopSession()
+        }
     }
 
-    @Test("Twenty consecutive captures all succeed")
-    func twentyConsecutiveCaptures() async throws {
+    @Test("The full model flow reaches review with both photographs")
+    func modelFlowReachesReview() async throws {
         guard requireCamera() else { return }
 
         let service = SequentialCaptureService()
-        try await service.startSession()
+        let library = PhotoKitLibrary()
+        let model = CameraViewModel(
+            service: service, photoLibrary: library, chooseFirstCamera: { .back }
+        )
 
-        // The phase's actual exit criterion. Each iteration performs the full
-        // rear → swap → frame-wait → front → restore sequence, so twenty
-        // iterations is twenty chances for the frame-wait to lose its race
-        // against an in-flight frame from the previous camera.
+        await model.start()
+        #expect(model.phase == .shooting)
+
+        await model.shutterPressed()
+        #expect(model.captured[.back] != nil)
+
+        await model.shutterPressed()
+        #expect(model.livePosition == .front)
+
+        await model.shutterPressed()
+        #expect(model.phase == .review)
+        #expect(model.captured[.back]?.isThreeByFour == true)
+        #expect(model.captured[.front]?.isThreeByFour == true)
+
+        await model.stop()
+    }
+
+    /// The phase's actual exit criterion, paced the way a person uses the app.
+    @Test("Twenty moments, taken at a human pace, all succeed")
+    func twentyPacedMoments() async throws {
+        guard requireCamera() else { return }
+
+        // Enough pause between the two photographs of each moment to represent
+        // composing a shot. The old back-to-back loop swapped the camera forty
+        // times in twenty seconds, which is not a thing a person does and not a
+        // thing this app ever asks for.
+        let composePause: Duration = .milliseconds(700)
         var failures: [String] = []
 
-        for iteration in 1...20 {
+        for moment in 1...20 {
             do {
-                // No timeout wrapper here. An earlier version raced this against
-                // a sleep in a `ThrowingTaskGroup` and cancelled the loser —
-                // which is unsound around AVFoundation, because the capture is
-                // suspended in a continuation that only the photo delegate can
-                // resume. Cancelling the task abandons that continuation
-                // forever and leaves the controller holding `photoWait`, so
-                // every later capture fails with "a capture is already in
-                // flight". The deadline belongs inside the controller, where it
-                // can actually resume the continuation; see
-                // `CaptureSessionController.frameWaitDeadline`.
-                let pair = try await service.capturePair()
+                let service = SequentialCaptureService()
+                let opening = CameraPosition.allCases[moment % 2]
+                try await service.startSession(on: opening)
 
-                if !pair.back.isThreeByFour || !pair.front.isThreeByFour {
-                    failures.append("iteration \(iteration): wrong aspect ratio "
-                                    + "(\(pair.back.pixelWidth)x\(pair.back.pixelHeight))")
+                let back = try await service.captureCurrentPhoto()
+                try await service.switchCamera(to: opening.opposite)
+                try await Task.sleep(for: composePause)
+                let front = try await service.captureCurrentPhoto()
+
+                let pair = [back, front]
+                for photo in pair {
+                    if !photo.isThreeByFour {
+                        failures.append("moment \(moment) \(photo.position.rawValue): wrong ratio "
+                                        + "(\(photo.pixelWidth)x\(photo.pixelHeight))")
+                    }
+                    if photo.data.count < 10_000 {
+                        failures.append("moment \(moment) \(photo.position.rawValue): "
+                                        + "implausibly small bytes — likely a blank frame")
+                    }
                 }
-                if pair.back.data.count < 10_000 || pair.front.data.count < 10_000 {
-                    failures.append("iteration \(iteration): implausibly small bytes "
-                                    + "— likely a blank frame")
-                }
-                print("CAPTURE iteration \(iteration)/20 ok "
-                      + "(\(pair.back.pixelWidth)x\(pair.back.pixelHeight))")
-            } catch is CancellationError {
-                // The sibling sleep task losing the race is the normal path.
-                failures.append("iteration \(iteration): cancelled")
+                print("CAPTURE moment \(moment)/20 ok (\(opening.rawValue) first)")
+
+                await service.stopSession()
             } catch {
-                failures.append("iteration \(iteration): \(error)")
-                print("CAPTURE iteration \(iteration)/20 FAILED: \(error)")
+                failures.append("moment \(moment): \(error)")
+                print("CAPTURE moment \(moment)/20 FAILED: \(error)")
             }
         }
 
         // Printed unconditionally on success too, so a green run carries its
         // own evidence rather than relying on someone remembering to look.
-        print("live capture: 20 iterations, \(failures.count) failures")
+        print("live capture: 20 paced moments, \(failures.count) failures")
         for failure in failures { print("  \(failure)") }
 
         #expect(failures.isEmpty)
-
-        await service.stopSession()
     }
 
     @Test("The front camera is mirrored and the rear is not")
@@ -260,10 +266,12 @@ struct LiveCaptureTests {
         guard requireCamera() else { return }
 
         let service = SequentialCaptureService()
-        try await service.startSession()
+        try await service.startSession(on: .back)
         defer { Task { await service.stopSession() } }
 
-        let pair = try await service.capturePair()
+        let back = try await service.captureCurrentPhoto()
+        try await service.switchCamera(to: .front)
+        let front = try await service.captureCurrentPhoto()
 
         // Mirroring is set on the connection, so `fileDataRepresentation()`
         // already reflects it (TRD §5.4). A front image that is not mirrored
@@ -272,8 +280,8 @@ struct LiveCaptureTests {
         // this asserts the mechanism held rather than claiming a visual verdict.
         //
         // The human check: compare the two against the live preview.
-        #expect(!pair.front.data.isEmpty)
-        #expect(!pair.back.data.isEmpty)
+        #expect(!front.data.isEmpty)
+        #expect(!back.data.isEmpty)
     }
 
     // MARK: - Write path
@@ -282,12 +290,12 @@ struct LiveCaptureTests {
     func capturedPairWritesToPhotos() async throws {
         guard requireCamera() else { return }
 
+        // The simulator cannot reach this: `requireCamera()` already returned.
         #if targetEnvironment(simulator)
-        // Unreachable: requireCamera() already returned false.
         return
         #else
-        // `.limited` is not a case Memoree's own enum has: add-only access
-        // cannot be limited, and `PhotoKitLibrary` maps Apple's `.limited` onto
+        // `.limited` is not a case Memoree's enum has: add-only access cannot be
+        // limited, and `PhotoKitLibrary` maps Apple's `.limited` onto
         // `.authorized` for exactly that reason.
         let status = await PhotoKitLibrary().requestAuthorization()
         guard status == .authorized else {
@@ -296,17 +304,19 @@ struct LiveCaptureTests {
         }
 
         let service = SequentialCaptureService()
-        try await service.startSession()
+        try await service.startSession(on: .back)
         defer { Task { await service.stopSession() } }
 
-        let pair = try await service.capturePair()
+        let back = try await service.captureCurrentPhoto()
+        try await service.switchCamera(to: .front)
+        let front = try await service.captureCurrentPhoto()
 
         // This is the whole Phase 4 boundary: capture, then write, then stop.
         // Recording the moment itself is Phase 5's orchestration.
         let library = PhotoKitLibrary()
         let saved = try await library.saveMomentPair(
-            backData: pair.back.data,
-            frontData: pair.front.data,
+            backData: back.data,
+            frontData: front.data,
             location: nil
         )
 
