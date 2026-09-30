@@ -92,18 +92,34 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
     func capturePair() async throws -> CapturedPair {
         try Task.checkCancellation()
 
-        // Steps 1-2. The rear camera is the default input, so no swap is needed.
-        let back = try await controller.capturePhoto(at: .back)
+        do {
+            // Steps 1-2. The rear camera is the default input, so no swap is
+            // needed.
+            let back = try await controller.capturePhoto(at: .back)
 
-        // Steps 3-7. Swap and wait for a real delivered frame.
-        try await controller.swapInput(to: .front)
+            // Steps 3-7. Swap and wait for a real delivered frame.
+            try await controller.swapInput(to: .front)
 
-        // Steps 8-9.
-        let front = try await controller.capturePhoto(at: .front)
+            // Steps 8-9.
+            let front = try await controller.capturePhoto(at: .front)
 
-        // Step 10. Restore, best-effort.
-        try? await controller.swapInput(to: .back)
+            // Step 10. Restore, best-effort.
+            try? await controller.swapInput(to: .back)
 
-        return CapturedPair(back: back, front: front)
+            return CapturedPair(back: back, front: front)
+        } catch {
+            // A failed pair leaves the session mid-swap, and a session
+            // mid-swap is not reliably reusable: the first device run showed
+            // one `noDeliveredFrame` on the front camera followed by
+            // `noInputAvailable` on the back camera for every remaining
+            // attempt. Rebuilding costs a fraction of a second and is the
+            // documented recovery for a session in a bad state (TRD §5.5).
+            //
+            // Best-effort and swallowed: the original error is the one worth
+            // reporting, and a failure to rebuild must not replace it with a
+            // second, less accurate one.
+            try? await controller.rebuildSession()
+            throw error
+        }
     }
 }

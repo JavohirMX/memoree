@@ -214,20 +214,17 @@ struct LiveCaptureTests {
 
         for iteration in 1...20 {
             do {
-                // Per-iteration timeout. Without it a lost continuation hangs
-                // the run with no output, and the log's last line is just the
-                // previous iteration — indistinguishable from a slow device. A
-                // timeout turns "hung" into a named, located failure.
-                let pair = try await withThrowingTaskGroup(of: CapturedPair.self) { group in
-                    group.addTask { try await service.capturePair() }
-                    group.addTask {
-                        try await Task.sleep(for: .seconds(Self.iterationTimeout))
-                        throw CaptureError.noDeliveredFrame(.front)
-                    }
-                    let first = try await group.next()!
-                    group.cancelAll()
-                    return first
-                }
+                // No timeout wrapper here. An earlier version raced this against
+                // a sleep in a `ThrowingTaskGroup` and cancelled the loser —
+                // which is unsound around AVFoundation, because the capture is
+                // suspended in a continuation that only the photo delegate can
+                // resume. Cancelling the task abandons that continuation
+                // forever and leaves the controller holding `photoWait`, so
+                // every later capture fails with "a capture is already in
+                // flight". The deadline belongs inside the controller, where it
+                // can actually resume the continuation; see
+                // `CaptureSessionController.frameWaitDeadline`.
+                let pair = try await service.capturePair()
 
                 if !pair.back.isThreeByFour || !pair.front.isThreeByFour {
                     failures.append("iteration \(iteration): wrong aspect ratio "

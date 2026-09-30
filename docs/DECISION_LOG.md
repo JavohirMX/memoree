@@ -597,6 +597,63 @@ reports that distinctly.
 
 ---
 
+## ADR-020 — Deadlines live in the capture controller, not in a racing sibling task
+
+**Status:** Accepted · **Date:** 2026-09-30
+
+**Context.** The first hardware reliability run hung for ten minutes producing
+no output. The frame-wait is a `CheckedContinuation` resumed only by an
+`AVCaptureVideoDataOutput` callback; if that callback never arrives, the
+continuation never resumes and the wait has no timeout at all.
+
+The obvious fix is to race the wait against a sleep in a `ThrowingTaskGroup` and
+cancel the loser. **That is unsound here, and it was tried before it was
+understood.** Cancelling the capture task abandons a continuation that only the
+AVFoundation delegate can resume — the task is gone, so nothing will ever resume
+it — and the controller keeps `photoWait` set, after which every subsequent
+capture fails with "a capture is already in flight". The controller ends up
+permanently wedged rather than merely slow, so a timeout intended to *diagnose*
+a hang becomes the cause of one.
+
+**Decision.** Deadlines are scheduled **on the session queue, inside the arming
+block**, and they resume the same continuation:
+
+```swift
+queue.async {
+    self.frameWait = FrameWait(generation: self.generation, continuation: armed)
+    queue.asyncAfter(deadline: .now() + Self.frameWaitTimeout) {
+        guard let wait = self.frameWait, wait.generation == armedGeneration else { return }
+        self.frameWait = nil
+        wait.continuation.resume(throwing: .noDeliveredFrame(self.activePosition))
+    }
+}
+```
+
+Whichever of frame or deadline lands first clears the stored wait, so the other
+becomes a no-op. The captured `generation` is what stops a late deadline from
+stealing a *subsequent* wait's continuation. `capturePhoto` has the same
+deadline, because the photo delegate is an equally external callback and
+"normally prompt" is not a guarantee.
+
+**Consequences.**
+- A lost callback becomes a named, retryable error instead of a hang. The first
+  run after this change reported `noDeliveredFrame(.front)` in 12.8 seconds
+  where before it produced nothing at all — which is precisely what made the
+  *next* bug diagnosable.
+- The test keeps its per-iteration prints but no longer wraps captures in a task
+  group. The progress output was worth keeping; the cancellation was not.
+- A hung test and a slow device are now distinguishable, which they were not.
+
+**Alternatives rejected.** Racing task group — described above; it converts a
+diagnosable hang into a permanent wedge. A detached `asyncAfter` with no
+cancellation, which is the whole problem. Letting a hang hang — a suite that can
+stall indefinitely is a suite nobody trusts to report.
+
+**Reversal trigger.** None foreseeable. If AVFoundation grew a first-class
+completion-handler timeout, the manual deadline could be replaced by it.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

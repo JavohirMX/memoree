@@ -61,7 +61,23 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// shortening it produces a flaky one. A real sensor delivers in
     /// milliseconds; 2s is roughly a thousand times that, so this is a
     /// backstop against a genuinely dead input rather than a timing assumption.
+    ///
+    /// Implemented as a deadline **inside** the session queue, not as a
+    /// cancellable sibling task. A `ThrowingTaskGroup` racing this wait and
+    /// cancelling the loser cannot work: the wait is a continuation resumed
+    /// only by a frame arriving on the video-output queue, so cancelling the
+    /// task abandons it and the caller never returns. A deadline scheduled on
+    /// the same queue that arms the wait can resume it exactly once, whichever
+    /// of frame-or-deadline arrives first.
     private static let frameWaitTimeout: TimeInterval = 2.0
+
+    /// How long to wait for a photo delegate to call back.
+    ///
+    /// Same reasoning as `frameWaitTimeout`. `AVCapturePhotoOutput` normally
+    /// calls back promptly, including on failure, but "normally" is not a
+    /// guarantee, and an un-resumed continuation hangs the app rather than
+    /// failing it.
+    private static let photoWaitTimeout: TimeInterval = 10.0
 
     /// How long to wait for the session to stop after `stopSession`.
     private static let stopTimeout: TimeInterval = 1.0
@@ -276,7 +292,9 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     return
                 }
 
-                let settings = Self.photoSettings(for: position)
+                // From the attached input, not a fresh device lookup — see
+                // `photoSettings(for:device:)`.
+                let settings = Self.photoSettings(for: position, device: activeInput?.device)
 
                 // A fresh delegate per capture, released immediately after.
                 // Reusing one would retain the session through the delegate
@@ -290,6 +308,25 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                 pendingPhotoDelegate = delegate
                 photoWait = PhotoWait(position: position, continuation: continuation)
                 photoOutput.capturePhoto(with: settings.settings, delegate: delegate)
+
+                // Deadline, for the same reason as the frame wait: the photo
+                // delegate is an external callback and "normally prompt" is not
+                // a guarantee. Without this, a delegate that never fires leaves
+                // `photoWait` set, and every subsequent capture fails with
+                // "a capture is already in flight" — the controller is then
+                // permanently wedged rather than merely slow.
+                queue.asyncAfter(deadline: .now() + Self.photoWaitTimeout) {
+                    // Position identifies the wait: `photoWait` is only ever
+                    // nil-or-mine while this capture is in flight, and a
+                    // deadline firing after a later capture began must not
+                    // steal that one.
+                    guard let wait = self.photoWait, wait.position == position else { return }
+                    self.photoWait = nil
+                    self.pendingPhotoDelegate = nil
+                    wait.continuation.resume(
+                        throwing: CaptureError.photoDataUnavailable(position)
+                    )
+                }
             }
         }
     }
@@ -331,6 +368,24 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     return
                 }
                 self.frameWait = FrameWait(generation: self.generation, continuation: armed)
+
+                // The deadline, armed on the same queue as the wait and
+                // resuming it exactly once. Whichever of frame or deadline
+                // lands first clears `frameWait`, so the other becomes a no-op
+                // rather than a double-resume. The `generation` check is what
+                // distinguishes "my wait" from a later one: `frameWait` is only
+                // ever nil-or-mine at this point, and a deadline that fires
+                // after a *subsequent* wait was armed must not steal it.
+                let armedGeneration = self.generation
+                queue.asyncAfter(deadline: .now() + Self.frameWaitTimeout) {
+                    guard let wait = self.frameWait,
+                          wait.generation == armedGeneration
+                    else { return }
+                    self.frameWait = nil
+                    wait.continuation.resume(throwing: CaptureError.noDeliveredFrame(
+                        self.activePosition
+                    ))
+                }
             }
         }
     }
@@ -412,13 +467,22 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
         let input = try AVCaptureDeviceInput(device: device)
 
+        // `canAddInput` is checked **before** the old input is removed.
+        //
+        // The order matters enormously. An earlier version removed first and
+        // checked second, so a refused input left the session holding *no*
+        // input at all — and because a session without an input cannot be
+        // brought back by trying again, every later capture failed with
+        // `noInputAvailable` forever. One bad swap destroyed the session. A
+        // refused swap now leaves the session exactly as it was, which is the
+        // difference between one failed capture and a permanently broken camera.
+        guard session.canAddInput(input) else {
+            throw CaptureError.noInputAvailable(position)
+        }
+
         session.beginConfiguration()
         if let existing = activeInput {
             session.removeInput(existing)
-        }
-        guard session.canAddInput(input) else {
-            session.commitConfiguration()
-            throw CaptureError.noInputAvailable(position)
         }
         session.addInput(input)
         session.commitConfiguration()
@@ -501,17 +565,35 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         let dimensions: CMVideoDimensions
     }
 
-    private static func photoSettings(for position: CameraPosition) -> PhotoSettings {
+    /// Builds photo settings from the input that is **actually attached**.
+    ///
+    /// The dimensions must come from the active input's `activeFormat`, not
+    /// from a fresh device lookup. `maxPhotoDimensions` is documented as:
+    /// "The dimensions set must match one of the dimensions returned by
+    /// `AVCaptureDeviceFormat.supportedMaxPhotoDimensions` for the currently
+    /// configured format." A second lookup returns a *different*
+    /// `AVCaptureDevice` whose widest-3:4 format is not necessarily the one
+    /// `applyFormat` put on the attached input — and when it is not, every
+    /// capture fails with "Cannot Record". That is exactly what the first
+    /// device run showed: iteration 1 succeeded, then all 19 after it failed.
+    ///
+    /// Left unset when the active format does not advertise these dimensions,
+    /// so the output falls back to its own default rather than being handed an
+    /// invalid request.
+    private static func photoSettings(
+        for position: CameraPosition,
+        device: AVCaptureDevice?
+    ) -> PhotoSettings {
         let settings = AVCapturePhotoSettings()
         settings.photoQualityPrioritization = .speed
 
-        // `maxPhotoDimensions` replaced the deprecated
-        // `isHighResolutionPhotoEnabled` on iOS 16 (TRD §5.3). Left at the
-        // output default when no 3:4 format was found, since a zero-sized
-        // maximum is meaningless and would fail at capture time rather than
-        // here.
-        guard let device = CaptureFormatSelector.wideAngleDevice(for: position),
-              let format = CaptureFormatSelector.selectFormat(for: device)
+        guard let device,
+              let activeFormat = device.formats.first(where: {
+                  CaptureFormatSelector.matches(
+                      CaptureFormatSelector.dimensions(of: $0),
+                      CaptureFormatSelector.dimensions(of: device.activeFormat)
+                  )
+              })
         else {
             return PhotoSettings(
                 settings: settings,
@@ -519,8 +601,22 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             )
         }
 
-        let dimensions = CaptureFormatSelector.dimensions(of: format)
-        settings.maxPhotoDimensions = dimensions
+        // The recorded dimensions are always the active format's, whether or
+        // not the request is set — `CapturedPhoto.isThreeByFour` asserts on
+        // them, and reporting zero for a format that was simply not eligible
+        // for `maxPhotoDimensions` would fail a capture that actually
+        // succeeded.
+        let dimensions = CaptureFormatSelector.dimensions(of: activeFormat)
+
+        // Only *request* these dimensions if the active format advertises them
+        // as a supported max photo size. The format's own resolution and its
+        // supported max photo dimensions are related but not identical.
+        if activeFormat.supportedMaxPhotoDimensions.contains(where: {
+            CaptureFormatSelector.matches($0, dimensions)
+        }) {
+            settings.maxPhotoDimensions = dimensions
+        }
+
         return PhotoSettings(settings: settings, dimensions: dimensions)
     }
 
