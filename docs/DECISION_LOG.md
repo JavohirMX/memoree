@@ -460,6 +460,65 @@ correctly, the derived property remains the better model. No reason to restore t
 
 ---
 
+## ADR-018 — The camera preview crosses the layer boundary as a `CALayer`
+
+**Status:** Accepted · **Date:** 2026-09-30
+
+**Context.** Two rules in AGENTS.md are in tension once a camera exists:
+
+- §3: "`Features/` contains SwiftUI views and view models only. No AVFoundation, no PhotoKit."
+- §7: a live preview must be on screen, because a camera you cannot see is not a camera.
+
+Both are load-bearing. Dropping either is unacceptable: the first is what keeps camera *logic*
+out of the view layer, the second is the product.
+
+The naive resolutions both fail. A `UIViewRepresentable` in `Features/Camera/` that constructs
+an `AVCaptureVideoPreviewLayer` violates the import rule outright. Moving the representable into
+`Services/` to preserve the import rule violates §3's other half — `Services/` must not import
+SwiftUI — and leaves a service returning views, which is the exact inversion the layering exists
+to prevent.
+
+**Decision.** The service owns the `AVCaptureVideoPreviewLayer` and exposes it as a plain
+`CALayer`. `Features/` wraps that layer in a `UIViewRepresentable` that imports only SwiftUI and
+QuartzCore. AVFoundation never crosses into `Features/`; SwiftUI never crosses into `Services/`.
+
+```swift
+// Services/Capture — imports AVFoundation, not SwiftUI
+protocol CapturePhotoService: AnyObject {
+    /// The live preview surface. Typed as `CALayer` so that Features can
+    /// install it without importing AVFoundation.
+    var previewLayer: CALayer { get }
+}
+
+// Features/Camera — imports SwiftUI and QuartzCore, not AVFoundation
+struct CameraPreview: UIViewRepresentable {
+    let layer: CALayer
+    func makeUIView(context: Context) -> PreviewContainer { PreviewContainer(layer: layer) }
+}
+```
+
+`PreviewContainer` overrides `layerClass` so the captured layer is installed directly rather than
+copied — a `CALayer` cannot be reparented, so this is the only way to display it.
+
+**Consequences.**
+- The layering rule survives with no exception carved out, unlike the `PhotoKitLibrary` and
+  `SequentialCaptureService` carve-outs already in AGENTS.md §3.
+- The service decides `videoGravity` and mirroring, because those are capture concerns.
+  The view only decides where the layer sits.
+- `UIViewRepresentable.updateUIView` does nothing. The layer is a live capture surface; swapping
+  or reparenting it mid-session is a bug, not an update.
+
+**Alternatives rejected.** A representable in `Features/` importing AVFoundation — a blanket
+exception to §3 that would license importing any framework anywhere. A service returning a SwiftUI
+view — inverts the dependency and makes the capture layer untestable without a view host. A
+snapshot-based "preview" polled into an `Image` — discards the live surface, adds a frame-copy
+per tick, and is not a preview at all.
+
+**Reversal trigger.** If Apple introduces a preview API that is itself layer-agnostic, revisit
+the wrapper. The ownership rule — the service owns the surface — does not change.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:
