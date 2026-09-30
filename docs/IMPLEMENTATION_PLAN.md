@@ -68,18 +68,26 @@ plausible, stable time. Relaunch five times; the time does not move.
 
 ---
 
-## Phase 2 — Streaks
+## Phase 2 — Streaks ✅
 
 Pure functions; should be quick.
 
 | Task | Notes |
 | --- | --- |
-| `StreakCalculator` | Current, longest, broken days, on-time percentage |
+| `MomentFacts` | Immutable snapshot; the boundary between SwiftData and the arithmetic |
+| `StreakCalculator` | Current, longest, missed days, and the full `StreakSummary` |
 | Table-driven tests | DST boundary, month rollover, delete-recompute, "today is not yet a miss" |
-| `StreakRecord` persistence | Recompute on read rather than maintaining incrementally — one fewer thing to get wrong |
+| `MomentStore.summary()` | Maps managed objects to facts; recomputes on read, caches nothing |
 
-**Exit:** unit tests green against a hand-built fixture table.
-**Estimate:** half a day.
+**Exit:** unit tests green against a hand-built fixture table. **Done — 77 tests pass.**
+
+**The bug this phase caught.** The first implementation of `currentStreak` took only
+`onTimeDays` and treated "not on time today" as one case. That conflates *late today* (breaks
+the streak, ADR-009) with *nothing captured today* (does not break it, ADR-010), and returned
+`1` instead of `0` for a late capture sitting on top of a perfect week. Found by executing the
+arithmetic before writing the formal suite, which is the argument for doing exactly that.
+
+**Estimate:** half a day. **Actual:** half a day.
 
 ---
 

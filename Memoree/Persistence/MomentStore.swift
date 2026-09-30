@@ -60,6 +60,59 @@ final class MomentStore {
 
     var hasAnyMoment: Bool { !allMoments.isEmpty }
 
+    /// Tombstoned moments — deleted from the archive but still on disk.
+    ///
+    /// Retained rather than erased so that a future "deleted moments" view can
+    /// show what was removed, and so the Photos asset identifiers survive for
+    /// reference. Memoree still never touches the user's library (ADR-008).
+    var tombstonedMoments: [Moment] {
+        let descriptor = FetchDescriptor<Moment>(
+            predicate: #Predicate { $0.isDeleted },
+            sortBy: [SortDescriptor(\.deletedAt, order: .reverse)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Every persisted day record, for diagnostics and the horizon view.
+    var allDayRecords: [DayRecord] {
+        let descriptor = FetchDescriptor<DayRecord>(
+            sortBy: [SortDescriptor(\.dayIdentifier)]
+        )
+        return (try? context.fetch(descriptor)) ?? []
+    }
+
+    /// Immutable snapshots for the statistics layer.
+    ///
+    /// Tombstoned moments are excluded, which is what makes deleting a moment
+    /// recompute the streak immediately (ADR-008): the row stops being visible
+    /// to the calculator without any cached value needing invalidating.
+    func facts() -> [MomentFacts] {
+        allMoments.map { moment in
+            MomentFacts(
+                id: moment.id,
+                day: DayIdentifier(string: moment.dayIdentifier, calendar: calendar)
+                    ?? DayIdentifier(date: moment.capturedAt, calendar: calendar),
+                isOnTime: !moment.isLate,
+                capturedAt: moment.capturedAt,
+                retakeCount: moment.retakeCount,
+                hasBTS: moment.hasBTS
+            )
+        }
+    }
+
+    /// Every statistic the app displays, computed fresh from the archive.
+    ///
+    /// Nothing is cached. A stored counter is one more thing that can drift out
+    /// of agreement with the moments it summarises, and the recompute is
+    /// microseconds over a few thousand rows.
+    func summary(today: DayIdentifier? = nil) -> StreakSummary {
+        StreakCalculator.summary(
+            facts: facts(),
+            today: today ?? DayIdentifier(date: Date(), calendar: calendar),
+            calendar: calendar
+        )
+    }
+
     // MARK: - Writing
 
     /// Records a captured moment, replacing any existing moment for that day.
@@ -101,7 +154,7 @@ final class MomentStore {
             hasLocation: location != nil,
             latitude: location?.latitude,
             longitude: location?.longitude,
-            note: note,
+            note: Self.normalizedNote(note),
             hasBTS: hasBTS,
             btsAssetIdentifier: btsAssetIdentifier,
             backAssetIdentifier: backAssetIdentifier,
@@ -133,9 +186,17 @@ final class MomentStore {
     }
 
     func updateNote(_ note: String?, for moment: Moment) throws {
-        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
-        moment.note = (trimmed?.isEmpty ?? true) ? nil : trimmed
+        moment.note = Self.normalizedNote(note)
         try save()
+    }
+
+    /// Trims a note and treats an empty or whitespace-only note as absent.
+    ///
+    /// Shared by `record` and `updateNote` so a note entered at capture time and
+    /// one edited later are normalised identically.
+    private static func normalizedNote(_ note: String?) -> String? {
+        let trimmed = note?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return (trimmed?.isEmpty ?? true) ? nil : trimmed
     }
 
     /// Tombstones a moment.

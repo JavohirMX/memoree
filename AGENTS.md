@@ -149,6 +149,9 @@ Established facts. Re-deriving these wastes days.
 
 - **Pure logic gets unit tests, exhaustively.** The scheduler (golden HMAC vectors), streaks
   (table-driven), day identifiers (DST and timezone round-trips), state resolution.
+- **Streak and statistics arithmetic operates on value types, never on SwiftData models.**
+  `Moment` is not `Sendable`, and a managed object's fields can change underneath a pure
+  function. Snapshots (`MomentFacts`) are the boundary; `MomentStore` does the mapping.
 - **Every service protocol has a test double.** UI tests use them; no test should need a real
   camera or a real photo library.
 - **Device-only behaviour is documented as such** in the test name, so nobody wastes an hour

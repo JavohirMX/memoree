@@ -471,30 +471,50 @@ If an asset identifier no longer resolves, tombstone the moment and render a
 
 ## 7. Streaks
 
-`StreakCalculator` is **pure functions over `[Moment]`**, no SwiftData, no dates fetched
-implicitly. This is what makes it exhaustively testable.
+`StreakCalculator` is **pure functions over value types** — no SwiftData, no clock, no side
+effects. This is what makes it exhaustively testable and free of isolation ceremony.
+
+The input is `[MomentFacts]`, an immutable snapshot reduced to the fields the statistics need.
+Not `[Moment]` directly, for two reasons: `Moment` is a managed object whose fields can change
+behind the calculator's back, and `Moment` is not `Sendable` while `Set<DayIdentifier>` is.
 
 ```swift
 enum StreakCalculator {
-    /// Consecutive days ending today (or yesterday, if today has no post yet)
-    /// that contain at least one *on-time* moment.
-    static func currentStreak(moments: [Moment], today: DateIdentifier, calendar: Calendar) -> Int
+    /// Consecutive days with an on-time moment, walking back from today.
+    ///
+    /// Three cases for today, and conflating any two is the bug this exists to avoid:
+    ///   1. on-time today -> count it
+    ///   2. late today    -> return 0; the run is already broken (ADR-009)
+    ///   3. nothing today -> walk from yesterday; the run stands (ADR-010)
+    static func currentStreak(
+        onTimeDays: Set<DayIdentifier>,
+        capturedDays: Set<DayIdentifier>,
+        today: DayIdentifier,
+        calendar: Calendar
+    ) -> Int
 
-    static func longestStreak(moments: [Moment], calendar: Calendar) -> Int
+    static func longestStreak(onTimeDays: Set<DayIdentifier>, calendar: Calendar) -> Int
 
-    /// Days with no on-time moment. A late-only day counts as a break (ADR-009).
-    static func brokenDays(moments: [Moment], calendar: Calendar) -> Set<DateIdentifier>
+    static func missedDays(capturedDays: Set<DayIdentifier>, today: DayIdentifier, calendar: Calendar) -> Int
+
+    static func summary(facts: [MomentFacts], today: DayIdentifier, calendar: Calendar) -> StreakSummary
 }
 ```
 
-Two rules that are easy to get wrong and are therefore pinned by tests:
+`MomentStore.summary()` bridges the two: it maps managed objects to facts and calls through.
+Nothing is cached — a stored counter is one more thing that can drift out of agreement with the
+archive, and the recompute is microseconds over a few thousand rows.
 
-1. **The streak does not break until the day has actually passed.** If it is 09:00 and the
-   moment window is 11:00–23:00, an unposted *today* is not a miss. Only strictly past days
-   break the streak. Otherwise the streak visibly resets every morning and rebuilds by evening,
-   which would be maddening.
-2. **Deleted moments recompute.** Deleting today's on-time moment resets the streak
-   immediately, because there is no moment left to justify it.
+Three rules that are easy to get wrong and are therefore pinned by tests:
+
+1. **A late-only day breaks the streak.** The day is archived and badged, but it does not let
+   an older run survive underneath it (ADR-009). Returning `1` here — by walking back to a
+   yesterday that *was* on time — is the specific failure mode the tests guard against.
+2. **The streak does not break until the day has actually passed.** An unposted *today* is not
+   a miss, whatever time it is. Otherwise the streak visibly resets every morning and rebuilds
+   by evening (ADR-010).
+3. **Deleted moments recompute.** Tombstoning removes the row from `allMoments`, so the streak
+   falls immediately with no cache invalidation step.
 
 ## 8. App states
 
