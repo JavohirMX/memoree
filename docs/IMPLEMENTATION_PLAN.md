@@ -213,8 +213,17 @@ will consume the most time and you want the remaining phases to be uneventful.
 > xcodebuild test -project Memoree.xcodeproj -scheme Memoree \
 >   -destination 'platform=iOS,id=<your device>' \
 >   -only-testing:MemoreeTests/LiveCaptureTests \
->   -allowProvisioningUpdates DEVELOPMENT_TEAM=<your team>
+>   -allowProvisioningUpdates DEVELOPMENT_TEAM=<your team> \
+>   -collect-test-diagnostics never
 > ```
+>
+> **Always pass `-collect-test-diagnostics never`.** When a test fails, xcodebuild collects a
+> verbose sysdiagnose from the host before exiting. On a simulator or a device that step hangs
+> indefinitely with no output, and the run must be killed — which reports `BUILD INTERRUPTED`
+> and destroys the exit code that would have said the run had finished. It reads exactly like a
+> frozen test run, and it cost real time in Phase 4, because the tests are long since over: the
+> entire simulator suite executes in **0.3 seconds** and the whole invocation in **2**. A
+> missing sysdiagnose is worth nothing at this stage; a run that cannot be trusted to exit is.
 >
 > The 20-run reliability test is the gate. It prints its iteration count and every failure
 > unconditionally, so a pass carries its own evidence.

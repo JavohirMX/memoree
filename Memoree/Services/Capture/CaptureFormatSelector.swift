@@ -22,15 +22,17 @@ enum CaptureFormatSelector {
 
     /// Portrait 3:4 — the geometry BeReal publishes and the camera roll is
     /// overwhelmingly full of, so saved assets sit naturally in the library.
+    ///
+    /// Expressed as **short side over long side**, so it is independent of
+    /// which way round the sensor reports. See `isThreeByFour` for why that
+    /// matters more than it looks.
     static let targetRatio: Double = 3.0 / 4.0
 
     /// How far from exactly 3:4 a format may be and still qualify.
     ///
-    /// Real sensors do not land on 0.75 exactly; 1512×2016 is 0.75, but
-    /// 1440×1920 is 0.75 and 1080×1440 is 0.75, while some report 0.749 or
-    /// 0.751 after rounding. Two percent is loose enough to admit those and
-    /// tight enough to exclude 4:3 (0.75 vs 0.75 — same thing) and 16:9
-    /// (1.333, 78% away) decisively.
+    /// Real sensors do not land on 0.75 exactly; some report 0.749 or 0.751
+    /// after rounding. Two percent is loose enough to admit those and tight
+    /// enough to exclude 16:9 (0.5625 — 25% away) decisively.
     static let ratioTolerance: Double = 0.02
 
     /// The minimum frame rate to require of a format.
@@ -68,19 +70,36 @@ enum CaptureFormatSelector {
             }
     }
 
-    /// Whether these dimensions are portrait 3:4 within tolerance.
+    /// Whether these dimensions are 3:4, **in either orientation**.
     ///
-    /// Portrait only. A landscape 4:3 sensor rotated 90° is the same
-    /// photograph, but `fileDataRepresentation()` applies the orientation
-    /// itself, so accepting a landscape format here would yield a photo whose
-    /// stored orientation disagrees with its pixels.
+    /// ## Why orientation is deliberately ignored
+    ///
+    /// A camera sensor is natively **landscape**. On an iPhone 17 the rear
+    /// wide angle reports 4032×3024, 3264×2448, 1920×1440 and so on — every one
+    /// of them wider than tall, and **not one portrait format among the 57**.
+    /// Portrait orientation is applied at capture time and recorded as the
+    /// EXIF orientation tag; `fileDataRepresentation()` carries it, and Photos
+    /// applies it on display.
+    ///
+    /// An earlier version of this function required `width < height`, on the
+    /// reasoning that accepting a landscape format "would yield a photo whose
+    /// stored orientation disagrees with its pixels". That is exactly backwards:
+    /// the stored orientation is *supposed* to disagree with the raw sensor
+    /// grid, because that is how a portrait photograph comes out of a landscape
+    /// sensor. The consequence was that `selectFormat` returned `nil` for every
+    /// real iPhone, and capture failed with `noInputAvailable` on hardware while
+    /// every simulator test passed — because the tests constructed their own
+    /// portrait `CMVideoDimensions` and so encoded the same wrong assumption
+    /// they were meant to check.
+    ///
+    /// Comparing short side over long side makes the test orientation-agnostic:
+    /// 4032×3024 and 3024×4032 both reduce to 0.75, while 1920×1080 reduces to
+    /// 0.5625 and is rejected just as firmly.
     static func isThreeByFour(_ dimensions: CMVideoDimensions) -> Bool {
-        guard dimensions.height > 0, dimensions.width > 0 else { return false }
-        // A landscape 3:4 is 4:3, not 3:4. Rejecting it here is what keeps
-        // orientation handling in one place.
-        guard dimensions.width < dimensions.height else { return false }
-        let ratio = Double(dimensions.width) / Double(dimensions.height)
-        return abs(ratio - targetRatio) <= ratioTolerance
+        guard dimensions.width > 0, dimensions.height > 0 else { return false }
+        let longSide = Double(max(dimensions.width, dimensions.height))
+        let shortSide = Double(min(dimensions.width, dimensions.height))
+        return abs(shortSide / longSide - targetRatio) <= ratioTolerance
     }
 
     static func area(of dimensions: CMVideoDimensions) -> Int {

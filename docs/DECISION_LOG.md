@@ -519,6 +519,84 @@ the wrapper. The ownership rule — the service owns the surface — does not ch
 
 ---
 
+## ADR-019 — A camera's native landscape format is the correct 3:4 format
+
+**Status:** Accepted · **Date:** 2026-09-30 · **Found by running on hardware, not by a test**
+
+**Context.** Phase 4's first device run failed five tests with
+`noInputAvailable(.back)` on a healthy iPhone 17 — while the test immediately
+before them, which calls the same device lookup, passed. The contradiction was
+the clue. A `CameraDiagnostics` suite printed the state:
+
+```
+DIAG authorizationStatus(for: .video) = 3      // authorized
+DIAG wideAngle back  = present
+DIAG AVCaptureDeviceInput opened OK; ports = 7
+DIAG formats total=57 threeByFour=0
+DIAG distinct dimensions (14):
+DIAG   1024x768   1280x720   1440x1080   1920x1080
+DIAG   1920x1440  192x144    2592x1944   3264x2448
+DIAG   352x288    3840x2160  4032x3024   480x360
+DIAG   640x480    960x540
+```
+
+**Every format is landscape. There is not one portrait format among the 57.**
+
+**The defect.** `CaptureFormatSelector.isThreeByFour` required
+`width < height`, rejecting landscape formats on the reasoning that accepting
+one "would yield a photo whose stored orientation disagrees with its pixels."
+
+That reasoning was exactly backwards. A sensor is natively landscape; portrait
+orientation is applied at capture and recorded as the **EXIF orientation tag**,
+which `fileDataRepresentation()` carries and Photos applies on display. The
+stored orientation is *supposed* to disagree with the raw sensor grid — that is
+precisely how a portrait photograph emerges from a landscape sensor. So the
+selector rejected every format on every real iPhone, and `selectFormat` returned
+`nil` for all 57.
+
+**Why twelve passing tests did not catch it.** The pure function was the right
+design — it is testable without a camera, which is the only way to test it at
+all. But its fixtures were hand-written `CMVideoDimensions` with portrait
+values, so they encoded the same wrong assumption the function was written from,
+and confirmed it. A test suite built entirely from invented fixtures cannot
+falsify an assumption about a real device's conventions. The split made the
+logic testable; it did not make the assumption testable.
+
+**Decision.** Compare **short side over long side** against 0.75, which is
+orientation-agnostic. 4032×3024 and 3024×4032 both reduce to 0.75; 1920×1080
+reduces to 0.5625 and is rejected just as firmly. Widest-qualifying wins, so
+4032×3024 is selected on this device.
+
+**Consequences.**
+- `CaptureError.noThreeByFourFormat` is a **distinct case** from
+  `noInputAvailable`. The two demand opposite responses — no camera, versus a
+  camera that cannot honour the geometry — and conflating them sent the
+  diagnosis towards permissions and hardware when the fault was a ratio test.
+  A misleading error message is a defect, not a cosmetic issue.
+- `CaptureFormatSelectorTests` now contains the **real device's format list**
+  verbatim, so the assumption is pinned against observed hardware rather than
+  against imagination. A test suite that only ever sees invented data is a
+  description of what someone believed.
+- `CameraDiagnostics` is retained as a suite. It is not part of any exit
+  criterion; it exists because the next unexplained hardware failure will want
+  the same five lines of state, and reconstructing them took a device run.
+
+**Alternatives rejected.** Accepting only portrait formats — that is what was
+there, and it means no supported device can capture. Falling back to the widest
+format of any ratio when none qualifies — silently producing moments at the
+wrong aspect ratio, which is the failure this whole selector exists to prevent,
+and unrecoverable after the fact. Relying on `sessionPreset(.photo)` to handle
+geometry — unreliable across an input swap (TRD §5.3), and it would have
+masked the same defect a second way.
+
+**Reversal trigger.** If a device ever reports portrait-native formats, the
+orientation-agnostic test still selects correctly, so nothing needs reversing. If
+a device ships with **no** 3:4 format in either orientation, the correct response
+is to reconsider the geometry, not the test — and `noThreeByFourFormat` already
+reports that distinctly.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

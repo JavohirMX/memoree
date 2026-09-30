@@ -47,6 +47,14 @@ import Testing
 @MainActor
 struct LiveCaptureTests {
 
+    /// Per-iteration ceiling for the reliability loop.
+    ///
+    /// One pair takes a couple of seconds on real hardware, so 15s is generous
+    /// and still far below "hung". Without a ceiling a lost continuation hangs
+    /// the entire run silently, which is how the first device attempt spent ten
+    /// minutes producing nothing at all.
+    private static let iterationTimeout: Double = 15
+
     /// How many live tests actually executed, as opposed to skipped.
     ///
     /// Read by `LiveCaptureRunGuardTests` so a skipped suite cannot pass unnoticed.
@@ -55,19 +63,29 @@ struct LiveCaptureTests {
     /// Phase 3 version, where the same attribute drew a warning for being
     /// unnecessary, because that suite annotates its counter differently.
     /// Safe: the counter carries its own lock and holds nothing but an integer.
+    /// `nonisolated(unsafe)` because the suite is `@MainActor` and the guard is
+    /// not, so it cannot read a main-actor static. The counter carries its own
+    /// lock and holds nothing but an integer.
     nonisolated(unsafe) private static let runCounter = RunCounter()
 
-    nonisolated static var runCount: Int { runCounter.value }
+    nonisolated static var runCount: Int { runCounter.count }
 
+    /// `@unchecked Sendable` because the suite is `@MainActor` while the guard
+    /// is not. Safe: the lock is the only shared state and it guards an integer.
     private final class RunCounter: @unchecked Sendable {
         private let lock = NSLock()
-        private var count = 0
-        var value: Int {
+        private var total = 0
+
+        /// The value, not the stored property, so the enclosing type can expose
+        /// it `nonisolated` without the compiler objecting that a main-actor
+        /// static is being read from a nonisolated context.
+        var count: Int {
             lock.lock(); defer { lock.unlock() }
-            return count
+            return total
         }
+
         func increment() {
-            lock.lock(); count += 1; lock.unlock()
+            lock.lock(); total += 1; lock.unlock()
         }
     }
 
@@ -159,7 +177,6 @@ struct LiveCaptureTests {
 
         let service = SequentialCaptureService()
         try await service.startSession()
-        defer { Task { await service.stopSession() } }
 
         let pair = try await service.capturePair()
 
@@ -174,6 +191,12 @@ struct LiveCaptureTests {
         // The geometry assertion the pure tests could only simulate.
         #expect(pair.back.isThreeByFour)
         #expect(pair.front.isThreeByFour)
+
+        // Awaited, not `defer { Task { … } }`. A fire-and-forget teardown lets
+        // the next test open its session while this one still holds the camera,
+        // and the two then contend for a device only one can have. That is a
+        // test bug which presents as a product hang.
+        await service.stopSession()
     }
 
     @Test("Twenty consecutive captures all succeed")
@@ -182,7 +205,6 @@ struct LiveCaptureTests {
 
         let service = SequentialCaptureService()
         try await service.startSession()
-        defer { Task { await service.stopSession() } }
 
         // The phase's actual exit criterion. Each iteration performs the full
         // rear → swap → frame-wait → front → restore sequence, so twenty
@@ -192,7 +214,21 @@ struct LiveCaptureTests {
 
         for iteration in 1...20 {
             do {
-                let pair = try await service.capturePair()
+                // Per-iteration timeout. Without it a lost continuation hangs
+                // the run with no output, and the log's last line is just the
+                // previous iteration — indistinguishable from a slow device. A
+                // timeout turns "hung" into a named, located failure.
+                let pair = try await withThrowingTaskGroup(of: CapturedPair.self) { group in
+                    group.addTask { try await service.capturePair() }
+                    group.addTask {
+                        try await Task.sleep(for: .seconds(Self.iterationTimeout))
+                        throw CaptureError.noDeliveredFrame(.front)
+                    }
+                    let first = try await group.next()!
+                    group.cancelAll()
+                    return first
+                }
+
                 if !pair.back.isThreeByFour || !pair.front.isThreeByFour {
                     failures.append("iteration \(iteration): wrong aspect ratio "
                                     + "(\(pair.back.pixelWidth)x\(pair.back.pixelHeight))")
@@ -201,8 +237,14 @@ struct LiveCaptureTests {
                     failures.append("iteration \(iteration): implausibly small bytes "
                                     + "— likely a blank frame")
                 }
+                print("CAPTURE iteration \(iteration)/20 ok "
+                      + "(\(pair.back.pixelWidth)x\(pair.back.pixelHeight))")
+            } catch is CancellationError {
+                // The sibling sleep task losing the race is the normal path.
+                failures.append("iteration \(iteration): cancelled")
             } catch {
                 failures.append("iteration \(iteration): \(error)")
+                print("CAPTURE iteration \(iteration)/20 FAILED: \(error)")
             }
         }
 
@@ -212,6 +254,8 @@ struct LiveCaptureTests {
         for failure in failures { print("  \(failure)") }
 
         #expect(failures.isEmpty)
+
+        await service.stopSession()
     }
 
     @Test("The front camera is mirrored and the rear is not")

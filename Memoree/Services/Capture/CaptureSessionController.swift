@@ -434,9 +434,11 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
         let device = input.device
         guard let format = CaptureFormatSelector.selectFormat(for: device) else {
-            // No 3:4 format means the geometry cannot be honoured. Failing
-            // loudly beats saving moments at the wrong aspect ratio forever.
-            throw CaptureError.noInputAvailable(position)
+            // The camera is present and open, it just cannot honour Memoree's
+            // geometry. Failing loudly beats saving moments at the wrong aspect
+            // ratio forever — and the distinct error keeps this from reading as
+            // a missing camera, which is what it did once (ADR-019).
+            throw CaptureError.noThreeByFourFormat(position)
         }
 
         try device.lockForConfiguration()

@@ -38,7 +38,8 @@ struct CaptureFlowTests {
         // would surface as a blank screen.
         let errors: [CaptureError] = [
             .permissionDenied, .restricted,
-            .noInputAvailable(.back), .inUseByAnotherApp, .interrupted,
+            .noInputAvailable(.back), .noThreeByFourFormat(.back),
+            .inUseByAnotherApp, .interrupted,
             .thermalStateCritical, .noDeliveredFrame(.front),
             .photoDataUnavailable(.back), .configurationFailed("x"),
             .sessionReset,
@@ -58,6 +59,9 @@ struct CaptureFlowTests {
         #expect(!CaptureError.permissionDenied.isRetryable)
         #expect(!CaptureError.restricted.isRetryable)
         #expect(!CaptureError.noInputAvailable(.back).isRetryable)
+        // A camera that cannot honour the geometry will not start honouring it
+        // on a second attempt either.
+        #expect(!CaptureError.noThreeByFourFormat(.back).isRetryable)
 
         #expect(CaptureError.interrupted.isRetryable)
         #expect(CaptureError.inUseByAnotherApp.isRetryable)

@@ -119,11 +119,17 @@ struct CapturedPhoto: Sendable, Equatable {
         self.position = position
     }
 
-    /// Whether these dimensions are portrait 3:4.
+    /// Whether these dimensions are 3:4, in either orientation.
+    ///
+    /// Orientation-agnostic for the same reason `CaptureFormatSelector` is: a
+    /// sensor is natively landscape and the photo is rotated by its EXIF
+    /// orientation tag. Comparing short side over long side avoids depending on
+    /// which way round the hardware happened to report.
     var isThreeByFour: Bool {
-        guard pixelHeight > 0 else { return false }
-        let ratio = Double(pixelWidth) / Double(pixelHeight)
-        return abs(ratio - CaptureFormatSelector.targetRatio)
+        guard pixelWidth > 0, pixelHeight > 0 else { return false }
+        let longSide = Double(max(pixelWidth, pixelHeight))
+        let shortSide = Double(min(pixelWidth, pixelHeight))
+        return abs(shortSide / longSide - CaptureFormatSelector.targetRatio)
             <= CaptureFormatSelector.ratioTolerance
     }
 }
@@ -170,6 +176,17 @@ enum CaptureError: Error, LocalizedError, Equatable {
     /// No camera exists at the requested position, or none could be opened.
     case noInputAvailable(CameraPosition)
 
+    /// The camera exists but offers no 3:4 format.
+    ///
+    /// Separate from `noInputAvailable` because the two demand opposite
+    /// responses — one means there is no camera, the other means the camera
+    /// cannot honour Memoree's geometry — and conflating them hid a real defect
+    /// behind a plausible-sounding message. When `selectFormat` was rejecting
+    /// every landscape format, this surfaced as `noInputAvailable` on all 57
+    /// formats of a perfectly healthy iPhone, which sent the diagnosis towards
+    /// permissions and hardware rather than towards the ratio test (ADR-019).
+    case noThreeByFourFormat(CameraPosition)
+
     /// Another app holds the camera. Recovers when that app backgrounds.
     case inUseByAnotherApp
 
@@ -204,6 +221,8 @@ enum CaptureError: Error, LocalizedError, Equatable {
             "Camera access is blocked on this device."
         case .noInputAvailable:
             "No camera is available."
+        case .noThreeByFourFormat:
+            "This camera cannot shoot in the 3:4 format Memoree uses."
         case .inUseByAnotherApp:
             "Another app is using the camera."
         case .interrupted:
@@ -232,7 +251,7 @@ enum CaptureError: Error, LocalizedError, Equatable {
              .noDeliveredFrame, .photoDataUnavailable, .sessionReset,
              .configurationFailed:
             return true
-        case .permissionDenied, .restricted, .noInputAvailable:
+        case .permissionDenied, .restricted, .noInputAvailable, .noThreeByFourFormat:
             return false
         }
     }
