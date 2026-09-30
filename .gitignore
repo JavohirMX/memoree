@@ -1,0 +1,106 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Memoree — .gitignore
+#
+# Note on Xcode projects: Memoree.xcodeproj IS committed on purpose.
+# project.yml is the source of truth (see docs/TRD.md §2), but the generated
+# project is tracked so that contributors do not need XcodeGen installed.
+# Only its build artefacts and per-user state are ignored below.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── macOS ────────────────────────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.Spotlight-V100
+.Trashes
+Icon?
+
+# ── Xcode: build output ──────────────────────────────────────────────────────
+build/
+DerivedData/
+Build/
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+*.app
+
+# ── Xcode: per-user state (never commit) ─────────────────────────────────────
+xcuserdata/
+*.xcuserstate
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.perspectivev3
+*.pbxuser
+*.mode1v3
+*.mode2v3
+project.xcworkspace/
+contents.xcworkspacedata
+
+# ── XcodeGen ─────────────────────────────────────────────────────────────────
+# The spec is committed; nothing generated should be ignored beyond the
+# .xcodeproj itself, which is tracked. This block is a safety net.
+*.xcodegen/
+
+# ── Swift Package Manager ────────────────────────────────────────────────────
+.build/
+.swiftpm/
+Packages/
+Package.resolved
+.swiftformat
+
+# ── CocoaPods / Carthage ────────────────────────────────────────────────────
+# Not used — Memoree has no third-party dependencies (AGENTS.md §2.3).
+# Present as a guard so an accidental `pod install` cannot be committed.
+Pods/
+Carthage/Build/
+Carthage/Checkouts/
+
+# ── Fastlane ─────────────────────────────────────────────────────────────────
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/test_output/
+fastlane/screenshots/**/*.png
+fastlane/Frameworks/
+
+# ── Code coverage / test results ─────────────────────────────────────────────
+*.xcresult
+coverage.info
+*.profdata
+
+# ── Playgrounds ──────────────────────────────────────────────────────────────
+timeline.xctimeline
+playground.xcworkspace
+*.playground
+
+# ── Signing material & secrets ───────────────────────────────────────────────
+# NEVER commit these. A leaked provisioning profile or p12 is a real key.
+*.p12
+*.mobileprovision
+*.cer
+*.certSigningRequest
+*.provisionprofile
+.env
+.env.*
+!.env.example
+secrets.plist
+
+# ── SwiftLint / SwiftFormat ──────────────────────────────────────────────────
+.swiftlint/
+# .swiftformat is NOT ignored — it is configuration, not state.
+
+# ── Memoree runtime output ───────────────────────────────────────────────────
+# App-local scratch data. The app itself stores nothing in the repo; this is
+# only for anything produced by local tooling or debug builds.
+*.memoree-export.json
+.tmp/
+tmp/
+
+# ── Editor ───────────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
