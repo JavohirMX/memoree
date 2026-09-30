@@ -252,6 +252,47 @@ mirrored, correctly-sized front+back pair. Run it 20 times without a failure. If
 is the frame-wait on step 7 — fix it before moving on.
 **Estimate:** 3–4 days. Do not rush this.
 
+#### What the device runs actually found
+
+Five hardware runs, each of which found a real defect that twelve simulator tests could not. The
+order matters: each fix exposed the next, and two of the "fixes" were regressions that the
+hardware caught immediately.
+
+| # | Symptom | Cause |
+| --- | --- | --- |
+| 1 | `noInputAvailable(.back)` ×5 | Selector rejected all 57 formats — sensors are natively landscape (ADR-019) |
+| 2 | `Cannot Record` ×19 | `maxPhotoDimensions` from a stale device lookup rather than the attached input's active format |
+| 3 | one timeout, then a cascade | A failed pair left the session mid-swap; every later attempt failed |
+| 4 | `noInputAvailable(.front)` ×20 | **Regression.** `canAddInput` moved outside `beginConfiguration`, where it always returns NO |
+| 5 | `noInputAvailable(.front)` ×20 | **Regression.** `canAddInput` moved *before* `removeInput`, where a session holding one video input refuses a second |
+
+**`canAddInput` has two constraints, and both were violated before one was satisfied.** It must
+be called *inside* `beginConfiguration`, and *after* the outgoing input is removed. The
+"check first so a refusal leaves the session untouched" instinct is wrong: a session already
+holding a video input will not accept a second from a different device. Recovery from a
+refused swap comes from the session rebuild in `capturePair`, not from the ordering.
+
+**The frame-wait deadline, set from measurement rather than taste.**
+`FrameWaitDiagnostics` performs 40 swaps on a real iPhone 17 with no photo capture between
+them:
+
+```
+min 0.421s · median 0.472s · p90 0.809s · max 0.815s · 0 failures in 40
+```
+
+An idle swap-and-wait is half a second and never approaches the old two-second deadline. But
+in the real sequence the swap follows a **photo capture**, and `AVCapturePhotoOutput` and
+`AVCaptureVideoDataOutput` share the session — frames pause while a photo is processed. That
+is exactly where the reliability loop failed: 2 in 20 against 0 in 40 isolated. The deadline is
+now 5s, about six times the worst idle observation. The cost is paid only when the camera is
+genuinely dead, and it buys headroom against a photograph that looks fine and is wrong forever.
+
+**The lesson worth keeping.** Every defect above was found by *running*, and none by a test
+asserting on a value. The tests that should have caught them asserted on hand-built fixtures
+that encoded the same wrong assumptions. A suite built from invented data is a description of
+what someone believed. `CameraDiagnostics` and `FrameWaitDiagnostics` exist so the next
+question is answered by a measurement instead of by inference from an error string.
+
 ### Progress as of 2026-09-30
 
 Done and verified on the simulator — 27 capture tests, zero warnings:

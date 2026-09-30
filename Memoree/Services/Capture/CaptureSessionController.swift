@@ -57,10 +57,27 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
     /// How long to wait for a frame from a newly added input.
     ///
-    /// Generous, because exceeding it produces a visible failure while
-    /// shortening it produces a flaky one. A real sensor delivers in
-    /// milliseconds; 2s is roughly a thousand times that, so this is a
-    /// backstop against a genuinely dead input rather than a timing assumption.
+    /// Set from measurement, not taste. `FrameWaitDiagnostics` performs 40
+    /// swaps on a real iPhone 17 with no photo capture in between:
+    ///
+    /// ```
+    /// min 0.421s · median 0.472s · p90 0.809s · max 0.815s · 0 failures
+    /// ```
+    ///
+    /// So an idle swap-and-wait is half a second and never approaches a
+    /// two-second deadline. But in the real sequence the swap follows a
+    /// **photo capture**, and `AVCapturePhotoOutput` and
+    /// `AVCaptureVideoDataOutput` share the session — frames pause while a
+    /// photo is being processed, and the first frames after a swap arrive
+    /// later than they do from an idle session. That is precisely where the
+    /// reliability loop timed out: 2 failures in 20 iterations, against 0 in
+    /// 40 isolated swaps.
+    ///
+    /// Five seconds is roughly six times the worst idle observation, so a
+    /// post-capture pause has real headroom. The cost is paid only when the
+    /// camera is genuinely dead, and it is a user waiting a few seconds longer
+    /// to see an error message — a cheap trade against a black photograph that
+    /// looks fine and is wrong forever.
     ///
     /// Implemented as a deadline **inside** the session queue, not as a
     /// cancellable sibling task. A `ThrowingTaskGroup` racing this wait and
@@ -69,7 +86,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// task abandons it and the caller never returns. A deadline scheduled on
     /// the same queue that arms the wait can resume it exactly once, whichever
     /// of frame-or-deadline arrives first.
-    private static let frameWaitTimeout: TimeInterval = 2.0
+    private static let frameWaitTimeout: TimeInterval = 5.0
 
     /// How long to wait for a photo delegate to call back.
     ///
@@ -78,6 +95,12 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// guarantee, and an un-resumed continuation hangs the app rather than
     /// failing it.
     private static let photoWaitTimeout: TimeInterval = 10.0
+
+    /// The frame-wait deadline, exposed for the device diagnostic that measures
+    /// how close real waits run to it. Read-only; the deadline itself is set
+    /// above and not configurable, because a configurable one invites tuning it
+    /// until the test passes rather than until the camera is reliable.
+    static var frameWaitTimeoutForDiagnostics: TimeInterval { frameWaitTimeout }
 
     /// How long to wait for the session to stop after `stopSession`.
     private static let stopTimeout: TimeInterval = 1.0
@@ -467,22 +490,33 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
         let input = try AVCaptureDeviceInput(device: device)
 
-        // `canAddInput` is checked **before** the old input is removed.
+        // Order established on hardware, and both arrangements fail loudly
+        // enough to be worth recording.
         //
-        // The order matters enormously. An earlier version removed first and
-        // checked second, so a refused input left the session holding *no*
-        // input at all — and because a session without an input cannot be
-        // brought back by trying again, every later capture failed with
-        // `noInputAvailable` forever. One bad swap destroyed the session. A
-        // refused swap now leaves the session exactly as it was, which is the
-        // difference between one failed capture and a permanently broken camera.
-        guard session.canAddInput(input) else {
-            throw CaptureError.noInputAvailable(position)
-        }
-
+        // `canAddInput` must be evaluated **inside** the configuration block —
+        // called while the session is running and outside
+        // `beginConfiguration`, it returns NO for the front camera every time.
+        //
+        // It must be evaluated **after** the outgoing input is removed, too.
+        // Checking first — the "leave the session untouched on refusal"
+        // intuition — returns NO on every attempt, because a session already
+        // holding one video input will not accept a second from a different
+        // device. That version reported `noInputAvailable(.front)` twenty
+        // times out of twenty.
+        //
+        // The cost of this order is that a refused add leaves the session with
+        // no input. That is recoverable here because `capturePair` rebuilds the
+        // session whenever a capture throws, so a refusal costs one failed
+        // capture rather than the rest of the run.
         session.beginConfiguration()
+
         if let existing = activeInput {
             session.removeInput(existing)
+        }
+
+        guard session.canAddInput(input) else {
+            session.commitConfiguration()
+            throw CaptureError.noInputAvailable(position)
         }
         session.addInput(input)
         session.commitConfiguration()
