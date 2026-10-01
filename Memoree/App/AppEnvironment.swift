@@ -68,8 +68,75 @@ final class AppEnvironment {
         if ProcessInfo.processInfo.arguments.contains("-MemoreeSkipOnboarding") {
             momentStore.settings().onboardingComplete = true
         }
+
+        // Development affordance: seed a synthetic archive, so the Phase 6 exit
+        // criterion is reachable at all.
+        //
+        // **This exists because the exit criterion is unreachable without it.**
+        // "A 500-moment library scrolls smoothly" cannot be checked with three
+        // moments in it, and the alternative to a seeder is 500 real captures —
+        // which is a day of the user's life to test a scroll. There is no UI test
+        // target in this project, and adding one is a larger decision than the
+        // phase deserved.
+        //
+        //   xcodebuild ... -MemoreeSeedMoments 500     (or launch with the argument)
+        //
+        // The rows carry **no asset identifiers**, deliberately. Seeding real
+        // photographs would mean writing 500 pairs into the user's actual camera
+        // roll, which is the user's library and which Memoree has add-only
+        // authorisation and can therefore never clean up (ADR-008). Synthetic
+        // rows give the grid, the scroll and the prefetcher the shape they need
+        // to be measured against, and the cells correctly report "no photographs
+        // on record" rather than pretending.
+        for argument in ProcessInfo.processInfo.arguments {
+            guard argument.hasPrefix("-MemoreeSeedMoments") else { continue }
+            let count = Int(argument.split(separator: "=").last ?? "") ?? 500
+            seedSyntheticArchive(count: min(max(count, 0), 2_000))
+        }
         #endif
     }
+
+    #if DEBUG
+    /// Inserts `count` moments on consecutive past days, with no photographs.
+    ///
+    /// `-1` days is the *newest* day, so the rows land in the past and cannot
+    /// collide with the one-per-day invariant for today. `DayRecord`s are not
+    /// written: without them `interval(for:)` re-derives, which is the path a
+    /// fresh install takes and therefore the one worth exercising.
+    private func seedSyntheticArchive(count: Int) {
+        let calendar = Calendar.current
+        let today = DayIdentifier(date: Date())
+        let duration: TimeInterval = 120
+
+        for offset in 1...max(count, 1) {
+            let day = today.offset(by: -offset, calendar: calendar)
+            guard momentStore.moment(for: day) == nil else { continue }
+
+            // A plausible spread of capture times, so the grid is not a column of
+            // identical timestamps and the busiest-hour statistic has something
+            // to chew on if it is opened.
+            let minuteOfDay = (offset * 37) % (12 * 60)
+            let start = day.date.addingTimeInterval(Double(11 * 60 + minuteOfDay) * 60)
+            let capturedAt = start.addingTimeInterval(duration / 2)
+            // Every fourth day off-window, so the streak arithmetic is not
+            // looking at a perfect record — which is the boring case.
+            let isLate = offset % 4 == 0
+
+            // `try?` and discarding: a row that will not insert is a day this
+            // seeder skips, not a launch failure. The alternative — a thrown
+            // error out of `init` — would make a debug affordance capable of
+            // bricking the app.
+            _ = try? momentStore.record(
+                day: day,
+                interval: MomentInterval(start: start, end: start.addingTimeInterval(duration)),
+                capturedAt: isLate ? start.addingTimeInterval(duration * 8) : capturedAt,
+                retakeCount: offset % 3,
+                backAssetIdentifier: nil,
+                frontAssetIdentifier: nil
+            )
+        }
+    }
+    #endif
 
     // MARK: - Moment resolution
 

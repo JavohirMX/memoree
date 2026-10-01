@@ -666,9 +666,79 @@ have caught:
 **Exit:** a 500-moment library scrolls smoothly and every moment opens.
 **Estimate:** 1.5 days.
 
+### Progress as of 2026-10-01 — code complete, and the cache was never there
+
+Done: the grid, the detail view, delete, the empty state, the Settings screen, the two header
+icons, and today's composite is now tappable into the archive. 239 tests in 28 suites.
+
+Three things in this phase were decided against the table above, and each is worth the argument.
+
+**The grid shows the rear photograph, not the composite.** The table said 3:4 cells and did not
+say which image, and the composite is the obvious answer because it is what the Today screen
+shows. It is wrong here. Across 500 cells, composites put 500 faces in a grid of scenes — a
+gallery of selfies rather than a record of days. The inset belongs in the detail view, where
+there is room to read it as *your* moment, and where `MomentComposite` gets to be the geometry
+it is.
+
+**A missing photograph is reported, not tombstoned.** The table said *"Tombstone and render
+'missing from Photos'"*, and `AGENTS.md` §8 says orphans are "tombstoned, not repaired". Both
+were followed literally at first and the result is wrong: tombstoning during a grid read deletes
+archive entries because the user tidied their camera roll, which is a write triggered by a
+*read* and is irreversible from the user's side. So the cell says *"Not in Photos"*, the moment
+stays in the archive, and `delete()` remains the only tombstone path. Reporting is the honest
+state and the user can still remove it themselves.
+
+**No coordinates on the detail screen.** The table asked for them and `Moment` has carried
+`latitude`/`longitude` since Phase 1 — but nothing has ever *written* them. There is no location
+prompt anywhere in the app and `makeMomentRecorder` passes no location, so the fields are
+permanently `nil` and a coordinate row would be a control that can only ever read "—".
+Collecting location is a new permission and a new product decision, so it is deferred rather
+than faked. When it happens, `MomentFacts` has to gain the field, because a screen cannot hold a
+`Moment` and cross an isolation boundary with one.
+
+**The defect this phase was always going to find.** `PhotoKitLibrary.image(for:targetSize:)`
+constructed a fresh `PHCachingImageManager` on every call — and **the cache lives on the
+manager**, so a per-call manager caches nothing. Invisible behind the one composite on the Today
+screen, which is why twelve capture tests and several phases never met it. A 500-cell grid
+re-requests every image on every scroll. Now one manager for the service's life, plus a
+two-tier `ArchiveThumbnailCache`: an `NSCache` of decoded images keyed by
+`identifier + size`, and `startCachingImages` for the rows on screen.
+
+**The size is part of the cache key, and that is the whole subtlety.** Photos returns a
+different decode for a thumbnail and for a full-screen image, so a key that omitted the size
+would hand the detail view a 96pt thumbnail — a bug that renders as a blurry photograph and
+reads as a Photos problem rather than a cache one.
+
+**And a second miss, one layer up.** Writing the prefetch test found that the grid never called
+`prefetchThumbnails` at all. `loadImages` fetched each image, so the grid looked correct in every
+test and in a screenshot of the first screen — and would have shown grey rectangles the moment
+anyone scrolled quickly. The decoded cache makes the *second* draw free; only Photos' own cache
+makes the *first* one cheap, and the two are different calls. Two of the three "done" claims in
+the table above were true of the first screen only.
+
+**Still to close this phase on hardware:** the exit criterion is a 500-moment scroll, and there
+is no UI test target in this project. Two options and neither is free: add a UI test target
+(a larger decision than this phase deserves), or add a DEBUG launch argument that seeds 500
+synthetic rows and record a manual scroll. **Not yet done, and it is the only thing between this
+phase and closed.**
+
 ---
 
-## Phase 7 — Behind the Scenes
+## Phase 7 — Behind the Scenes · **last, and possibly cut**
+
+> **Reordered 2026-10-01, and this is the phase most likely to be deleted rather than built.**
+> The rest of the roadmap moved ahead of it — Stats, then polish, then share — and the reason is
+> in ADR-023: the premise narrowed from *forced spontaneity* to *a daily photo journal with a
+> reminder*. BTS is the most BeReal-residual feature in this document, and it is the only one
+> that adds a second media type, a second permission, a new playback surface and a new failure
+> mode (a video that will not play) to a product whose entire claim is one unretouched
+> photograph a day.
+>
+> "Prefer removing code to adding it" (`AGENTS.md` §13) applies to phases, not only to lines.
+> **Decide at the end of polish, not now** — and the deciding question is whether anyone opens
+> the app wanting the clip, which is measurable from whether anyone ever scrolls past a moment
+> in the archive. `AppSettings` already carries `btsEnabled`/`btsDuration`/`saveBTS`, defaulted
+> **off**, specifically so no toggle in the app describes a feature that does not exist.
 
 | Task | Notes |
 | --- | --- |
@@ -685,7 +755,15 @@ have caught:
 
 ---
 
-## Phase 8 — Share and export
+## Phase 9 (was 8) — Share and export · **last of the three**
+
+> **Reordered last.** Sharing is genuinely useful and genuinely unlike BeReal — the company
+> cannot get your photos out, and this is the answer to that. It is also the least load-bearing
+> thing left, because nothing in the daily loop depends on it and no defect in it costs a
+> streak.
+>
+> The onboarding warning in this table is **already done** — it ships in the Settings screen,
+> where "If you delete Memoree" states the asymmetry outright.
 
 | Task | Notes |
 | --- | --- |
@@ -695,42 +773,66 @@ have caught:
 | `MomentExporter` | All metadata → single Codable JSON |
 | Export via share sheet | Filename `memoree-export-<date>.json` |
 | Import/restore | Optional stretch: read an export back |
-| Onboarding warning | Reinstalling loses app data; Photos survives |
+| ~~Onboarding warning~~ | **Done** — Settings, "If you delete Memoree" |
 
 **Exit:** sharing produces two clean, unwatermarked originals and a correct JSON export.
 **Estimate:** 1 day.
 
 ---
 
-## Phase 9 — Stats
+## Phase 7 (was 9) — Stats · **next**
+
+> **Reordered ahead of share and BTS, and it is cheaper than it looks:**
+> `StreakCalculator.summary` already computes every number this phase displays —
+> `currentStreak`, `longestStreak`, `daysCaptured`, `lateMoments`,
+> `onTimePercentage`, `averageRetakes`, `btsCount`, `busiestHour`, `missedDays`.
+> Phase 2 built the whole of it. **This phase is a view plus test coverage for
+> fields nothing has asserted on yet.**
+
+**One copy decision this phase forces, and it is not optional.** With the late badge removed
+(ADR-023), `onTimePercentage` and `lateMoments` are the *only* place the two-minute window's
+significance is ever visible to a user. Nothing on the Today screen says why a streak did not
+move — that was accepted knowingly — so this is where the explanation lives, if anywhere.
+
+Recommendation: **show it, as an aggregate.** *"7 of 12 on time"* describes a number. A badge on
+a photograph described the user. The distinction is the whole of ADR-023 and it survives the
+reorder intact.
 
 | Task | Notes |
 | --- | --- |
-| Stats view | Total moments, days captured, current + longest streak, on-time %, average retakes, BTS count |
-| Busiest hour | Histogram of `capturedAt` |
+| Stats view | Total moments, days captured, current + longest streak, on-time %, average retakes |
+| Busiest hour | Histogram of `capturedAt` — already computed, never displayed |
 | Streak history | Current and past streaks, in place of BeReal's Memories calendar |
 | Empty states | Zero moments, one moment |
+| BTS count | **Omit if Phase 7 is cut.** A row that always reads "0" is a feature that does not exist. |
 
 **Exit:** numbers match the archive by hand-check on three days of data.
 **Estimate:** 1 day.
 
 ---
 
-## Phase 10 — Settings and polish
+## Phase 8 (was 10) — Polish
+
+> **The Settings screen already exists** — window picker, reminders status, the reinstall
+> warning, the camera-reset hook, pending-count diagnostics — shipped with Phase 6 because the
+> window picker could not honestly exist anywhere else. So this phase is no longer "build
+> Settings"; it is the accessibility and motion pass, plus the two remaining settings rows.
 
 | Task | Notes |
 | --- | --- |
-| Moment window picker | Start + end, with the "earlier is more random" explanation |
-| BTS toggle + duration | |
-| Save-to-album toggle | |
-| Data export | |
-| Deletion warning | Make the reinstall consequence unmistakable |
+| Save-to-album toggle | `settings.saveToAlbum` exists and defaults off; nothing surfaces it |
+| BTS toggle + duration | **Only if Phase 7 is built.** Same reason as the BTS count above. |
+| Data export | Needs Phase 8's `MomentExporter` |
 | Dark-mode audit | Assert no `colorScheme` branch anywhere; light mode is not a feature |
 | Dynamic Type | Verify the countdown and metadata at accessibility sizes |
-| VoiceOver | Camera, archive, detail |
+| VoiceOver | Camera, archive, detail, settings |
 | Reduce Motion | Honour it for the camera-switch animation |
 | Reduce Transparency | N/A on pure black, but verify |
 | Haptics | Capture, and the camera switch |
+
+**And one design-system decision lands here.** ADR-025 renamed the amber and gave it one
+reserved job. If a second load-bearing use ever appears it is a new ADR, not a reinterpretation
+— the point of the rename was to make a silent second meaning impossible.
 
 **Exit:** Settings does everything; accessibility pass complete.
 **Estimate:** 2 days.
@@ -765,18 +867,30 @@ Do this only if and when you want TestFlight or the App Store.
 ```
 Phase 0 ──► Phase 1 ──► Phase 2 ──┐
   toolchain   scheduler   streaks   │
-                                   ├──► Phase 5 ──► Phase 6 ──► Phase 7
-                     Phase 3 ──────┤      Today      Archive     BTS
-                     photos         │         │         │          │
-                                   │         └──► Phase 8 ──► Phase 9 ──► Phase 10 ──► Phase 11
-                     Phase 4 ──────┘      share        stats     polish       release
-                     capture
+                                   ├──► Phase 5 ──► Phase 6 ──┬──► Phase 7 ──► Phase 8 ──► Phase 9
+                     Phase 3 ──────┤      Today      Archive   │     Stats     polish      share
+                     photos         │         │         │     │
+                                   │         └── Settings ───┘
+                     Phase 4 ──────┘      (done)    │
+                     capture                   BTS · last, possibly cut ──► Phase 10
+                                                                             release
 ```
 
-Phases 2 and 3 are independent and can overlap. Phases 8, 9 and 10 are largely independent of
-each other.
+**Reordered 2026-10-01**, from 7 → 8 → 9 → 10 into 7 (stats) → 8 (polish) → 9 (share), with
+BTS moved to last and flagged as the phase most likely to be cut. The reasoning is ADR-023: the
+premise narrowed, and the phases that serve *a daily photo journal* were ahead of the ones that
+serve *an imitation of BeReal*.
 
-**Critical path:** 0 → 1 → 4 → 5 → 6. Roughly 9–10 days of focused work to a fully working app.
+Note what the diagram also shows: **the Settings screen is no longer a phase.** It shipped
+inside Phase 6, because a window picker that is not reachable after onboarding is a promise the
+app cannot keep — and the picker itself is meaningless unless the change re-derives the future
+horizon, which was a defect waiting for a Settings screen to expose.
+
+Phases 2 and 3 are independent and can overlap. Phases 7, 8 and 9 are largely independent of each
+other once Stats is out of the way.
+
+**Critical path:** 0 → 1 → 4 → 5 → 6, which is complete. **Roughly 3–4 days of focused work to
+a shippable app** — stats, polish, share — with BTS as an optional 1.5 days on top.
 
 ---
 
@@ -786,15 +900,16 @@ each other.
 | --- | --- |
 | iPhone 15/16/17 | Primary development device |
 | An older device, if you have one | Format selection, thermal behaviour, multi-format edge cases |
-| iOS 17.0 | The deployment floor — test the oldest supported OS first, it breaks in the best ways |
-| iPad | Universal build should not crash; not optimised |
+| iOS 17.0 | The deployment floor — test the oldest supported OS first, it breaks in the best ways. **Note:** `onScrollVisibilityChange` is iOS 18, which is why the grid prefetches from per-cell `onAppear` |
+| ~~iPad~~ | **Cannot be run as written.** `project.yml` sets `TARGETED_DEVICE_FAMILY: "1"` — iPhone only. The row said "universal build should not crash" and there is no universal build. Either the row or the setting is wrong; the setting is deliberate (PRD §6.3) so the row goes |
 | Airplane mode | The full loop must work. This is a product requirement, not a test |
-| Permission denied (each) | Camera, notifications, photos, mic, location — every single one |
+| Permission denied (each) | Camera, notifications, photos, mic, location — every single one. **Location is listed and does not exist**: no screen requests it and `makeMomentRecorder` never passes one, so there is nothing to deny |
 | Low storage | Photo write fails cleanly; moment not silently lost |
 | DST transition day | Moment resolution, day identity, streak |
-| Timezone change mid-day | Day re-anchoring |
-| 500+ moments | Archive scroll performance |
+| Timezone change mid-day | Day re-anchoring, **and the window boundary** — a window of 23:00–01:00 crosses midnight, and `TimeWindow.validated` explicitly does not support wrapping |
+| 500+ moments | Archive scroll performance. **No UI test target exists**, so this is a DEBUG seed plus a manual scroll until one does |
 | App kill mid-capture | No partial moment written |
+| Window changed mid-horizon | Today keeps its moment; tomorrow onward re-derives. `MomentWindowChangeTests` |
 
 ## Risks to the schedule
 
