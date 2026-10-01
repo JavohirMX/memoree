@@ -56,6 +56,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     windowSection
                     remindersSection
+                    exportSection
                     photosSection
                     permanenceSection
                     diagnosticsSection
@@ -204,6 +205,89 @@ struct SettingsView: View {
 
     // MARK: - Diagnostics
 
+    // MARK: - Export
+
+    /// The whole archive as one JSON file.
+    ///
+    /// **In Settings rather than the archive** because it is not about a
+    /// moment. It is the answer to "what happens to my archive if I lose this
+    /// phone", which is the question the permanence section above raises and then
+    /// leaves unanswered — and a screen that raises a fear without offering the
+    /// remedy is a worse thing than one that stays silent.
+    ///
+    /// Stated as what it is: **a record, not a backup.** The photographs are not
+    /// in the file and cannot be restored from it. That sentence is in the
+    /// subtitle because a file called "export" that a user believes brings their
+    /// archive back is worse than no file — they will not check.
+    private var exportSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            Text("Your archive")
+                .font(Theme.Typography.screenTitle)
+                .foregroundStyle(Theme.Color.textPrimary)
+
+            Text("""
+                A record of every moment: which day, when, and whether it grew \
+                your streak. The photographs are not in it — they are already in \
+                your Photos library, where any app can reach them.
+                """)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if let failure = exportFailure {
+                Text(failure)
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+
+            if let export = preparedExport {
+                ShareLink(
+                    item: SharedFile.export(
+                        day: exportedOn.formatted(.iso8601.year().month().day()),
+                        data: export
+                    ),
+                    preview: SharePreview("Memoree archive")
+                ) {
+                    Label("Export as JSON", systemImage: "square.and.arrow.up")
+                        .font(Theme.Typography.button)
+                        .foregroundStyle(Theme.Color.onAccent)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 52)
+                        .background(Theme.Color.textPrimary)
+                        .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Opens the share sheet with one JSON file of every moment")
+            } else {
+                // **Not a spinner.** An archive of 500 moments encodes in
+                // milliseconds, and a spinner implies work that is not happening.
+                // The row is simply absent until it is ready, which is immediate.
+                Color.clear.frame(height: 52).accessibilityHidden(true)
+            }
+        }
+    }
+
+    /// The encoded export, prepared on appear and held in memory.
+    ///
+    /// Never written to disk here — `SharedFile` does that when the share sheet
+    /// asks, in a temporary directory (AGENTS.md §2.4).
+    @State private var preparedExport: Data?
+    @State private var exportFailure: String?
+    @State private var exportedOn = Date()
+
+    private func prepareExport() {
+        let moments = environment.momentStore.facts()
+        let export = MomentExport(moments: moments, exportedAt: Date())
+        do {
+            preparedExport = try MomentExporter.encode(export)
+            exportFailure = nil
+            exportedOn = export.exportedAt
+        } catch {
+            preparedExport = nil
+            exportFailure = "Memoree could not prepare the export. \(error.localizedDescription)"
+        }
+    }
+
     // MARK: - Photos
 
     /// Whether Memoree also files each moment into an album of its own.
@@ -292,6 +376,7 @@ struct SettingsView: View {
         remindersAuthorized = await environment.notificationService
             .authorizationStatus().willDeliver
         pendingCount = await environment.notificationService.pendingCount()
+        prepareExport()
     }
 
     /// Writes the album preference, and nothing else.

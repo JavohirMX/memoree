@@ -200,8 +200,12 @@ struct VoiceOverTests {
             contentsOf: SourceScan.file(named: "MomentDetailView.swift"),
             encoding: .utf8
         )
+        // The hint is split across two string literals now, so this checks the
+        // meaning rather than the exact sentence — a concatenation refactor must
+        // not fail a test about whether the user is told what survives.
         #expect(source.contains("Removes this moment from Memoree"))
-        #expect(source.contains("stay in your Photos library"),
+        #expect(source.contains("stay in")
+                && source.contains("your Photos library"),
                 "the hint must say the photographs are untouched")
     }
 

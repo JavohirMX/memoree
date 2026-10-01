@@ -43,14 +43,120 @@ struct MomentDetailView: View {
                 Button("Close") { dismiss() }
             }
             ToolbarItem(placement: .topBarTrailing) {
+                // **Share, and then delete — never the other way round.** The
+                // share button sits where a destructive one usually goes, and the
+                // destructive one moved to the trailing *group* below. A trash can
+                // and an export arrow are both one tap from a moment the user
+                // cannot get back, and putting the irreversible one first is how
+                // a mis-tap deletes somebody's day.
+                shareMenu(model: sharedPayload)
+                    .disabled(sharedPayload == nil)
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
                 Button(role: .destructive, action: onDelete) {
                     Image(systemName: "trash")
                 }
                 .accessibilityLabel("Remove from archive")
-                .accessibilityHint("Removes this moment from Memoree. The photographs stay in your Photos library.")
+                .accessibilityHint(
+                    "Removes this moment from Memoree. The photographs stay in "
+                        + "your Photos library."
+                )
             }
         }
         .task { await load() }
+        .task { await prepareSharePayload() }
+    }
+
+    // MARK: - Sharing
+
+    /// The bytes to share, loaded once the photographs are known to exist.
+    @State private var sharedPayload: MomentSharePayload?
+    @State private var shareFailure: String?
+
+    /// Streams the originals out of Photos so the share sheet has something to
+    /// hand over.
+    ///
+    /// **Originals, streamed at share time rather than held.** `data(for:)` is
+    /// called here and the result kept in memory for as long as this screen is
+    /// up — not written to disk, and not fetched when the share sheet opens. The
+    /// app stores no image bytes (AGENTS.md §2.4), so this is the one place a
+    /// photograph is in memory on purpose.
+    private func prepareSharePayload() async {
+        guard let assets = moment.assets else {
+            shareFailure = ShareError.photographsMissing.errorDescription
+            return
+        }
+
+        // A photograph the user deleted must not produce an empty share sheet.
+        // Reported instead of hidden, for the same reason the screen reports it.
+        guard await environment.photoLibrary.assetExists(assets.back) else {
+            shareFailure = ShareError.photographsMissing.errorDescription
+            return
+        }
+
+        async let back = environment.photoLibrary.data(for: assets.back)
+        async let front = environment.photoLibrary.data(for: assets.front)
+        do {
+            let (backData, frontData) = try await (back, front)
+            sharedPayload = MomentSharePayload(
+                day: moment.day.rawValue,
+                backData: backData,
+                frontData: frontData
+            )
+            shareFailure = nil
+        } catch {
+            shareFailure = ShareError.renderFailed.errorDescription
+        }
+    }
+
+    /// Two rows: both photographs, or one combined picture.
+    @ViewBuilder
+    private func shareMenu(model: MomentSharePayload?) -> some View {
+        if let payload = model {
+            Menu {
+                // `items:` and plural, and the `preview:` argument is **required** for a
+                // custom `Transferable` — the label-only overloads exist only for
+                // `[URL]` and `[String]`. Passing an array to `item:` does not
+                // typecheck either, because that one wants
+                // `Data == CollectionOfOne<I>`.
+                //
+                // The preview is the moment's day, which is what the user would
+                // name it anyway.
+                ShareLink(
+                    items: payload.photographs,
+                    preview: { _ in SharePreview(moment.day.rawValue) },
+                    label: {
+                        Label("Both photographs", systemImage: "photo.on.rectangle")
+                    }
+                )
+                // The combined image needs two photographs. A moment with one is
+                // offered the photographs and nothing else — a "combined" row
+                // that produced a rear-only image would be a different thing
+                // under the same name.
+                if let combined = payload.combinedImage() {
+                    ShareLink(
+                        item: combined,
+                        preview: SharePreview(moment.day.rawValue),
+                        label: {
+                            Label("One combined picture", systemImage: "rectangle.on.rectangle")
+                        }
+                    )
+                }
+            } label: {
+                Image(systemName: "square.and.arrow.up")
+            }
+            .accessibilityLabel("Share this moment")
+            .accessibilityHint(
+                "Offers the photographs on their own, or one combined picture"
+            )
+        } else {
+            // **Shown disabled rather than hidden.** A control that appears on
+            // first use is one the user has to discover by having already
+            // succeeded — and the empty state here is a photograph they deleted.
+            Image(systemName: "square.and.arrow.up")
+                .accessibilityLabel("Share this moment")
+                .accessibilityHint(shareFailure ?? "Preparing the photographs")
+        }
     }
 
     // MARK: - Photograph
