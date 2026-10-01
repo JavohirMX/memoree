@@ -33,6 +33,32 @@ struct CameraView: View {
         }
         .task { await model.start() }
         .onDisappear { Task { await model.stop() } }
+        .onAppear { holdTheScreenAwake(true) }
+        .onDisappear { holdTheScreenAwake(false) }
+    }
+
+    /// Keeps the display on while the camera is up.
+    ///
+    /// **A capture app that lets the screen lock is broken**, and the failure is
+    /// silent and unrecoverable: the user composes a shot, the display dims, the
+    /// device locks, iOS tears the capture session down, and the photograph they
+    /// were taking is gone — with no error, because there is no error to report
+    /// when the app was suspended. It is also the only reason the twenty-moment
+    /// device check could report a dead capture daemon
+    /// (`FigCaptureSessionRemote: connectionDied`): a test host is a normal app
+    /// and locks on the normal schedule, so a long run locks the phone, and the
+    /// camera goes with it.
+    ///
+    /// Scoped to this screen's appearance rather than the app's, because the
+    /// guarantee that is wanted is "the screen stays on *while composing*", not
+    /// "Memoree never lets the phone sleep". Holding it on the Today screen
+    /// would drain a battery to display a streak.
+    ///
+    /// The inverse is restored on `onDisappear` rather than left to a later
+    /// screen, so a failed capture that pops back to Today does not leave the
+    /// display pinned on.
+    private func holdTheScreenAwake(_ isHeld: Bool) {
+        UIApplication.shared.isIdleTimerDisabled = isHeld
     }
 
     // MARK: - Content

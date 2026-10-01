@@ -296,7 +296,7 @@ struct ArchiveViewModelTests {
         let batchesAfterOpen = harness.library.prefetchedBatches.count
 
         // The 20th-newest day, roughly where a user has scrolled to.
-        let anchor = try #require(model.moments[19].day)
+        let anchor = model.moments[19].day
         await model.prefetch(around: anchor)
 
         #expect(harness.library.prefetchedBatches.count > batchesAfterOpen,

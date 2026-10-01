@@ -48,9 +48,61 @@ import Testing
 /// the camera roll is untouched — except the write-path test, which writes two
 /// and leaves them, because Memoree never removes anything from the user's
 /// library (ADR-008) and that applies to its own test code too.
+///
+/// ## One session for the whole suite
+///
+/// **Every test here shares a single `SequentialCaptureService`, and that is
+/// not an optimisation — it is the only shape the product ever runs in.**
+///
+/// `AppEnvironment.captureService` is lazy and cached for the life of the
+/// process, so the app creates exactly **one** `AVCaptureSession` in its whole
+/// lifetime; what varies is the camera screen being opened and closed. A test
+/// that constructs its own service is testing something no user can reach.
+///
+/// It is also not merely wasteful. `AVCaptureSession.init()` makes a
+/// *synchronous* XPC round-trip to the capture daemon
+/// (`FigCaptureSessionRemoteCreate`). This suite used to construct one per
+/// test, and one test constructed two — so a single device run allocated eight
+/// sessions back to back, each released before the next.
+///
+/// **What that looked like, on an iPhone 17, and it is worth recording because
+/// none of it looks like a memory problem.** `twoPressesProduceAPair` built a
+/// second session while the first was still being torn down and got
+/// `configurationFailed("Cannot Record")` on the first shutter press. The next
+/// test then found the daemon already dead:
+///
+/// ```
+/// <<<< FigCaptureSessionRemote >>>> Fig assert: "! storage->connectionDied"
+/// <<<< FigCaptureSourceRemote  >>>> Fig assert: "err == 0" (err=-16453)
+/// ```
+///
+/// — and the 20-run reliability test, the phase's actual exit criterion,
+/// completed **zero** iterations before the process was killed. A green
+/// simulator run says nothing about any of this, and neither does a suite that
+/// happens to be short.
 @Suite("Phase 4 — live camera capture", .serialized)
 @MainActor
 struct LiveCaptureTests {
+
+    /// The one session, shared by every test in the suite.
+    ///
+    /// `MainActor`-isolated and `static`, matching the suite, so the tests that
+    /// are serialised cannot race for it. There is no teardown: the process
+    /// exits after the run, and `stopSession` between tests is what actually
+    /// matters — a stopped session holds no hardware and the next test restarts
+    /// it on whichever camera it wants.
+    private static let sharedService = SequentialCaptureService()
+
+    /// The shared service, started on `position`.
+    ///
+    /// Every test begins here rather than at `SequentialCaptureService()`, and
+    /// the reason is in the type's documentation above: one session for the
+    /// suite, because that is what the app does.
+    private func startedService(on position: CameraPosition) async throws -> SequentialCaptureService {
+        let service = Self.sharedService
+        try await service.startSession(on: position)
+        return service
+    }
 
     /// How many live tests actually executed, as opposed to skipped.
     ///
@@ -135,7 +187,7 @@ struct LiveCaptureTests {
     func sessionStarts() async throws {
         guard requireCamera() else { return }
 
-        let service = SequentialCaptureService()
+        let service = Self.sharedService
         #expect(service.previewLayer is AVCaptureVideoPreviewLayer)
 
         try await service.startSession(on: .back)
@@ -149,8 +201,7 @@ struct LiveCaptureTests {
         // The one silent failure in the camera stack: no error, no callback, the
         // preview just freezes. Recovery means replacing the session outright
         // (TRD §5.5), and the only way to trust that path is to run it.
-        let service = SequentialCaptureService()
-        try await service.startSession(on: .back)
+        let service = try await startedService(on: .back)
         try await service.rebuildSession()
         await service.stopSession()
     }
@@ -163,8 +214,17 @@ struct LiveCaptureTests {
 
         // Both orders, because the opening camera is random per moment
         // (ADR-021) and neither may be special-cased.
+        //
+        // **One service, two openings, one session** — which is how the app
+        // behaves and, more practically, is the only way this test can pass. It
+        // used to build a fresh `SequentialCaptureService` inside the loop, so
+        // the second iteration allocated a second `AVCaptureSession` while the
+        // first was still being released, and the first shutter press of the
+        // second pair came back `configurationFailed("Cannot Record")`. That
+        // failure then poisoned the daemon for every test after it.
+        let service = Self.sharedService
+
         for opening in CameraPosition.allCases {
-            let service = SequentialCaptureService()
             try await service.startSession(on: opening)
 
             let first = try await service.captureCurrentPhoto()
@@ -189,10 +249,11 @@ struct LiveCaptureTests {
     func modelFlowReachesReview() async throws {
         guard requireCamera() else { return }
 
-        let service = SequentialCaptureService()
         let library = PhotoKitLibrary()
         let model = CameraViewModel(
-            service: service, photoLibrary: library, chooseFirstCamera: { .back }
+            service: Self.sharedService,
+            photoLibrary: library,
+            chooseFirstCamera: { .back }
         )
 
         await model.start()
@@ -224,7 +285,8 @@ struct LiveCaptureTests {
         let composePause: Duration = .milliseconds(700)
         var failures: [String] = []
 
-        // **One** service for all twenty iterations.
+        // **One** service for all twenty iterations, and now for the whole
+        // suite besides.
         //
         // This used to construct a `SequentialCaptureService` inside the loop,
         // which meant twenty `AVCaptureSession` allocations — and constructing
@@ -240,7 +302,12 @@ struct LiveCaptureTests {
         // screen being opened and closed. Reusing one service here is therefore
         // not a way to dodge a crash — it is the only shape the product ever
         // runs in, and the old loop was testing something no user could reach.
-        let service = SequentialCaptureService()
+        //
+        // The fix was applied here and **missed in the other seven tests**, which
+        // each built their own. That is what made this exit criterion
+        // unmeasurable: a run would reach this test with the daemon already
+        // dead, and it would complete zero iterations.
+        let service = Self.sharedService
 
         for moment in 1...20 {
             do {
@@ -286,8 +353,7 @@ struct LiveCaptureTests {
     func mirroringIsCorrect() async throws {
         guard requireCamera() else { return }
 
-        let service = SequentialCaptureService()
-        try await service.startSession(on: .back)
+        let service = try await startedService(on: .back)
         defer { Task { await service.stopSession() } }
 
         let back = try await service.captureCurrentPhoto()
@@ -324,8 +390,7 @@ struct LiveCaptureTests {
             return
         }
 
-        let service = SequentialCaptureService()
-        try await service.startSession(on: .back)
+        let service = try await startedService(on: .back)
         defer { Task { await service.stopSession() } }
 
         let back = try await service.captureCurrentPhoto()
