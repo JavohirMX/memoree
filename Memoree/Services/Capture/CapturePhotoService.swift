@@ -78,12 +78,17 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// in four separate places.
     func switchCamera(to position: CameraPosition) async throws
 
-    /// Applies 3:4 format selection to the input at `position`.
+    /// **Removed: `configureFormat(for:)`.** It had no callers, and its
+    /// documentation said *"must be called after every input swap"* — which is
+    /// exactly what the twenty-moment gate proved does not work. Re-applying the
+    /// format to a device already in a running session rebuilds the pipeline, and
+    /// the frame wait then times out with nothing delivered: 4 failures in 20,
+    /// every one on the swap *to* the back camera.
     ///
-    /// Separate from `startSession` because the format must be re-applied after
-    /// every input swap: `sessionPreset` is unreliable across one, and the front
-    /// and rear devices support different format lists (TRD §5.3).
-    func configureFormat(for position: CameraPosition) async throws
+    /// The format is now applied inside `attachInput`, **before** the device joins
+    /// the session, where it is free. Leaving the method would have left a public
+    /// API whose documented usage is the bug.
+    ///
 
     /// Rebuilds the session from scratch.
     ///

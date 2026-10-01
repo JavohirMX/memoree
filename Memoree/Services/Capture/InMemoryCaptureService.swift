@@ -22,7 +22,6 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         var startCount = 0
         var stopCount = 0
         var rebuildCount = 0
-        var configuredFormats: [CameraPosition] = []
         /// Cameras captured, in the order the user shot them.
         var capturedPositions: [CameraPosition] = []
         /// Cameras switched to, in order. Should mirror `capturedPositions`
@@ -92,7 +91,6 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
     var startCount: Int { lock.withLock { state.startCount } }
     var stopCount: Int { lock.withLock { state.stopCount } }
     var rebuildCount: Int { lock.withLock { state.rebuildCount } }
-    var configuredFormats: [CameraPosition] { lock.withLock { state.configuredFormats } }
     var capturedPositions: [CameraPosition] { lock.withLock { state.capturedPositions } }
     var switchedTo: [CameraPosition] { lock.withLock { state.switchedTo } }
     var openedOn: [CameraPosition] { lock.withLock { state.openedOn } }
@@ -131,13 +129,6 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         lock.withLock {
             state.isRunning = false
             state.stopCount += 1
-        }
-    }
-
-    func configureFormat(for position: CameraPosition) async throws {
-        try lock.withLock {
-            try Self.throwIfNeeded(&state)
-            state.configuredFormats.append(position)
         }
     }
 

@@ -371,24 +371,6 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Applies `.inputPriority` and the chosen 3:4 format.
-    ///
-    /// Must be called after **every** input swap: `sessionPreset` is not
-    /// reliable across one, and front and rear support different format lists
-    /// (TRD §5.3).
-    func configureFormat(for position: CameraPosition) async throws {
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
-            queue.async { [self] in
-                do {
-                    try applyFormat(for: position)
-                    c.resume()
-                } catch {
-                    c.resume(throwing: Self.map(error, at: self.activePosition))
-                }
-            }
-        }
-    }
-
     // MARK: - Capture
 
     /// Captures one photograph from the camera currently live.
@@ -639,8 +621,11 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         try attach(photoOutput, rejection: "photo output rejected")
         try attach(videoOutput, rejection: "frame-signal output rejected")
 
+        // One call, for the same reason as the swap path. `startSession` was
+        // never the failing case - it configures before `startRunning()` - but
+        // keeping both paths on the same two functions is what stops the ordering
+        // from drifting apart again.
         try attachInput(at: position)
-        try applyFormat(for: activePosition)
     }
 
     /// Adds `output` to the session, unless it is already there.
@@ -659,10 +644,23 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     }
 
     /// Opens and attaches the input for `position`. Must run on `queue`.
+    ///
+    /// **The device is configured before it is added, not after.** See
+    /// `configureDevice` for the measurement that settled the order and the
+    /// mechanism it avoids: assigning `activeFormat` to a device already in a
+    /// *running* session rebuilds the pipeline, and the frame wait then times out
+    /// with nothing delivered.
+    ///
+    /// So the sequence is configure -> attach -> mirror, and the mirror is last
+    /// because it belongs to the photo output's connection rather than the
+    /// device.
     private func attachInput(at position: CameraPosition) throws {
         guard let device = CaptureFormatSelector.wideAngleDevice(for: position) else {
             throw CaptureError.noInputAvailable(position)
         }
+        // Before the `AVCaptureDeviceInput`, so the device is not yet in a
+        // session and locking it costs nothing.
+        try configureDevice(device, for: position)
         let input = try AVCaptureDeviceInput(device: device)
 
         // Order established on hardware, and both arrangements fail loudly
@@ -698,14 +696,40 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
         activeInput = input
         activePosition = position
+
+        // Last, and only once there is an input to mirror.
+        configureMirroring(for: position)
     }
 
-    /// Applies the 3:4 format to the active input. Runs on `queue`.
-    private func applyFormat(for position: CameraPosition) throws {
-        guard let input = activeInput else {
-            throw CaptureError.noInputAvailable(position)
-        }
-        let device = input.device
+    /// Configures a device **before** it is attached to a session.
+    ///
+    /// ## Why this is a separate step from `attachInput`
+    ///
+    /// The twenty-moment gate measured 16/20, then 19/20 with instrumentation,
+    /// and the diagnostic settled what the timeout meant. Healthy frame waits are
+    /// **2-30ms**; the failures were **5.016s with zero frames delivered** - a
+    /// cliff, not a slow sensor, so lengthening the deadline would buy nothing.
+    /// `rejected=0` on every wait, so the port check is sound and no black
+    /// photographs are hiding behind it. **The output genuinely went silent.**
+    ///
+    /// The cause is ordering. Assigning `device.activeFormat` and the frame
+    /// durations to a device that is **already in a running session** makes
+    /// AVFoundation tear down and rebuild the pipeline. `startSession` did it
+    /// before `startRunning()` and was fine; `swapInput` did it on a running
+    /// session and stalled. That also explains the asymmetry - the back camera
+    /// has ~57 formats against far fewer on the front, so that is where the
+    /// reconfiguration actually bites.
+    ///
+    /// A device **not yet in a session** can be locked and configured freely.
+    /// Doing it there makes attaching it a single reconfiguration with the format
+    /// already correct, rather than two.
+    ///
+    /// Mirroring stays where it was: it belongs to the photo output's connection,
+    /// which only exists once there is an input.
+    private func configureDevice(
+        _ device: AVCaptureDevice,
+        for position: CameraPosition
+    ) throws {
         guard let format = CaptureFormatSelector.selectFormat(for: device) else {
             // The camera is present and open, it just cannot honour Memoree's
             // geometry. Failing loudly beats saving moments at the wrong aspect
@@ -726,7 +750,18 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         )
         device.activeVideoMinFrameDuration = duration
         device.activeVideoMaxFrameDuration = duration
+    }
 
+    /// Applies the 3:4 format to the **active** input. Runs on `queue`.
+    ///
+    /// Only for a device that is already attached - which after the fix is the
+    /// `startSession` path, where the session is not running yet. A swap
+    /// configures before attaching instead; see `configureDevice`.
+    private func applyFormat(for position: CameraPosition) throws {
+        guard let input = activeInput else {
+            throw CaptureError.noInputAvailable(position)
+        }
+        try configureDevice(input.device, for: position)
         configureMirroring(for: position)
     }
 
@@ -747,8 +782,13 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     // say `front->back` rather than just `back`. Read here,
                     // before `attachInput` overwrites `activePosition`.
                     self.positionBeforeSwap = self.activePosition
+                    // **One call, and that is the fix.** This used to be
+                    // `attachInput` then `applyFormat`, which assigned
+                    // `activeFormat` to a device already in a running session and
+                    // stalled the output. `attachInput` now configures the device
+                    // before adding it, so the swap reconfigures the pipeline once
+                    // instead of twice.
                     try attachInput(at: position)
-                    try applyFormat(for: position)
                     c.resume()
                 } catch {
                     c.resume(throwing: Self.map(error, at: self.activePosition))

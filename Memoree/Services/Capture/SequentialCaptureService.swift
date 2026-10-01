@@ -79,10 +79,6 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
         }
     }
 
-    func configureFormat(for position: CameraPosition) async throws {
-        try await controller.configureFormat(for: position)
-    }
-
     // MARK: - Diagnostics
 
     /// The last few frame waits, for a device diagnostic to read.
