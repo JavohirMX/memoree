@@ -1,5 +1,3 @@
-import AVFoundation
-import Photos
 import SwiftUI
 import UserNotifications
 
@@ -221,7 +219,22 @@ struct OnboardingView: View {
         _ = await environment.notificationService.requestAuthorization()
     }
 
+    /// Asks for the camera, through the service.
+    ///
+    /// **This used to call `AVCaptureDevice.requestAccess(for: .video)` directly
+    /// and import AVFoundation to do it**, which broke `AGENTS.md` §3 twice over
+    /// — "Features contains SwiftUI views and view models only. No AVFoundation" —
+    /// and it had been sitting there since Phase 0 without anything noticing.
+    /// The file also imported `Photos`, which it never used at all.
+    ///
+    /// The service already had `requestAuthorization()` and `AppEnvironment` hands
+    /// out the one cached instance, so the view was reaching past the boundary
+    /// for something sitting on the other side of it. Now it does not, and both
+    /// imports are gone.
+    ///
+    /// Found by `DesignSystemInvariantTests`, which is the first check in this
+    /// project to assert the layering rather than describe it.
     private func requestCameraPermission() async {
-        _ = await AVCaptureDevice.requestAccess(for: .video)
+        _ = await environment.captureService.requestAuthorization()
     }
 }

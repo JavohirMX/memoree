@@ -9,13 +9,7 @@ import Testing
 /// machine. False on hardware, where it names a path the device has never heard
 /// of. See the suite's documentation for why that is a property of the check and
 /// not a bug in it.
-private let sourceIsReadableOnThisHost: Bool = {
-    #if targetEnvironment(simulator)
-    return true
-    #else
-    return false
-    #endif
-}()
+private let sourceIsReadableOnThisHost = SourceScan.isReadable
 
 /// The "no server" commitment, asserted rather than intended.
 ///
@@ -106,28 +100,11 @@ struct NoNetworkingTests {
     /// declined on privacy grounds here — it is deferred to Phase 10 (ADR-016).
     /// If that ever changes, it wants its own test and its own reasoning.
 
-    private static var appSourceRoot: URL {
-        URL(fileURLWithPath: #filePath)      // MemoreeTests/NoNetworkingTests.swift
-            .deletingLastPathComponent()     // MemoreeTests
-            .deletingLastPathComponent()     // repo root
-            .appendingPathComponent("Memoree", isDirectory: true)
-    }
+    private static var appSourceRoot: URL { SourceScan.appRoot }
 
     /// Every Swift file in the app target, plus the plist and privacy manifest.
     private static func sourceFiles() throws -> [URL] {
-        let root = appSourceRoot
-        try #require(
-            FileManager.default.fileExists(atPath: root.path),
-            "the app source is not where this test expects it: \(root.path)"
-        )
-        return try FileManager.default
-            .subpathsOfDirectory(atPath: root.path)
-            .filter {
-                ["swift", "plist", "xcprivacy"].contains(
-                    URL(fileURLWithPath: $0).pathExtension
-                )
-            }
-            .map { root.appendingPathComponent($0) }
+        try SourceScan.files(extensions: ["swift", "plist", "xcprivacy"])
     }
 
     private static func swiftFiles() throws -> [URL] {
@@ -136,9 +113,6 @@ struct NoNetworkingTests {
 
     /// Whether a line names a networking type.
     ///
-    /// One function, so the scan and the two tests that prove the scan is not
-    /// vacuous cannot disagree about what it means. A test suite that checks its
-    /// own matcher with a re-implementation of it is two matchers.
     /// Which networking name a line contains, if any.
     ///
     /// Returns the *symbol* rather than a `Bool`, so a failure can say what it
