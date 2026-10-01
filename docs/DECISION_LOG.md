@@ -812,6 +812,98 @@ the permission level, so that alone would not reopen this.
 
 ---
 
+## ADR-023 — The window is a reminder, not a deadline
+
+**Status:** Accepted · **Date:** 2026-10-01 · **Found by a person opening the app**
+**Supersedes:** `AGENTS.md` §2 rule 10, and TRD §8's "`scheduled` has no CTA"
+
+**Context.** Until now, capture was refused before the moment time. `MomentState.allowsCapture`
+returned false for `scheduled`, and `TodayView` renders the shutter only when
+`allowsCapture` — so before your moment there was no button at all. That was deliberate:
+`AGENTS.md` §2 rule 10 read *"Capture must not be possible before the moment time"*, it shipped
+as `FR-5`, and Phase 5 built the refusal into the view rather than into a disabled control, so
+the affordance was structurally absent.
+
+**The defect was that the app contradicted its own first-run copy.** The onboarding notification
+step says:
+
+> Once a day, at a random moment inside your window, Memoree will ask for a photo.
+> **Without this you can still open the app and capture whenever you like** — you will just
+> have to remember.
+
+The second sentence is false, and it is false whether or not the user accepted notifications. At
+09:34 on a day whose moment was at 16:00, the app was a countdown with no shutter and no way to
+photograph anything.
+
+**Found by someone opening the app.** No test covered it, because the behaviour was correct as
+written and asserted as correct in three places. The person using it was the first to notice that
+the promise and the behaviour disagreed.
+
+**Decision.**
+
+1. **Capture is permitted at any time on any day.** The shutter is always available; the Today
+   screen never withholds it.
+2. **An off-window capture counts.** No penalty of any kind for photographing before or after
+   the two-minute window.
+3. **No badge.** An off-window moment is visually identical to an on-time one.
+
+**What this costs, stated plainly.** The two-minute window stops being the mechanic. It becomes
+the thing that decides *when the phone interrupts you* and nothing else.
+
+This decision log's own "What we deliberately kept from BeReal" table lists, first:
+
+> **Random daily window — The mechanic. Without it there is no reason for the app to exist.**
+
+That claim is now false, and it should be struck rather than quietly reinterpreted. What survives
+is still a coherent product: *one unretouched photograph of your actual life per day, that lands
+in a library you own.* That is a daily photo journal with a reminder, not a forced-spontaneity
+ritual. It is a smaller and more honest thing, and the user chose it having been shown both.
+
+The practical consequence: with any capture counting, a photograph can be made at whatever time
+is convenient. The window no longer prevents curation; it only declines to *ask*. What still has
+teeth is that there is one moment per day and it is unretouched.
+
+**Consequences, in the order they will bite.**
+
+- **`MomentState` collapses.** `lateAvailable` existed only to say "the window closed and you may
+  still post". With capture always allowed it merges with the ordinary not-yet-captured case.
+  `scheduled`, `open` and `captured` remain — the state machine gets *smaller*.
+- **The countdown becomes decoration, which is a copy problem.** A `mm:ss` reading "1:47
+  remaining" implies a deadline that does not exist. Either it goes, or it is reframed as a
+  countdown to the *reminder* rather than to a closing door. **Open sub-decision.**
+- **`isLate` and `lateBy` become dead.** Neither affects the streak, and there is no badge.
+  Keeping a stored field that nothing reads is the same mistake as `StreakRecord`, which was
+  deleted this month. Remove them from `Moment`, or keep them only if Phase 9's stats have a
+  concrete use — they are derivable from `capturedAt` against the persisted `DayRecord`.
+- **`StreakCalculator` simplifies.** It keys on `isOnTime`; it will key on "has a moment".
+  `ADR-009` — a late-only day breaks the streak — becomes **moot**, because there are no
+  late-only days. It is not wrong, only unreachable. Its own reversal trigger said it was "the
+  first thing to revisit after thirty days of use"; this is day one, revisited the other way.
+- **The notification permission matters more than it did.** The window's only remaining job is
+  deciding when to interrupt, so declining notifications no longer costs a mild degradation — it
+  removes the only thing the window does. The app stays fully usable (AGENTS.md §9), and the
+  "Reminders off" indicator becomes load-bearing copy.
+- **PRD F3 and F9 need rewriting.** "Two-minute capture window" is no longer a capture
+  constraint, and "late posting is allowed after the window" is no longer a distinction.
+- **The Streak Restore paywall stays deleted (ADR-015), and now looks obviously right.** With
+  capture unrestricted there is nothing to restore.
+- **Less resemblance to BeReal, not more.** A one-a-day unretouched photo with a random reminder
+  is a thinner imitation than a forced two-minute window, which slightly eases the Phase 11
+  concern about looking like the original.
+
+**Alternatives rejected.** *Keep the gate, fix the copy* — the smallest change, and it leaves a
+09:00 user staring at a countdown. *Allow early capture, still badge it late* — asymmetry with no
+principle behind it. *Allow capture but charge the streak for off-window moments* — this was the
+option argued for in review and the user chose against it; it preserves the mechanic and rejects
+the request.
+
+**Reversal trigger.** If thirty days of use show the reminder being ignored and photographs being
+taken at convenient times, the forced window was doing the work and this was the wrong call. That
+is measurable, and it is the same trigger ADR-009 named, arriving far earlier. Restoring the gate
+is a state-machine change in one place.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:
@@ -831,8 +923,8 @@ A decision log that only records deletions is misleading. These were kept on pur
 
 | Kept | Why |
 | --- | --- |
-| Random daily window | The mechanic. Without it there is no reason for the app to exist. |
-| Two-minute duration | Long enough to compose a frame, short enough that you cannot curate. |
+| ~~Random daily window~~ | **Struck by ADR-023.** This was listed as *the mechanic* — "without it there is no reason for the app to exist." The window now decides when the phone interrupts you and nothing else; capture is permitted any time and every moment counts. What remains is one unretouched photograph per day, which is a smaller claim than the one this table used to make. |
+| ~~Two-minute duration~~ | **Struck by ADR-023**, with the gate. It no longer bounds anything. The notification fires at the moment time; how long the shutter stays open is no longer a question the app asks. |
 | The countdown | Client-side `mm:ss`, exactly as BeReal does it — there was never a server countdown to begin with. |
 | Front + back framing | The whole point of the format. |
 | The late marker | Truthfulness about when something happened matters more than a clean-looking grid. |

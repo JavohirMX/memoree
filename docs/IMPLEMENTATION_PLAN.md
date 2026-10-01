@@ -453,6 +453,36 @@ First real feature slice. Everything below it is presentation.
 **Exit:** the complete daily loop works end to end on device. Capture, save, streak, archive
 entry. **Estimate:** 2 days.
 
+### Open — the window is a reminder, not a deadline (ADR-023)
+
+**Found by opening the app.** At 09:34 on a day whose moment was at 16:00, there was no shutter
+at all: `MomentState.allowsCapture` is false for `scheduled`, and `TodayView` renders the
+shutter only when it is true. The behaviour was correct as written — `AGENTS.md` §2 rule 10 said
+so, `FR-5` said so, and three places asserted it — but the onboarding copy says *"Without this
+you can still open the app and capture whenever you like."* The app was contradicting its own
+first-run screen, and nobody found it except a person trying to photograph something.
+
+**Decided (ADR-023):** capture any time, every moment counts, no badge.
+
+**Not yet implemented.** The work, and the order it should be done in:
+
+| # | Task | Note |
+| --- | --- | --- |
+| 1 | **Decide what the countdown means** | **Blocking.** `mm:ss` "1:47 remaining" implies a deadline that no longer exists. Either drop it, or reframe it as counting down to the *reminder*. A ticking number that lies is worse than no number. |
+| 2 | `MomentState.allowsCapture` → always true | And `TodayView.action` drops its `allowsCapture` guard. FR-5 goes. |
+| 3 | Collapse `lateAvailable` | It existed only to say "closed, but you may still post". Merge into the ordinary not-yet-captured case. The state machine gets smaller. |
+| 4 | Remove `isLate` and `lateBy` from `Moment` | Dead once nothing reads them — the `StreakRecord` mistake. Derivable from `capturedAt` + `DayRecord` if stats ever want them. |
+| 5 | `StreakCalculator` keys on "has a moment" | Makes ADR-009 moot. Its tests are about a state that can no longer occur. |
+| 6 | Fix the onboarding copy | The sentence that was untrue becomes... true. Worth reading aloud before it ships. |
+| 7 | PRD F3, F9; TRD §8 | "Two-minute capture window" is no longer a capture constraint. |
+
+Tests to update, not just add: `MomentStateTests` pins the six states including
+"`scheduled` refuses capture"; `TimeWindowTests` and the `FR-5` early-post refusal in
+`TodayViewModelTests`. The refusal test should be **deleted and replaced** with one asserting the
+opposite — a regression test that keeps asserting the old behaviour is how this got here.
+
+
+
 ### Progress as of 2026-10-01 — the loop closes
 
 Phase 5's last task is done. The daily loop is end to end, and the reason

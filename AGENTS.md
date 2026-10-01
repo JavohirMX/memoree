@@ -31,7 +31,7 @@ These are load-bearing. Violating any of them is a bug regardless of whether tes
 | 7 | **No watermark, ever.** |
 | 8 | **No filters, crop, or retouch.** |
 | 9 | **Never write to Photos unless the user captured in this app in this session.** |
-| 10 | **Capture must not be possible before the moment time.** See ADR-006. |
+| 10 | ~~Capture must not be possible before the moment time.~~ **Superseded by ADR-023** — capture is permitted at any time, and every moment counts. The two-minute window now decides only when the notification fires. |
 
 ## 3. Architecture
 
