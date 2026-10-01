@@ -753,6 +753,29 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// **Step 7 of docs/TRD.md §5.2, and the one that is not optional.**
     /// Capturing before the new sensor has delivered a frame yields a black or
     /// green image. The wait is a real frame signal, not a sleep.
+    ///
+    /// ## The session is stopped, reconfigured, and restarted
+    ///
+    /// **Not because that is the safe way to do it in general — because it is the
+    /// only way that has ever worked here, and that was measured four times.**
+    ///
+    /// The gate ran 16/20, then 1/20, then 6/20, then 14 waits with 3 timeouts.
+    /// The instrumented run settled what a timeout means: **`seen=0`, every time.**
+    /// Zero frames delivered in five full seconds, while healthy waits were
+    /// satisfied by the *first* frame in 2-27ms. Not a slow sensor and not a
+    /// matching bug — the video output simply stopped.
+    ///
+    /// Every failure was the swap path. `startSession` has never failed, and the
+    /// difference between the two is exactly one thing: **`startSession` configures
+    /// before `startRunning`, and the swap configured while running.** Reconfiguring
+    /// a running `AVCaptureSession` is what leaves the output dead, and it leaves it
+    /// dead in a way `rebuildSession` does not recover — one run spent its last five
+    /// moments failing with `configurationFailed("frame-signal output rejected")`.
+    ///
+    /// So this now does the same sequence that works: stop, reconfigure, restart.
+    /// The cost is the restart latency, roughly 0.3-1.0s, which is invisible to
+    /// someone composing a photograph and is the right trade against a swap that
+    /// silently stops the camera working.
     func swapInput(to position: CameraPosition) async throws {
         // Bump the generation first: a frame-wait armed before the swap must
         // not be satisfied by anything the old input produced.
@@ -765,10 +788,21 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     // say `front->back` rather than just `back`. Read here,
                     // before `attachInput` overwrites `activePosition`.
                     self.positionBeforeSwap = self.activePosition
+
+                    // **Stopped first.** Both calls block, and both are on
+                    // `queue` — never the main thread (AGENTS.md §5).
+                    session.stopRunning()
                     try attachInput(at: position)
                     try applyFormat(for: position)
+                    session.startRunning()
+
                     c.resume()
                 } catch {
+                    // A throw between stop and start leaves the session stopped.
+                    // Bring it back rather than leaving the preview frozen with
+                    // no error, which is the failure mode `mediaServicesWereReset`
+                    // produces and the one thing the app must never do (TRD §5.5).
+                    if state == .running { session.startRunning() }
                     c.resume(throwing: Self.map(error, at: self.activePosition))
                 }
             }
