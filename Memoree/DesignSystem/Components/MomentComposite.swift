@@ -1,13 +1,20 @@
 import SwiftUI
 import UIKit
 
-/// Builds the composite's one accessibility element.
+/// The composite's one accessibility label.
 ///
-/// **A function, not the `static let` that was here.** The label has to vary by
-/// whether the inset can be tapped, and there was no way to express "this is
-/// interactive" in a constant while the caller set the hint and the trait beside
-/// it. Three modifiers in one place is what keeps them consistent, and the reason
-/// the constant could not.
+/// **Removed: `element(for:isInteractive:)`.** This function was written for a
+/// real reason — three call sites, three copies of the same three modifiers, and
+/// a rule that they must not drift. Then all three call sites kept their
+/// hand-rolled copies and the function was never called once. `grep '\.element('`
+/// returns nothing.
+///
+/// Recorded rather than quietly deleted, because it is the more interesting
+/// half of the story: a helper whose entire justification was consistency does
+/// not deliver consistency unless something *stops* people from writing their
+/// own copy, and a function nobody calls is a function nobody stops anybody
+/// replacing. The three copies are checked by `VoiceOverTests` instead, which
+/// actually can fail.
 ///
 /// ## What each caller gets
 ///
@@ -27,26 +34,6 @@ struct CompositeAccessibility {
 
     /// The label, shared by every caller.
     static let label = "Your moment: two photographs, the scene and you."
-
-    /// One element, labelled, with the hint and trait that follow from whether
-    /// the composite is interactive.
-    @ViewBuilder
-    static func element(
-        for view: some View,
-        isInteractive: Bool
-    ) -> some View {
-        if isInteractive {
-            view
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(label)
-                .accessibilityHint("Double tap to swap which photo is large")
-                .accessibilityAddTraits(.isButton)
-        } else {
-            view
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(label)
-        }
-    }
 }
 
 /// The two photographs of a moment, one large and one inset top-left.
@@ -65,7 +52,8 @@ struct CompositeAccessibility {
 ///   - inset: The photograph drawn into the top-left square. `nil` renders the
 ///     large one alone, which is what a half-captured moment looks like.
 ///   - insetWidth: The inset's side length. The camera screen is closer to the
-///     viewer than the Today screen and uses a larger one.
+///     viewer than the Today screen and uses a larger one, so it passes
+///     `Theme.Size.insetCamera` and the others `Theme.Size.insetStandard`.
 ///   - onTapInset: Makes the inset a button that promotes it. `nil` means the
 ///     inset is **not** interactive, which is deliberate in both callers: the
 ///     large view has to stay live while composing, and on the Today screen a

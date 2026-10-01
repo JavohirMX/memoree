@@ -219,6 +219,180 @@ struct DesignSystemInvariantTests {
 
     // MARK: - Layering
 
+    // MARK: - Sizes, which the colour rules never covered
+
+    @Test("No view hardcodes a dimension")
+    func noHardcodedDimensions() throws {
+        // `AGENTS.md` §11 says no hardcoded values in a view, and the invariants
+        // above enforced it **for colour only** — twelve numeric literals were
+        // living in view files at the time of the audit: three button heights, two
+        // tap targets, the shutter, two composite insets, three icon sizes.
+        //
+        // Those are not cosmetic. A fixed `52pt` on a scaling font clips its own
+        // label above `accessibility-x-large`; a `20pt` icon beside a number that
+        // grows to 140pt becomes punctuation. Both happened, and neither was
+        // visible at the default text size.
+        //
+        // **Zero and one are not scanned, deliberately.** `VStack(spacing: 0)`
+        // means "no gap" and a `1pt` divider is a hairline — both are literal by
+        // nature, neither is a scale decision, and a token for each would be a
+        // name that says "this is part of the system" when it is not. `0` and `1`
+        // are also the only values that would make this scan match its own
+        // regular expression's whitespace. Every value above them is checked.
+        var offences: [String] = []
+
+        for file in try SourceScan.swiftFiles() {
+            guard file.lastPathComponent != "Theme.swift" else { continue }
+            for line in try SourceScan.codeLines(of: file) {
+                let code = line.code
+                // Icon glyph sizes on a *non*-scaling system font.
+                if code.range(of: #"\.system\(size:\s*\d+"#, options: .regularExpression) != nil {
+                    offences.append("\(file.lastPathComponent):\(line.number) icon or font size")
+                }
+                // Dimension arguments to the layout modifiers.
+                let dimension = #"(width|height|minHeight|maxHeight|size):\s*(?:Theme\.\w+\.\w+)?\s*([0-9]+)"#
+                guard let range = code.range(
+                    of: dimension,
+                    options: .regularExpression
+                ) else { continue }
+                let value = code[range].components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) ?? ""
+                // A token reference is exactly what we want.
+                guard value.allSatisfy(\.isNumber), Int(value) ?? 0 > 1 else { continue }
+                offences.append(
+                    "\(file.lastPathComponent):\(line.number) hardcoded dimension \(value)"
+                )
+            }
+        }
+
+        #expect(
+            offences.isEmpty,
+            """
+            hardcoded dimensions in a view (AGENTS.md §11). Use a \
+            `Theme.Size`, `Theme.Spacing` or `Theme.Radius` member: \
+            \(offences.joined(separator: ", "))
+            """
+        )
+    }
+
+    @Test("Every text token passes WCAG AA against the canvas")
+    func textTokensAreLegible() throws {
+        // **`textTertiary` was 3.51:1 on black and 2.84:1 on a card.** AA for
+        // normal text is 4.5:1. It carried real content — "best 500", the retake
+        // counts, "Wider is more random" — so this was an accessibility failure,
+        // not a decorative one that could be argued about.
+        //
+        // **The hexes are read out of `Theme.swift`, not copied here.** The first
+        // version listed them in the test, which meant the test kept asserting
+        // about the values the app used *before* the fix — it passed while the
+        // token was wrong and failed after the token was corrected. A test that
+        // carries its own copy of the thing it is testing is a test of the copy.
+        let theme = try String(
+            contentsOf: SourceScan.file(named: "Theme.swift"),
+            encoding: .utf8
+        )
+
+        func hex(of token: String) throws -> UInt32 {
+            let marker = "static let \(token) = SwiftUI.Color(hex: "
+            guard let after = theme.components(separatedBy: marker).dropFirst().first
+            else {
+                throw SourceScanError.sourceNotWhereExpected(URL(fileURLWithPath: "Theme.swift"))
+            }
+            // **`0x` stripped first.** The first version took
+            // `prefix { $0.isHexDigit }` straight off the source, which stops at
+            // the `x` and yields `"0"` — so every token measured 1.00:1 against
+            // itself and the test reported three failures at a ratio that is
+            // arithmetically impossible for white on black.
+            let withoutPrefix = after
+                .trimmingCharacters(in: .whitespaces)
+                .replacingOccurrences(of: "0x", with: "")
+            let digits = String(withoutPrefix.prefix { $0.isHexDigit })
+            return try #require(
+                UInt32(digits, radix: 16),
+                "\(token) has no readable hex value"
+            )
+        }
+
+        var failures: [String] = []
+        for token in ["textPrimary", "textSecondary", "textTertiary"] {
+            let value = try hex(of: token)
+            for (label, background) in [("black", UInt32(0x000000)), ("card", UInt32(0x1C1C1E))] {
+                let ratio = Self.contrast(value, against: background)
+                if ratio < 4.5 {
+                    failures.append(
+                        "\(token) \(String(format: "%.2f", ratio)):1 on \(label)"
+                    )
+                }
+            }
+        }
+
+        #expect(
+            failures.isEmpty,
+            """
+            these text tokens do not reach WCAG AA (4.5:1) for normal text. \
+            Legibility is not negotiable and a third shade of grey is: \
+            \(failures.joined(separator: ", "))
+            """
+        )
+    }
+
+    /// WCAG 2.x relative-luminance contrast ratio.
+    private static func contrast(_ foreground: UInt32, against background: UInt32) -> Double {
+        func luminance(_ hex: UInt32) -> Double {
+            func channel(_ shift: UInt32) -> Double {
+                let raw = Double((hex >> shift) & 0xFF) / 255
+                return raw <= 0.03928 ? raw / 12.92 : pow((raw + 0.055) / 1.055, 2.4)
+            }
+            return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+        }
+        let a = luminance(foreground)
+        let b = luminance(background)
+        return (max(a, b) + 0.05) / (min(a, b) + 0.05)
+    }
+
+    @Test("A primary control grows with its label rather than clipping it")
+    func primaryControlsHaveNoFixedHeight() throws {
+        // **The measured failure.** A fixed `52pt` against a scaling `.headline`
+        // label: screenshots at each accessibility category in turn show nothing
+        // wrong through `accessibility-extra-large`, and at
+        // `accessibility-extra-extra-large` the "p" of "Capture" is clipped by the
+        // capsule's bottom edge — descender on the boundary, zero padding.
+        //
+        // Asserted on `minHeight` because that is the property that prevents it,
+        // and a fixed `height:` is the specific thing that causes it. The scan is
+        // for the literal rather than for the concept so that a future button at
+        // a different height is caught too — a rule written only for `52` is a
+        // rule about one number, not about what the number was for.
+        for file in try SourceScan.swiftFiles() {
+            for line in try SourceScan.codeLines(of: file) {
+                guard let match = line.code.range(
+                    of: #"\.frame\(height:\s*(\d+)"#,
+                    options: .regularExpression
+                ) else { continue }
+
+                // **A hairline is not a pinned height.** `StatsView`'s 1pt
+                // divider between history rows is a border, not a control, and
+                // 1 is as literal as a border gets. The rule is about heights
+                // above the hairline, which is where a growing label meets a
+                // frame that refuses to.
+                let value = Int(
+                    line.code[match].components(separatedBy: ":").last!
+                        .trimmingCharacters(in: .whitespaces)
+                ) ?? 0
+                guard value > 1 else { continue }
+
+                #expect(
+                    false,
+                    """
+                    \(file.lastPathComponent):\(line.number) pins a height to \(value): \
+                    \(line.code.trimmingCharacters(in: .whitespaces))
+                    A control's height must grow with its label, or a label at an \
+                    accessibility size loses its descenders to its own frame.
+                    """
+                )
+            }
+        }
+    }
+
     @Test("Features imports no PhotoKit and no AVFoundation")
     func featuresRespectTheLayering() throws {
         // `AGENTS.md` §3: "`Features/` contains SwiftUI views and view models

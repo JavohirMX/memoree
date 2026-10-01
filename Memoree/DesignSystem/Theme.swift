@@ -21,14 +21,46 @@ enum Theme {
         static let canvas = SwiftUI.Color(hex: 0x000000)
         /// Cards, sheets, rows.
         static let surface = SwiftUI.Color(hex: 0x1C1C1E)
-        /// Pressed states, chips.
-        static let surfaceElevated = SwiftUI.Color(hex: 0x2C2C2E)
-        /// Hairline separators.
+        /// Hairline separators, pressed states and chips.
+        ///
+        /// **This absorbed `surfaceElevated`.** Both were `#2C2C2E`, only
+        /// `divider` was ever used, and two names for one colour means someone
+        /// eventually picks the other one and wonders why the app has two greys.
         static let divider = SwiftUI.Color(hex: 0x2C2C2E)
 
         static let textPrimary = SwiftUI.Color(hex: 0xFFFFFF)
         static let textSecondary = SwiftUI.Color(hex: 0x8E8E93)
-        static let textTertiary = SwiftUI.Color(hex: 0x636366)
+
+        /// **The old third tier, kept and legible.**
+        ///
+        /// This was `#636366` — **3.51:1 on the canvas and 2.84:1 on a card**,
+        /// against WCAG AA's 4.5:1 for normal text. It carried real content:
+        /// "best 500", the retake counts, "Wider is more random". So it was an
+        /// accessibility failure and not a decorative grey that could be argued
+        /// about.
+        ///
+        /// **`#848486` is the faintest grey that reaches 4.5:1 on a card**, the
+        /// harder of the two backgrounds it is used on. Measured, not chosen by
+        /// eye: `#848486` is 5.63:1 on black and 4.56:1 on `#1C1C1E`.
+        ///
+        /// ## What this cost, stated rather than hidden
+        ///
+        /// **The ramp is now two tiers, not three**, and the numbers say why.
+        /// Secondary is 6.44:1 and this is 5.63:1 — a 13% step, down from the 46%
+        /// the old pair had. Thirteen percent does not read as a tier.
+        ///
+        /// That is not a compromise between two goods. On a **pure black canvas**
+        /// a third *distinct* tier that passes AA does not exist: keeping
+        /// `#8E8E93` for the middle and pushing the top to `#B0B0B8` does produce
+        /// three passing tiers with a 73% step, but it brightens every piece of
+        /// secondary text in the app and changes what the thing feels like. The
+        /// tone was kept and the tier was given up. That is the right way round:
+        /// legibility is not negotiable and a third shade of grey is.
+        ///
+        /// **Use it for icons, dividers and genuinely decorative marks** — where
+        /// 3:1 is the correct threshold — and reach for `textSecondary` whenever
+        /// a *word* is what carries the meaning.
+        static let textTertiary = SwiftUI.Color(hex: 0x848486)
 
         /// Label on a white fill. Intentional inversion.
         static let onAccent = SwiftUI.Color(hex: 0x000000)
@@ -60,17 +92,70 @@ enum Theme {
         static let l: CGFloat = 16
         static let xl: CGFloat = 24
         static let xxl: CGFloat = 32
-        /// Full-bleed dual-lens cards sit edge to edge: 0pt side inset.
-        static let none: CGFloat = 0
+    }
+
+    // MARK: - Size
+
+    /// Fixed dimensions that are not spacing and not type.
+    ///
+    /// Exists because the app had **ten** numeric literals used as dimensions in
+    /// view files — 52 for three button heights, 44 for two tap targets, 72 for
+    /// the shutter, 96 and 108 for the two composite insets, 20 and 32 for icon
+    /// glyphs. `AGENTS.md` §11 says no hardcoded values in a view, and the
+    /// invariant test enforced that for colour only. This closes the rest.
+    enum Size {
+        /// Apple's minimum comfortable tap target, in points.
+        ///
+        /// The floor every control must reach, regardless of how small its
+        /// *label* is. Five controls in this app were below it — the camera's
+        /// "Cancel" was ~17pt tall, because the frame came from the font size
+        /// rather than from anything.
+        static let tapTarget: CGFloat = 44
+
+        /// The app's primary button height at the default text size.
+        ///
+        /// A **starting** height, not a fixed one: it grows with the label past
+        /// the accessibility sizes rather than clipping it.
+        static let tapTargetComfortable: CGFloat = 52
+
+        /// The shutter ring. The largest tap target in the app by design.
+        static let shutter: CGFloat = 72
+
+        /// The front-camera inset on the camera review screen. Larger than the
+        /// archive's, because that screen is closer to the viewer.
+        static let insetCamera: CGFloat = 108
+
+        /// The front-camera inset everywhere else.
+        static let insetStandard: CGFloat = 96
+
+        /// The Today header's icon buttons.
+        static let headerIcon: CGFloat = 20
+
+        /// A standalone icon with no text beside it — the "not in Photos" glyph.
+        static let iconStandalone: CGFloat = 32
+
+        /// The inner dot of the shutter ring, inset from its stroke.
+        static let shutterInnerInset: CGFloat = 6
+
+        /// The largest the Today screen's composite is drawn, before the screen
+        /// scrolls.
+        ///
+        /// A **maximum**, not a fixed height — the composite is 3:4 and its width
+        /// comes from the screen, so on a tall phone this is what stops it from
+        /// pushing the shutter off the bottom.
+        static let todayCompositeMaxHeight: CGFloat = 360
+
+        /// The full-size photograph the archive detail requests, in points at 1×.
+        ///
+        /// A downsample on purpose (TRD §6.5): the original 3–5 MB stays in the
+        /// user's library and is never copied into memory to fill a screen.
+        static let detailImageWidth: CGFloat = 520
+        static let detailImageHeight: CGFloat = 693
     }
 
     // MARK: - Radius
 
     enum Radius {
-        /// Buttons.
-        static let pill: CGFloat = 500
-        /// Modals and sheets.
-        static let modal: CGFloat = 24
         /// Content cards.
         static let card: CGFloat = 18
         /// The front-camera inset. Matches the BeReal composite geometry.
@@ -122,10 +207,6 @@ enum Theme {
         /// 15. The workhorse: every paragraph of copy in the app.
         static let body = Font.system(.subheadline)
 
-        /// 16. Slightly larger than `body`, for copy that is read rather than
-        /// scanned.
-        static let caption = Font.system(.callout)
-
         /// 13. Timestamps, metadata, and anything that is a fact about a
         /// photograph rather than a sentence.
         static let metadata = Font.system(.footnote)
@@ -145,14 +226,6 @@ enum Theme {
         /// where this goes, which honours the number exactly and applies the user's
         /// text-size setting as a multiplier. See `ScaledFont.swift`.
         static let displaySize: CGFloat = 64
-    }
-
-    // MARK: - Shadow
-
-    /// On a black canvas a shadow does not read as darkening — it reads as
-    /// opacity. Prefer omitting shadows entirely over stacking them.
-    enum Elevation {
-        static let card = (color: SwiftUI.Color.black.opacity(0.6), radius: CGFloat(24))
     }
 }
 

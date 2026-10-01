@@ -45,9 +45,6 @@ final class MomentStore {
         return try? context.fetch(descriptor).first
     }
 
-    /// The most recent live moment, or `nil` on a fresh install.
-    var mostRecentMoment: Moment? { allMoments.first }
-
     /// Moments on a specific day.
     func moments(on day: DayIdentifier) -> [Moment] {
         let target = day.rawValue
@@ -183,26 +180,6 @@ final class MomentStore {
         context.insert(moment)
         try save()
         return moment
-    }
-
-    /// Attaches the Photos asset identifiers after a successful library write.
-    ///
-    /// Kept separate from `record` because the capture happens first and the
-    /// write can fail. A moment with no identifiers is still a real moment and
-    /// must not be discarded — Phase 5 wires the retry.
-    func attachAssets(
-        to moment: Moment,
-        back: String?,
-        front: String?,
-        bts: String? = nil
-    ) throws {
-        moment.backAssetIdentifier = back
-        moment.frontAssetIdentifier = front
-        if let bts {
-            moment.btsAssetIdentifier = bts
-            moment.hasBTS = true
-        }
-        try save()
     }
 
     func updateNote(_ note: String?, for moment: Moment) throws {

@@ -8,9 +8,14 @@ import UIKit
 /// change, a permission the system owns, or a promise this app deliberately
 /// does not make.
 ///
-/// Reached from a gear in the Today header, presented as a sheet with its own
-/// `NavigationStack` so it has a title and a dismiss affordance rather than
-/// being a full-screen takeover — it is a place you visit, not a place you are.
+/// Reached from a gear in the Today header, presented as a **full-screen cover**.
+///
+/// **This comment said "sheet" for four months and was wrong.** `TodayView`
+/// presents `SettingsView` with `.fullScreenCover` and explains at length why:
+/// the sheet version shipped, rendered at `.medium`, and
+/// `.presentationDetents([.large])` was "silently ignored in both places" before
+/// the switch. Two files in the same app documenting the same decision
+/// differently is how the next reader ends up trusting neither.
 struct SettingsView: View {
 
     @Environment(AppEnvironment.self) private var environment
@@ -164,7 +169,7 @@ struct SettingsView: View {
                         .font(Theme.Typography.button)
                         .foregroundStyle(Theme.Color.onAccent)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
+                        .frame(minHeight: Theme.Size.tapTargetComfortable)
                         .background(Theme.Color.accent)
                         .clipShape(Capsule())
                 }
@@ -252,7 +257,7 @@ struct SettingsView: View {
                         .font(Theme.Typography.button)
                         .foregroundStyle(Theme.Color.onAccent)
                         .frame(maxWidth: .infinity)
-                        .frame(height: 52)
+                        .frame(minHeight: Theme.Size.tapTargetComfortable)
                         .background(Theme.Color.textPrimary)
                         .clipShape(Capsule())
                 }
@@ -262,7 +267,7 @@ struct SettingsView: View {
                 // **Not a spinner.** An archive of 500 moments encodes in
                 // milliseconds, and a spinner implies work that is not happening.
                 // The row is simply absent until it is ready, which is immediate.
-                Color.clear.frame(height: 52).accessibilityHidden(true)
+                Color.clear.frame(minHeight: Theme.Size.tapTargetComfortable).accessibilityHidden(true)
             }
         }
     }

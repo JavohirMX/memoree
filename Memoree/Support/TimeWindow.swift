@@ -112,18 +112,50 @@ extension TimeWindow {
         return "\(start) – \(end)"
     }
 
-    /// `11:00`, or `24:00` for end-of-day.
+    /// The time, in the user's own format.
+    ///
+    /// **`.formatted(time: .shortened)`, not `String(format: "%02d:%02d")`.**
+    ///
+    /// The hardcoded version was always 24-hour with a forced colon, so a user in
+    /// the United States set their window as "From 11:00" and "Until 23:00" while
+    /// every other time in the app said "11:00 AM". Same defect as
+    /// `TodayViewModel.momentClockTime`, in the other file that had not been
+    /// converted — and the same lesson: `StatsViewModel` had already been fixed
+    /// for this and the fix was never carried across.
+    ///
+    /// **`24:00` is kept, and is the one value that is not a clock time.** It
+    /// means end-of-day, and rendering it as `00:00` would put the end of the
+    /// window before the start of it. It is composed by hand for the same reason:
+    /// it is a boundary, not an instant, so there is no honest `Date` for it.
+    /// Everything else comes from the device.
     ///
     /// Internal rather than private because `WindowPicker` labels its sliders
     /// with it. A second copy of this formatting inside the picker would be a
     /// second place for `24:00` to render as `00:00`, which is the one value
     /// here that is genuinely easy to get wrong.
-    static func format(minutes: Int) -> String {
+    static func format(minutes: Int, locale: Locale = .current) -> String {
         let clamped = min(max(minutes, 0), 24 * 60)
-        let hour = clamped / 60
-        let minute = clamped % 60
         // 1440 is end-of-day, not a 24:00 clock time users would misread.
         if clamped == 24 * 60 { return "24:00" }
-        return String(format: "%02d:%02d", hour, minute)
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        // Any date will do — only the clock time is read — and midnight on a fixed
+        // day keeps this out of any question of which day it landed on.
+        let reference = calendar.date(
+            from: DateComponents(year: 2001, month: 1, day: 1, hour: clamped / 60, minute: clamped % 60)
+        )
+        guard let reference else { return "\(clamped / 60):\(clamped % 60)" }
+        // **`locale:` is passed explicitly.** The first version declared the
+        // parameter and then called `.formatted(...)` with no locale, which
+        // formats in `.current` regardless — so the parameter did nothing, the
+        // tests that pinned `en_GB` against `en_US` both failed, and the
+        // function had a parameter no caller could influence. A parameter that
+        // is accepted and ignored is worse than no parameter, because the
+        // signature promises a seam that does not exist.
+        return reference.formatted(
+            Date.FormatStyle(date: .omitted, time: .shortened)
+                .locale(locale)
+        )
     }
 }

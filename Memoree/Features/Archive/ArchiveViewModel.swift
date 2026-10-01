@@ -216,12 +216,6 @@ final class ArchiveViewModel {
         images.removeAll()
     }
 
-    func cancelPrefetch() async {
-        await environment.photoLibrary.cancelThumbnailPrefetch(
-            targetSize: Self.thumbnailTargetSize
-        )
-    }
-
     /// The size a cell's image is requested at.
     ///
     /// The cell is a third of the screen, so this asks for a third of the screen

@@ -117,7 +117,7 @@ struct CameraView: View {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 96)
+                    .frame(width: Theme.Size.insetStandard)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inset))
                     .overlay {
                         RoundedRectangle(cornerRadius: Theme.Radius.inset)
@@ -157,7 +157,7 @@ struct CameraView: View {
         } label: {
             Circle()
                 .strokeBorder(Theme.Color.textPrimary, lineWidth: 3)
-                .frame(width: 72, height: 72)
+                .frame(width: Theme.Size.shutter, height: Theme.Size.shutter)
                 .overlay {
                     Circle()
                         .fill(Theme.Color.textPrimary)
@@ -203,7 +203,7 @@ struct CameraView: View {
         MomentComposite(
             large: model.prominentPhoto.flatMap { UIImage(data: $0.data) },
             inset: model.insetReviewPhoto.flatMap { UIImage(data: $0.data) },
-            insetWidth: 108,
+            insetWidth: Theme.Size.insetCamera,
             onTapInset: { model.swapProminent() }
         )
         // Interactive here and only here: this is the one caller where a double tap
@@ -223,28 +223,48 @@ struct CameraView: View {
     /// with two meanings would make the common action unpredictable.
     private func reviewActions(_ model: CameraViewModel) -> some View {
         VStack(spacing: Theme.Spacing.m) {
-            PrimaryButton(title: "Post") {
+            PrimaryButton(title: "Save") {
                 Task { await model.commit() }
             }
 
+            // **Both controls get an explicit 44pt floor.**
+            //
+            // Their heights were coming from their fonts: a `.subheadline` label
+            // with no frame is ~20pt tall and a `.footnote` one is ~17pt, against
+            // Apple's 44pt minimum. On a screen held one-handed in the dark, at the
+            // exact moment a user is deciding whether to keep or discard a
+            // photograph, that is the worst place in the app for a 17pt target.
             Menu {
                 ForEach(CameraPosition.allCases, id: \.self) { position in
-                    Button(position == .front ? "Retake front" : "Retake back") {
+                    Button(position == .front ? "Reshoot front" : "Reshoot back") {
                         Task { await model.reshoot(position) }
                     }
                 }
-                Button("Start over", role: .destructive) {
-                    Task { await model.startOver() }
+                // **Destructive, and separated.** It sits below the two routine
+                // reshoots in its own `Divider`-separated group, because "throw
+                // both photographs away" and "shoot that half again" are not the
+                // same kind of decision and one tap should not be ambiguous about
+                // which it will be.
+                Section {
+                    Button("Start over", role: .destructive) {
+                        Task { await model.startOver() }
+                    }
                 }
             } label: {
-                Text("Retake")
+                Text("Reshoot")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(minHeight: Theme.Size.tapTarget)
+                    .contentShape(.rect)
             }
 
             Button("Cancel") { onDismiss() }
                 .font(Theme.Typography.metadata)
                 .foregroundStyle(Theme.Color.textTertiary)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: Theme.Size.tapTarget)
+                .contentShape(.rect)
         }
     }
 

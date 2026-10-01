@@ -85,8 +85,8 @@ struct TodayView: View {
                 .presentationDetents([.large])
         }
         .onAppear {
-            // Development affordance, DEBUG-only: open a screen at launch so its
-            // first frame can be looked at without a finger on the phone.
+            // Development affordance, open a screen at launch so its first frame
+            // can be looked at without a finger on the phone.
             //
             // Exists because the alternative is a blind screen. Two defects in
             // this codebase were invisible to every test and obvious in a
@@ -107,17 +107,26 @@ struct TodayView: View {
             // did exactly that and silently did nothing, which is the worst
             // possible failure for a diagnostic — it looks like the screen is
             // broken rather than the flag.
-            let arguments = ProcessInfo.processInfo.arguments
-            guard let flag = arguments.firstIndex(of: "-MemoreeOpen"),
-                  arguments.indices.contains(flag + 1)
-            else { return }
+            //
+            // **`#if DEBUG`, and it was missing.** The comment above said
+            // "DEBUG-only" and the code was not — the whole block was compiled
+            // into release builds, where it reads `ProcessInfo.arguments` on
+            // every appearance and finds nothing. Inert, yes, and inert code in a
+            // shipping binary is still code that ships: a launch argument nobody
+            // expects to work, reachable from a scheme, on a user's device.
+            #if DEBUG
+                let arguments = ProcessInfo.processInfo.arguments
+                guard let flag = arguments.firstIndex(of: "-MemoreeOpen"),
+                      arguments.indices.contains(flag + 1)
+                else { return }
 
-            switch arguments[flag + 1] {
-            case "archive": isShowingArchive = true
-            case "settings": isShowingSettings = true
-            case "stats": isShowingStats = true
-            default: break
-            }
+                switch arguments[flag + 1] {
+                case "archive": isShowingArchive = true
+                case "settings": isShowingSettings = true
+                case "stats": isShowingStats = true
+                default: break
+                }
+            #endif
         }
         // Reload when the camera closes, not when this view appears.
         //
@@ -288,9 +297,12 @@ struct TodayView: View {
                 isShowingArchive = true
             } label: {
                 Image(systemName: "square.grid.3x3")
-                    .font(.system(size: 20, weight: .regular))
+                    // `.scaledDisplayFont`, not a fixed `.system(size:)`. A symbol's
+                    // glyph size does not follow Dynamic Type on its own, so the
+                    // icon stayed 20pt while the streak beside it grew to 140.
+                    .scaledDisplayFont(Theme.Size.headerIcon, weight: .regular)
                     .foregroundStyle(Theme.Color.textSecondary)
-                    .frame(width: 44, height: 44)
+                    .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -305,9 +317,9 @@ struct TodayView: View {
                 isShowingSettings = true
             } label: {
                 Image(systemName: "gearshape")
-                    .font(.system(size: 20, weight: .regular))
+                    .scaledDisplayFont(Theme.Size.headerIcon, weight: .regular)
                     .foregroundStyle(Theme.Color.textSecondary)
-                    .frame(width: 44, height: .infinity)
+                    .frame(width: Theme.Size.tapTarget, height: .infinity)
                     .contentShape(.rect)
             }
             .buttonStyle(.plain)
@@ -336,10 +348,10 @@ struct TodayView: View {
             MomentComposite(
                 large: images.large,
                 inset: images.inset,
-                insetWidth: 96
+                insetWidth: Theme.Size.insetStandard
             )
             .aspectRatio(3.0 / 4.0, contentMode: .fit)
-            .frame(maxHeight: 360)
+            .frame(maxHeight: Theme.Size.todayCompositeMaxHeight)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
             .overlay {
                 RoundedRectangle(cornerRadius: Theme.Radius.card)
@@ -364,7 +376,7 @@ struct TodayView: View {
             // spinner would imply work that is usually a few milliseconds.
             Theme.Color.surface
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                .frame(maxHeight: 360)
+                .frame(maxHeight: Theme.Size.todayCompositeMaxHeight)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .accessibilityHidden(true)
         }

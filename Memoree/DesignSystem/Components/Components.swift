@@ -27,7 +27,30 @@ struct PrimaryButton: View {
                 .font(Theme.Typography.button)
                 .foregroundStyle(labelColor)
                 .frame(maxWidth: .infinity)
-                .frame(height: 52)
+                // **`minHeight`, not `height`.**
+                //
+                // A fixed 52pt on a `.headline` label clips the descenders, and
+                // the button grew while the text did not. **Measured, not
+                // assumed:** screenshots at every accessibility size show nothing
+                // wrong through `accessibility-extra-large`, and at
+                // `accessibility-extra-extra-large` the "p" of "Capture" is cut
+                // off by the capsule's bottom edge — the descender sits exactly
+                // on the boundary with zero padding, which is what clipping
+                // looks like the instant before it is obvious.
+                //
+                // It was not guessed from a point size. The first version of this
+                // comment claimed the damage started at `accessibility-x-large`
+                // and that ~11pt of the title was lost; both were wrong, and a
+                // screenshot at each category in turn is what replaced them.
+                //
+                // `minHeight` keeps the 52pt tap target at every size the design
+                // was drawn at and grows with the label beyond it. The capsule
+                // grows with it, so nothing is clipped and the shape holds.
+                .frame(minHeight: Theme.Size.tapTargetComfortable)
+                // Horizontal padding, for the same reason: `.headline` at an
+                // accessibility size is wider than the label, and without this
+                // it touches the capsule's edge.
+                .padding(.horizontal, Theme.Spacing.m)
                 .background(background)
                 .clipShape(Capsule())
         }

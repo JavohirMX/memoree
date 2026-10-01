@@ -177,7 +177,7 @@ struct MomentDetailView: View {
             // (ADR-008).
             VStack(spacing: Theme.Spacing.m) {
                 Image(systemName: "photo")
-                    .font(.system(size: 32))
+                    .scaledDisplayFont(Theme.Size.iconStandalone, weight: .regular)
                     .foregroundStyle(Theme.Color.textTertiary)
                 Text("These photos are no longer in your library. The moment is still in your archive.")
                     .font(Theme.Typography.body)

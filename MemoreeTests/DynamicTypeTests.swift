@@ -107,12 +107,25 @@ struct DynamicTypeTests {
             byName[identifier] = String(text[text.index(after: open)...])
         }
 
-        #expect(byName["body"] == ".subheadline", "15, and distinct from caption's 16")
-        #expect(byName["caption"] == ".callout", "16, and distinct from body's 15")
+        #expect(byName["body"] == ".subheadline", "15, the workhorse")
         #expect(byName["cardUsername"] == byName["button"], "both were 17 semibold")
         #expect(byName["metadata"] == ".footnote", "13, the smallest body copy")
         #expect(byName["retakePill"] == ".caption2", "11, the smallest text in the app")
         #expect(byName["screenTitle"] == ".title2", "22, the largest non-numeral role")
+
+        // **The 16pt level is gone, and its absence is pinned.**
+        //
+        // `caption` was `.callout`, no view ever referenced it, and its doc
+        // comment described a role — "copy that is read rather than scanned" —
+        // that nothing was doing. So the ramp claimed a step the app did not
+        // have. `body` at 15 and `cardUsername` at 17 bracket it closely enough
+        // that nothing needed it, and if a future card does want 16 it can add
+        // the level back with a view to justify it.
+        //
+        // Asserted as an absence because an unused token is otherwise invisible:
+        // it compiles, it lints, and it says nothing about the app.
+        #expect(byName["caption"] == nil, "no level without a view behind it")
+        #expect(byName["body"] != byName["metadata"], "the ramp's steps are real steps")
     }
 
     // MARK: - The numerals
@@ -157,7 +170,13 @@ struct DynamicTypeTests {
         //
         // So the rule is not "symbols scale" and it is not "symbols do not". It
         // is **a symbol next to scaling text scales with it**, and that is what
-        // this asserts: both flames are scaled, and neither header icon is.
+        // this asserts.
+        //
+        // **This used to assert the opposite for the header icons** — that they
+        // were pinned at a literal `20`. That was wrong, and an accessibility
+        // audit found it: a fixed `.system(size:)` glyph does not follow Dynamic
+        // Type, so the archive and settings icons stayed 20pt beside a streak
+        // numeral that grows to 140pt. They now scale like the flame does.
         let components = try SourceScan.file(named: "Components.swift")
         let componentsText = try String(contentsOf: components, encoding: .utf8)
         #expect(componentsText.contains("flame.fill"))
@@ -167,8 +186,17 @@ struct DynamicTypeTests {
         let today = try SourceScan.file(named: "TodayView.swift")
         let todayText = try String(contentsOf: today, encoding: .utf8)
         #expect(todayText.contains("square.grid.3x3"))
-        #expect(todayText.contains(".system(size: 20, weight: .regular)"),
-                "the header icons are chrome and stay fixed")
+        #expect(todayText.contains("scaledDisplayFont(Theme.Size.headerIcon"),
+                "and so do the header icons — a fixed glyph does not scale")
+
+        // **Scanned line-by-line with comments stripped**, not by `contains` on
+        // the whole file. The first version searched the raw source and matched
+        // `.system(size:` inside a *comment* explaining why icons used to be
+        // fixed — a test that fails on its own documentation.
+        let fixedGlyphs = try SourceScan.codeLines(of: today)
+            .filter { $0.code.contains(".system(size:") }
+            .map { "TodayView.swift:\($0.number)" }
+        #expect(fixedGlyphs.isEmpty, "no fixed glyph size in code: \(fixedGlyphs)")
     }
 
     @Test("No new fixed point sizes appeared")

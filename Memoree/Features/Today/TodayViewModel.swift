@@ -61,42 +61,7 @@ final class TodayViewModel {
     /// of them, and saying so once here costs one line.
     private(set) var albumFailure: String?
 
-    /// Set while the camera is unavailable in this build phase.
-    private(set) var cameraAvailable = false
-
-    /// The window the user actually chose, for the Settings screen.
-    ///
-    /// Read from the store rather than derived from `interval`, because
-    /// `interval` is the *resolved* moment for today and a persisted
-    /// `DayRecord` wins over the configured window (TRD §4.1) — so it is the
-    /// wrong thing to show as "your window" even when it is technically
-    /// correct.
-    private(set) var configuredWindow: TimeWindow
-
     private let environment: AppEnvironment
-
-    /// Whether to file each moment into a `Memoree` album, for the capture screen.
-    ///
-    /// **Lives on the environment rather than being passed into
-    /// `CameraViewModel`.** The view model holds no persistence and must not
-    /// (`AGENTS.md` §3: Features holds views and view models), and `MomentStore` is
-    /// `@MainActor` — so a `@Sendable` closure capturing it cannot *return* a
-    /// `AppSettings` model, because that is not `Sendable`. A `Bool` read on the
-    /// main actor is fine, and it is the only thing the camera screen wanted.
-    ///
-    /// Reading it per commit rather than once at construction is deliberate: the
-    /// preference can be flipped between moments, and a value snapshotted when the
-    /// camera screen was built would file today's moment according to a setting
-    /// from before the user changed it.
-    func shouldFileIntoAlbum() async -> Bool {
-        environment.momentStore.settings().saveToAlbum
-    }
-
-    /// Where the capture screen reports an album failure it could not surface
-    /// itself, because it is already dismissed by then.
-    func reportAlbumFailure(_ message: String) {
-        environment.noteAlbumFailure(message)
-    }
 
     /// The clock.
     ///
@@ -129,7 +94,6 @@ final class TodayViewModel {
         // which asks the system clock. Same clock as everything else here.
         self.todayMoment = environment.momentStore.facts().last { $0.day == today }
         self.summary = environment.momentStore.summary(today: today)
-        self.configuredWindow = environment.momentStore.settings().timeWindow
     }
 
     // MARK: - Derived state
@@ -174,7 +138,7 @@ final class TodayViewModel {
     /// decision means the tests can check the value without also having to stand
     /// up a notification state to see it.
     var momentClockTime: String {
-        Self.timeFormatter.string(from: interval.start)
+        Self.clockTime(for: interval.start)
     }
 
     var streak: Int { summary.currentStreak }
@@ -240,7 +204,6 @@ final class TodayViewModel {
         // Re-read on every reload, not only at construction: the Settings screen
         // can change the window while the Today screen exists underneath it, and
         // a stale value here would be a Settings screen that appears not to work.
-        configuredWindow = environment.momentStore.settings().timeWindow
         notificationsAuthorized = await refreshAuthorization()
         pendingNotificationCount = await environment.notificationService.pendingCount()
         // Cleared on every reload: the album may have been fixed by the user, or
@@ -293,7 +256,10 @@ final class TodayViewModel {
     /// iPhone SE and on a Pro Max without a second number to keep honest.
     private static var compositeTargetSize: CGSize {
         let scale = UIScreen.main.scale
-        return CGSize(width: 520 * scale, height: 693 * scale)
+        return CGSize(
+                width: Theme.Size.detailImageWidth * scale,
+                height: Theme.Size.detailImageHeight * scale
+            )
     }
 
     private func refreshAuthorization() async -> Bool {
@@ -302,9 +268,24 @@ final class TodayViewModel {
 
     // MARK: - Derived helpers
 
-    private static let timeFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return formatter
-    }()
+    /// The moment's clock time, in the user's own format.
+    ///
+    /// **`.formatted(time: .shortened)`, not `"HH:mm"`.**
+    ///
+    /// This was a `DateFormatter` with `dateFormat = "HH:mm"` — always 24-hour,
+    /// always a colon, ignoring the device entirely. It reached the user in two
+    /// places, including **the one screen and the one number they act on**: "Next
+    /// moment at 17:59", and the footer row "Moment today · 17:59". A user in the
+    /// United States read a 24-hour clock on the screen that tells them when to be
+    /// ready, while eight other screens in the same app — Stats, the archive, the
+    /// detail view — said "11:38 AM" in the locale's own way.
+    ///
+    /// `StatsViewModel` had already been through this exact bug and its comment
+    /// records the rule: *matching whatever the device does everywhere else*. This
+    /// file had simply not been converted. That is the same shape as the
+    /// twenty-moment capture fix — a correct change made where the symptom
+    /// appeared and nowhere else.
+    private static func clockTime(for date: Date) -> String {
+        date.formatted(date: .omitted, time: .shortened)
+    }
 }

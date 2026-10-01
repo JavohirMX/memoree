@@ -16,7 +16,95 @@ struct TimeWindowTests {
         #expect(TimeWindow.default.startMinutes == 11 * 60)
         #expect(TimeWindow.default.endMinutes == 23 * 60)
         #expect(TimeWindow.default.spanSeconds == 12 * 3600)
-        #expect(TimeWindow.default.displayBounds == "11:00 – 23:00")
+
+        // **Asserted in two locales rather than as one literal.** This used to
+        // require `"11:00 – 23:00"`, which is only true on a device set to
+        // 24-hour time. `displayBounds` was `String(format: "%02d:%02d")`, so a
+        // user in the United States set their window as "From 11:00 / Until
+        // 23:00" while every other time in the app said "11:00 AM" — and this
+        // test *enforced* the wrong behaviour rather than catching it.
+        //
+        // Pinning both an en_GB and an en_US rendering is what makes it a test
+        // about locale-following: one literal proves nothing, because it happens
+        // to be right on whichever machine runs it.
+        let gb = TimeWindow.format(minutes: 11 * 60, locale: Locale(identifier: "en_GB"))
+        let us = TimeWindow.format(minutes: 11 * 60, locale: Locale(identifier: "en_US"))
+        #expect(gb == "11:00", "24-hour locale")
+        #expect(us.contains("11") && us.uppercased().contains("AM"),
+                "12-hour locale, got \(us)")
+
+        // And the two must actually differ, which is the property being protected.
+        // Without this the pair above passes even if `locale:` were ignored and
+        // both rendered in whatever the machine running the tests is set to.
+        #expect(gb != us, "the locale parameter has to do something")
+    }
+
+    @Test("End-of-day is 24:00 in every locale")
+    func endOfDayIsNotAClockTime() {
+        // The one value that is a boundary rather than an instant, and the one
+        // genuinely easy to get wrong: rendering it as `00:00` would put the end
+        // of the window before the start of it. It is composed by hand for that
+        // reason, so it must not follow the locale — a user would otherwise see
+        // "12:00 AM" for the end of their day and "12:00 AM" for its start.
+        #expect(TimeWindow.format(minutes: 24 * 60, locale: Locale(identifier: "en_US")) == "24:00")
+        #expect(TimeWindow.format(minutes: 24 * 60, locale: Locale(identifier: "en_GB")) == "24:00")
+    }
+
+    @Test("Times outside the window are clamped, not wrapped")
+    func outOfRangeMinutesAreClamped() throws {
+        #expect(TimeWindow.format(minutes: 25 * 60, locale: Locale(identifier: "en_GB")) == "24:00",
+                "past midnight is still end-of-day")
+        // **Nothing here is written as a literal time.** `en_US` puts a narrow no-break
+        // space (U+202F) before the meridiem, not a plain space, so `"12:00 AM"`
+        // in a test is not the string the device produces — the first version of
+        // this assertion failed on exactly that, comparing against a space.
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let realMidnight = try #require(
+            calendar.date(from: DateComponents(year: 2001, month: 1, day: 1, hour: 0, minute: 0))
+        )
+
+        func deviceMidnight(in identifier: String) -> String {
+            realMidnight.formatted(
+                Date.FormatStyle(date: .omitted, time: .shortened)
+                    .locale(Locale(identifier: identifier))
+            )
+        }
+
+        #expect(
+            TimeWindow.format(minutes: -90, locale: Locale(identifier: "en_US"))
+                == deviceMidnight(in: "en_US"),
+            "before midnight is still midnight"
+        )
+        #expect(
+            TimeWindow.format(minutes: 0, locale: Locale(identifier: "en_GB"))
+                == deviceMidnight(in: "en_GB"),
+            "and midnight stays midnight"
+        )
+
+        // **Midnight in en_GB is `0:00`, not `00:00`.** CLDR's h23 pattern there
+        // is `H:mm`. It is the locale's correct rendering and exactly why this
+        // function delegates instead of formatting — but it does mean the app can
+        // show `0:00` and `24:00` side by side in one window on a British
+        // device, which reads like a bug to anyone who has not thought about hour
+        // cycles. Both are right. Asserted so the next person does not "fix" it.
+        #expect(
+            deviceMidnight(in: "en_GB") == "0:00",
+            "en_GB midnight is un-padded; changing this is changing the locale"
+        )
+
+        // **The same comparison across five locales**, including ones whose
+        // rendering is not a colon-separated pair at all. `ar_EG` uses Eastern
+        // Arabic digits, so asserting `formatted == expected` is the only way to
+        // write this that holds everywhere.
+        for identifier in ["en_GB", "en_US", "ja_JP", "de_DE", "ar_EG"] {
+            let locale = Locale(identifier: identifier)
+            let formatted = TimeWindow.format(minutes: 0, locale: locale)
+            #expect(
+                formatted == deviceMidnight(in: identifier),
+                "\(identifier) midnight: \(formatted) vs \(deviceMidnight(in: identifier))"
+            )
+        }
     }
 
     @Test("A well-formed window is preserved exactly")
@@ -87,10 +175,29 @@ struct TimeWindowTests {
         #expect(latest >= window.earliestStart(on: day, calendar: cal))
     }
 
-    @Test("Display bounds format midnight and end-of-day readably")
+    @Test("Display bounds render both ends in the device's own format")
     func displayFormatting() {
-        #expect(TimeWindow(startMinutes: 0, endMinutes: 9 * 60).displayBounds == "00:00 – 09:00")
-        #expect(TimeWindow(startMinutes: 0, endMinutes: 24 * 60).displayBounds == "00:00 – 24:00")
+        // **The separator and both bounds are now locale-derived, so the whole
+        // string is asserted against the device.** The old literals
+        // `"00:00 – 09:00"` and `"00:00 – 24:00"` were true only on a 24-hour
+        // device with a European time format, and they were *enforcing* that.
+        //
+        // What is actually worth pinning here is the pair of properties this test
+        // was written to protect, and neither of them is the exact string:
+        //
+        // - the **start is not `24:00`** even though the end is — a reversed
+        //   window is the bug that matters;
+        // - the **end is `24:00`** because it means end-of-day, not midnight.
+        let early = TimeWindow(startMinutes: 0, endMinutes: 9 * 60)
+        let wholeDay = TimeWindow(startMinutes: 0, endMinutes: 24 * 60)
+
+        let earlyBounds = early.displayBounds.components(separatedBy: " – ")
+        #expect(earlyBounds.count == 2, "got \(early.displayBounds)")
+        #expect(earlyBounds[0] != "24:00", "the start is never end-of-day")
+
+        let wholeDayBounds = wholeDay.displayBounds.components(separatedBy: " – ")
+        #expect(wholeDayBounds.count == 2, "got \(wholeDay.displayBounds)")
+        #expect(wholeDayBounds[1] == "24:00", "end-of-day is a boundary, not an instant")
     }
 }
 

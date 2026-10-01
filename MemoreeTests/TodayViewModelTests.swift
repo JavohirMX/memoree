@@ -20,6 +20,23 @@ struct TodayViewModelTests {
 
     // MARK: - Harness
 
+    /// The device's own rendering of a clock time, for assertions about *which*
+    /// time rather than about how it is spelled.
+    ///
+    /// Necessary because the exact string is a property of the device, not of the
+    /// code: `en_GB` says `14:00`, `en_US` says `2:00 PM` with a **narrow no-break
+    /// space** (U+202F) before the meridiem, and `ja_JP` says `14:00`. A test that
+    /// writes `"14:00"` is asserting that everyone on earth reads a 24-hour clock.
+    private static func formattedClockTime(_ hour: Int, minute: Int) -> String {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        let reference = calendar.date(
+            from: DateComponents(year: 2001, month: 1, day: 1, hour: hour, minute: minute)
+        )
+        guard let reference else { return "\(hour):\(minute)" }
+        return reference.formatted(date: .omitted, time: .shortened)
+    }
+
     /// A tiny real PNG, so the read path resolves actual pixels.
     private static let pixelPNG = PixelFixture.png
 
@@ -167,7 +184,16 @@ struct TodayViewModelTests {
         // The value is still computed — the caller asks first. Keeping the
         // formatting separate means the tests can check the number without also
         // having to stand up a notification state to see it.
-        #expect(model.momentClockTime == "14:00")
+        //
+        // **Compared against the device's own rendering of 14:00, not the
+        // literal `"14:00"`.** `momentClockTime` used to be `"HH:mm"` and this
+        // test pinned that, which meant it enforced a 24-hour clock on every
+        // user regardless of Settings while the assertion read as though it were
+        // testing *that the time is 14:00*. It never was. The fact under test is
+        // "the moment's clock time, in the user's format" — so the expectation
+        // now computes that and compares.
+        #expect(model.momentClockTime == Self.formattedClockTime(14, minute: 0),
+                "got \(model.momentClockTime)")
     }
 
     @Test("The moment time is shown when notifications are off")
@@ -182,7 +208,8 @@ struct TodayViewModelTests {
         await model.reload()
 
         #expect(model.showsMomentTime)
-        #expect(model.momentClockTime == "14:00")
+        #expect(model.momentClockTime == Self.formattedClockTime(14, minute: 0),
+                "got \(model.momentClockTime)")
         #expect(model.timeUntilMoment == 3600, "an hour out")
     }
 
