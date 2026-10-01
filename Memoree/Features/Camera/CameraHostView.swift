@@ -28,6 +28,7 @@ struct CameraHostView: View {
             let created = CameraViewModel(
                 service: environment.captureService,
                 photoLibrary: environment.photoLibrary,
+                haptics: environment.haptics,
                 record: environment.makeMomentRecorder()
             )
             self.model = created

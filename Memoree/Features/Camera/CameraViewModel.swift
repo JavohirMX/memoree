@@ -76,6 +76,7 @@ final class CameraViewModel {
     // MARK: - Dependencies
 
     private let service: CapturePhotoService
+    private let haptics: HapticFeedback
     private let photoLibrary: PhotoLibraryService
 
     /// Persists an accepted pair as a moment.
@@ -130,12 +131,14 @@ final class CameraViewModel {
     init(
         service: CapturePhotoService,
         photoLibrary: PhotoLibraryService,
+        haptics: HapticFeedback = InMemoryHapticFeedback(),
         record: MomentRecorder? = nil,
         chooseFirstCamera: (() -> CameraPosition)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.service = service
         self.photoLibrary = photoLibrary
+        self.haptics = haptics
         self.record = record
         self.previewLayer = service.previewLayer
         self.chooseFirstCamera = chooseFirstCamera ?? {
@@ -156,6 +159,11 @@ final class CameraViewModel {
     /// finished, and here something always does.
     func start() async {
         guard phase == .idle else { return }
+        // Spins the Taptic Engine up front. A generator created at the moment of
+        // the tap has to warm itself, and the delay is perceptible between the
+        // finger leaving the glass and the sensation arriving — which reads as
+        // the phone being slow rather than as feedback.
+        (haptics as? SystemHapticFeedback)?.prepare()
         let opening = chooseFirstCamera()
         firstPosition = opening
         livePosition = opening
@@ -213,6 +221,7 @@ final class CameraViewModel {
                 let photo = try await service.captureCurrentPhoto()
                 captured[livePosition] = photo
                 lastCaptureAt = now()
+                haptics.shutter()
 
                 if captured.count == CameraPosition.allCases.count {
                     enterReview()
@@ -223,6 +232,14 @@ final class CameraViewModel {
                     try await service.switchCamera(to: next)
                     livePosition = next
                     phase = .shooting
+                    // **No haptic for the switch.** One press photographs *and*
+                    // swaps, so buzzing here would tell the user two things
+                    // happened when they pressed once. A haptic describes what
+                    // the user did; the swap is a consequence the user did not
+                    // choose separately. There is a `HapticFeedback.cameraSwitched`
+                    // and it has no call site, and that is the correct state —
+                    // if the mechanic ever becomes a *separate* switch the user
+                    // performs, it gets its own buzz then.
                 }
             } else {
                 // Pressing again on a camera already shot is not a capture; it
@@ -332,7 +349,15 @@ final class CameraViewModel {
             try await recordMoment(pair)
             isCommitting = false
             phase = .saved
+            // The only *notification* haptic in the app, and the only one that
+            // means "done". Everything else here is a tap; this is the moment the
+            // photograph is safe.
+            haptics.committed()
         } catch {
+            // Deliberately nothing. A failure buzz would be the phone telling
+            // the user they did something wrong, and Memoree's own copy is what
+            // should be saying that — and sometimes the failure is a permission
+            // they declined an hour ago.
             phase = Self.phase(for: error)
         }
     }

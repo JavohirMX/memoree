@@ -63,12 +63,13 @@ struct DesignSystemInvariantTests {
             #"\bcolorScheme\b\s*(==|!=)"#,
             #"\.preferredColorScheme\(\s*nil"#,
         ]
-        for pattern in patterns {
-            if line.range(of: pattern, options: .regularExpression) != nil {
-                return pattern
-            }
+        // The offending pattern rather than a `Bool`, so a failure can name
+        // which of the four rules fired. An earlier version returned `Bool` and
+        // reported the line, which is not enough — the reader is left
+        // reimplementing the matcher by hand to find out.
+        return patterns.first {
+            line.range(of: $0, options: .regularExpression) != nil
         }
-        return nil
     }
 
     @Test("No file branches on the colour scheme")
@@ -82,13 +83,9 @@ struct DesignSystemInvariantTests {
             // `colorScheme` while explaining that there is no branch, and a
             // scanner that cannot tell a prohibition from a violation teaches
             // people to delete the comment that documents the rule.
-            let source = try String(contentsOf: file, encoding: .utf8)
-            for (number, raw) in source.split(separator: "\n", omittingEmptySubsequences: false)
-                .enumerated() {
-                let line = String(raw)
-                let code = line.split(separator: "//", maxSplits: 1).first.map(String.init) ?? line
-                guard let pattern = Self.colourSchemeBranch(in: code) else { continue }
-                offences.append("\(file.lastPathComponent):\(number + 1): \(pattern)")
+            for line in try SourceScan.codeLines(of: file) {
+                guard let pattern = Self.colourSchemeBranch(in: line.code) else { continue }
+                offences.append("\(file.lastPathComponent):\(line.number): \(pattern)")
             }
         }
 
@@ -171,14 +168,9 @@ struct DesignSystemInvariantTests {
 
         var offences: [String] = []
         for file in try Self.swiftFiles() where file.lastPathComponent != "Theme.swift" {
-            let source = try String(contentsOf: file, encoding: .utf8)
-            for (number, raw) in source.split(separator: "\n", omittingEmptySubsequences: false)
-                .enumerated() {
-                let line = String(raw)
-                let code = line.split(separator: "//", maxSplits: 1).first.map(String.init) ?? line
-                if code.range(of: hexLiteral, options: .regularExpression) != nil {
-                    offences.append("\(file.lastPathComponent):\(number + 1)")
-                }
+            for line in try SourceScan.codeLines(of: file)
+            where line.code.range(of: hexLiteral, options: .regularExpression) != nil {
+                offences.append("\(file.lastPathComponent):\(line.number)")
             }
         }
 
@@ -245,16 +237,13 @@ struct DesignSystemInvariantTests {
             let isService = path.contains("/Services/")
             guard isFeature || isService else { continue }
 
-            let source = try String(contentsOf: file, encoding: .utf8)
-            for raw in source.split(separator: "\n", omittingEmptySubsequences: false) {
-                let line = String(raw)
-                guard !line.hasPrefix("//") else { continue }
+            for line in try SourceScan.codeLines(of: file) {
                 if isFeature,
-                   line == "import Photos" || line == "import AVFoundation" {
-                    offences.append("\(file.lastPathComponent): \(line)")
+                   line.code == "import Photos" || line.code == "import AVFoundation" {
+                    offences.append("\(file.lastPathComponent): \(line.code)")
                 }
-                if isService, line == "import SwiftUI" {
-                    offences.append("\(file.lastPathComponent): \(line)")
+                if isService, line.code == "import SwiftUI" {
+                    offences.append("\(file.lastPathComponent): \(line.code)")
                 }
             }
         }

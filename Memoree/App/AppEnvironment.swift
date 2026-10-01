@@ -21,6 +21,14 @@ final class AppEnvironment {
     let photoLibrary: PhotoLibraryService
     private var _captureService: CapturePhotoService?
 
+    /// Haptics, injected like every other service.
+    ///
+    /// A protocol rather than a direct `UIImpactFeedbackGenerator` call, because
+    /// a Taptic Engine cannot be observed: "the shutter buzzes" would otherwise
+    /// be untestable, and the three events are exactly the kind of detail that
+    /// drifts — one view buzzing on shutter, the other not.
+    let haptics: HapticFeedback
+
     /// The capture service.
     ///
     /// `lazy` because constructing a `CaptureSessionController` creates an
@@ -42,7 +50,8 @@ final class AppEnvironment {
         momentScheduler: MomentScheduler? = nil,
         notificationService: NotificationService? = nil,
         photoLibrary: PhotoLibraryService? = nil,
-        captureService: CapturePhotoService? = nil
+        captureService: CapturePhotoService? = nil,
+        haptics: HapticFeedback? = nil
     ) throws {
         let resolved = try container ?? Persistence.makeContainer()
         self.container = resolved
@@ -60,6 +69,7 @@ final class AppEnvironment {
             ?? UserNotificationService(scheduler: self.momentScheduler)
         self.photoLibrary = photoLibrary ?? PhotoKitLibrary()
         self._captureService = captureService
+        self.haptics = haptics ?? SystemHapticFeedback()
 
         #if DEBUG
         // Development affordance: skip first-run so the Today screen can be

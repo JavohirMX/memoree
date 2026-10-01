@@ -22,6 +22,7 @@
 		554DDEF778A0042EB99D1C14 /* DesignSystemInvariantTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E83CF4F98316081C7CFDFE97 /* DesignSystemInvariantTests.swift */; };
 		5AC2B802CC989B4F59D69251 /* StreakCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45BAB1D7A1EBB5F67634695 /* StreakCalculator.swift */; };
 		60847A5074AC8E49E6B3BD5C /* WindowPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7AAFCC329A90340C4AD5F62 /* WindowPicker.swift */; };
+		60E908EABEC846182EF94391 /* HapticFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE88125F74F85570B014DF /* HapticFeedback.swift */; };
 		618027A8FB30C4300E912A90 /* CaptureSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2993F4EC3F7F7A178D8AFDC /* CaptureSessionController.swift */; };
 		6260543FF69E58BEF3018870 /* FrameWaitDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39C03508897B89F285AD8080 /* FrameWaitDiagnostics.swift */; };
 		690FEAFB852AE78FA92B8064 /* StatsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7D323F3432F5CAE4D5E4D18 /* StatsView.swift */; };
@@ -36,6 +37,7 @@
 		799AB6FB05FB35B01AB5604D /* CameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9C1DE965579048DB04E0A1D /* CameraView.swift */; };
 		7D2C64E697C7C5970CA89227 /* DayIdentifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7693115792547B94510B657 /* DayIdentifierTests.swift */; };
 		7D438AE1420E7CF966E1E0C9 /* ArchiveThumbnailCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7366D3142C061D9C49707487 /* ArchiveThumbnailCache.swift */; };
+		7DE10F6283151E4C88A9D9A7 /* HapticFeedbackTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 68D0CAFFCBAB803DA5B114E4 /* HapticFeedbackTests.swift */; };
 		82A3ED94BB96AC6256F2AD15 /* MomentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9100C5469DB0B8FADEE2D2F /* MomentStoreTests.swift */; };
 		83F404C4CD6E1BE308A1D078 /* TodayViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D29190E45BA95B9369F8C505 /* TodayViewModelTests.swift */; };
 		856494ADEBA6A7E29BC78667 /* NoNetworkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9634A6C3108A9A772B1AC4D2 /* NoNetworkingTests.swift */; };
@@ -131,12 +133,14 @@
 		6181DAD5BD1416D9C47784D2 /* LivePhotoRunGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePhotoRunGuard.swift; sourceTree = "<group>"; };
 		6457DA40B3A78A6DD1789ADD /* StreakCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakCalculatorTests.swift; sourceTree = "<group>"; };
 		681A069A1655E5049AA96A53 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		68D0CAFFCBAB803DA5B114E4 /* HapticFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticFeedbackTests.swift; sourceTree = "<group>"; };
 		6BC4440B710CFF0ED236935B /* StoreError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreError.swift; sourceTree = "<group>"; };
 		7366D3142C061D9C49707487 /* ArchiveThumbnailCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveThumbnailCache.swift; sourceTree = "<group>"; };
 		7496C466FD117EDA4ADDC142 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		7A59071CE45EB050FA861B6D /* MomentDerivationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentDerivationTests.swift; sourceTree = "<group>"; };
 		81691AD301F716B16E4B474D /* AppEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppEnvironment.swift; sourceTree = "<group>"; };
 		8514C8D3577F9E36C200AC00 /* TimeWindowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWindowTests.swift; sourceTree = "<group>"; };
+		88BE88125F74F85570B014DF /* HapticFeedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticFeedback.swift; sourceTree = "<group>"; };
 		8A763A1F9DDA1755A4E93074 /* StatsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsViewModel.swift; sourceTree = "<group>"; };
 		9634A6C3108A9A772B1AC4D2 /* NoNetworkingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NoNetworkingTests.swift; sourceTree = "<group>"; };
 		9D79602718EE76F9F8966369 /* TimeWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TimeWindow.swift; sourceTree = "<group>"; };
@@ -211,6 +215,7 @@
 			isa = PBXGroup;
 			children = (
 				B96095DB61947F78339EE649 /* Capture */,
+				A990AFDE8F2792D430F94D67 /* Haptics */,
 				CC55CF69370DB8614351F78A /* PhotoLibrary */,
 				CD1B85B57BB242699203DC4A /* Scheduler */,
 				64A3F4E2C64CF275B1A8AAB0 /* Streaks */,
@@ -308,6 +313,14 @@
 			path = Archive;
 			sourceTree = "<group>";
 		};
+		A990AFDE8F2792D430F94D67 /* Haptics */ = {
+			isa = PBXGroup;
+			children = (
+				88BE88125F74F85570B014DF /* HapticFeedback.swift */,
+			);
+			path = Haptics;
+			sourceTree = "<group>";
+		};
 		ABD82013CC0A3C1D34E999E1 /* MemoreeTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -318,6 +331,7 @@
 				C7693115792547B94510B657 /* DayIdentifierTests.swift */,
 				E83CF4F98316081C7CFDFE97 /* DesignSystemInvariantTests.swift */,
 				39C03508897B89F285AD8080 /* FrameWaitDiagnostics.swift */,
+				68D0CAFFCBAB803DA5B114E4 /* HapticFeedbackTests.swift */,
 				2640CD8561278E8B43B8AC0A /* LiveCaptureRunGuard.swift */,
 				E98914ADFD0E6A30199AC5A4 /* LiveCaptureTests.swift */,
 				1200D457820C6A13D292EF47 /* LivePhotoLibraryTests.swift */,
@@ -559,6 +573,7 @@
 				DFC5F6371606210978A9BC08 /* Components.swift in Sources */,
 				7080EB08D115C298DA6A4DC3 /* CountdownFormatter.swift in Sources */,
 				327B27CFE4914EF5E75880FE /* DayIdentifier.swift in Sources */,
+				60E908EABEC846182EF94391 /* HapticFeedback.swift in Sources */,
 				B37DF3D57CE4EC96162ACFB3 /* InMemoryCaptureService.swift in Sources */,
 				3D8993406B78781C40610407 /* InMemoryNotificationService.swift in Sources */,
 				A2E176FD2C9111669B0B4AE9 /* InMemoryPhotoLibraryService.swift in Sources */,
@@ -606,6 +621,7 @@
 				7D2C64E697C7C5970CA89227 /* DayIdentifierTests.swift in Sources */,
 				554DDEF778A0042EB99D1C14 /* DesignSystemInvariantTests.swift in Sources */,
 				6260543FF69E58BEF3018870 /* FrameWaitDiagnostics.swift in Sources */,
+				7DE10F6283151E4C88A9D9A7 /* HapticFeedbackTests.swift in Sources */,
 				BA18B7831DE29F9F25345A46 /* LiveCaptureRunGuard.swift in Sources */,
 				511E1387F92595CA9F14D137 /* LiveCaptureTests.swift in Sources */,
 				AF4B5A80BCFCBB8A9E21CAAE /* LivePhotoLibraryTests.swift in Sources */,

@@ -69,16 +69,28 @@ enum SourceScan {
         )
     }
 
-    /// A file's contents, split into lines with the code separated from the comment.
+    /// One line of a source file, with the code separated from the comment.
     ///
-    /// Returning the pair rather than the raw line is what lets a scanner ignore
-    /// prose. Every suite here has a rule that its *own documentation* violates —
-    /// `Theme.swift` says "there is no `colorScheme` branch", `NoNetworkingTests`
-    /// lists `URLSession` seventeen times, and `NoNetworkingTests`' own comment
-    /// mentions `CLLocationManager`. A scanner that cannot tell a prohibition
-    /// from a violation teaches people to delete the comment that documents the
-    /// rule, and the rule goes with it.
-    static func codeLines(of file: URL) throws -> [(number: Int, code: String, full: String)] {
+    /// A struct rather than a tuple because three members is past the point where
+    /// a tuple reads as a value, and because the accessors name what they are.
+    struct Line {
+        /// 1-based, so a failure report matches what an editor shows.
+        let number: Int
+        /// The line with any trailing `//` comment removed.
+        let code: String
+        /// The line as written, for a failure report that quotes the source.
+        let full: String
+    }
+
+    /// A file's lines, with the code separated from the comment.
+    ///
+    /// Returning both is what lets a scanner ignore prose. Every suite here has a
+    /// rule that its *own documentation* violates — `Theme.swift` says "there is
+    /// no `colorScheme` branch", `NoNetworkingTests` lists `URLSession` seventeen
+    /// times, and that file's comment mentions `CLLocationManager`. A scanner
+    /// that cannot tell a prohibition from a violation teaches people to delete
+    /// the comment that documents the rule, and the rule goes with it.
+    static func codeLines(of file: URL) throws -> [Line] {
         let contents = try String(contentsOf: file, encoding: .utf8)
         return contents
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -91,7 +103,7 @@ enum SourceScan {
                     .map(String.init)?
                     .trimmingCharacters(in: .whitespaces)
                 guard let code, !code.isEmpty else { return nil }
-                return (number: index + 1, code: code, full: full)
+                return Line(number: index + 1, code: code, full: full)
             }
     }
 }
