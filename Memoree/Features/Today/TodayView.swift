@@ -347,7 +347,7 @@ struct TodayView: View {
             }
             .onTapGesture { openArchive() }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(MomentComposite.accessibilityLabel)
+            .accessibilityLabel(CompositeAccessibility.label)
             .accessibilityAddTraits(.isButton)
             .accessibilityHint("Opens today's moment in your archive")
         } else if model.todayMissingFromPhotos {

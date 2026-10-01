@@ -62,7 +62,7 @@ struct MomentDetailView: View {
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .accessibilityElement(children: .ignore)
-                .accessibilityLabel(MomentComposite.accessibilityLabel)
+                .accessibilityLabel(CompositeAccessibility.label)
         } else if isMissing {
             // Reported, not rendered as a black rectangle. An empty frame where a
             // photograph should be reads as a bug; saying the photographs are

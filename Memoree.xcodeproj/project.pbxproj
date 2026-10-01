@@ -75,6 +75,7 @@
 		C0C188B171C8A7189C36E07D /* SettingsComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84F912E1201D8205652FB42C /* SettingsComponents.swift */; };
 		C0D5F17637628465CB35ABB7 /* TimeWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D79602718EE76F9F8966369 /* TimeWindow.swift */; };
 		C4A361D451653D25E8868764 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC7F78EA51E71A3AC4786D36 /* Models.swift */; };
+		D4EDCB199704C0325F3AB046 /* VoiceOverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655359A3B7E29DD308A27ADD /* VoiceOverTests.swift */; };
 		D83327E4EFC07C648EF6FA3D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED58D5D93AAC5BD43FDA4B70 /* SettingsView.swift */; };
 		D8AC26DCE621CAA9480E74BC /* MemoreeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */; };
 		DC4C1394F5AFC4875B82F5B0 /* MemoreeAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F078D0D5F2174471A9D1CF04 /* MemoreeAppDelegate.swift */; };
@@ -142,6 +143,7 @@
 		609A5ED40E5FA08F137784E6 /* LocalMomentScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMomentScheduler.swift; sourceTree = "<group>"; };
 		6181DAD5BD1416D9C47784D2 /* LivePhotoRunGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePhotoRunGuard.swift; sourceTree = "<group>"; };
 		6457DA40B3A78A6DD1789ADD /* StreakCalculatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakCalculatorTests.swift; sourceTree = "<group>"; };
+		655359A3B7E29DD308A27ADD /* VoiceOverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceOverTests.swift; sourceTree = "<group>"; };
 		681A069A1655E5049AA96A53 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		68D0CAFFCBAB803DA5B114E4 /* HapticFeedbackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HapticFeedbackTests.swift; sourceTree = "<group>"; };
 		6BC4440B710CFF0ED236935B /* StoreError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StoreError.swift; sourceTree = "<group>"; };
@@ -371,6 +373,7 @@
 				264018A3510CFB1A1FC2FB79 /* TestSupport.swift */,
 				8514C8D3577F9E36C200AC00 /* TimeWindowTests.swift */,
 				D29190E45BA95B9369F8C505 /* TodayViewModelTests.swift */,
+				655359A3B7E29DD308A27ADD /* VoiceOverTests.swift */,
 			);
 			path = MemoreeTests;
 			sourceTree = "<group>";
@@ -671,6 +674,7 @@
 				B9F018FB36C3112848EFC1C8 /* TestSupport.swift in Sources */,
 				8FF7EA9287B8FB42D82B5A81 /* TimeWindowTests.swift in Sources */,
 				83F404C4CD6E1BE308A1D078 /* TodayViewModelTests.swift in Sources */,
+				D4EDCB199704C0325F3AB046 /* VoiceOverTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

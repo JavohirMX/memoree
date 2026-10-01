@@ -1,6 +1,54 @@
 import SwiftUI
 import UIKit
 
+/// Builds the composite's one accessibility element.
+///
+/// **A function, not the `static let` that was here.** The label has to vary by
+/// whether the inset can be tapped, and there was no way to express "this is
+/// interactive" in a constant while the caller set the hint and the trait beside
+/// it. Three modifiers in one place is what keeps them consistent, and the reason
+/// the constant could not.
+///
+/// ## What each caller gets
+///
+/// - **Camera review** — a button. The hint says what a double tap does.
+/// - **Archive detail and Today** — not a button, and no hint. A tappable image
+///   that goes nowhere is a dead end (`AGENTS.md` §6), and VoiceOver announcing
+///   "button" on something that is not one is the same lie in a different
+///   direction.
+///
+/// ## Why the photographs are described rather than announced
+///
+/// They are announced as *photographs*, not as image data. VoiceOver would
+/// otherwise try to describe the contents of a scene through an alt-text service,
+/// which is both slow and irrelevant — what the user needs to know is that there
+/// are two, and which is which.
+struct CompositeAccessibility {
+
+    /// The label, shared by every caller.
+    static let label = "Your moment: two photographs, the scene and you."
+
+    /// One element, labelled, with the hint and trait that follow from whether
+    /// the composite is interactive.
+    @ViewBuilder
+    static func element(
+        for view: some View,
+        isInteractive: Bool
+    ) -> some View {
+        if isInteractive {
+            view
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+                .accessibilityHint("Double tap to swap which photo is large")
+                .accessibilityAddTraits(.isButton)
+        } else {
+            view
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(label)
+        }
+    }
+}
+
 /// The two photographs of a moment, one large and one inset top-left.
 ///
 /// BeReal's composite geometry, from their published ad guidelines and TRD §5.6:
@@ -71,11 +119,4 @@ struct MomentComposite: View {
                 .allowsHitTesting(false)
         }
     }
-
-    /// One description for both callers.
-    ///
-    /// The composite is two images with no text between them, so VoiceOver
-    /// would otherwise announce nothing at all — or, worse, two unlabelled
-    /// images, which is worse than silence because it invites a tap.
-    static let accessibilityLabel = "Your moment: two photographs, the scene and you."
 }

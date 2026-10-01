@@ -206,8 +206,12 @@ struct CameraView: View {
             insetWidth: 108,
             onTapInset: { model.swapProminent() }
         )
+        // Interactive here and only here: this is the one caller where a double tap
+        // swaps the two photographs. The archive and Today versions must not
+        // announce as buttons, so the hint and the trait come from the same place
+        // as the label — see `CompositeAccessibility`.
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(MomentComposite.accessibilityLabel)
+        .accessibilityLabel(CompositeAccessibility.label)
         .accessibilityHint("Double tap to swap which photo is large")
         .accessibilityAddTraits(.isButton)
     }

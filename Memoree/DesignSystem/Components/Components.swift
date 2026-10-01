@@ -58,6 +58,20 @@ struct PrimaryButton: View {
 /// the amber variant existed to mark the last thirty seconds of a window that
 /// no longer closes, and a number that changed colour as it approached a
 /// deadline nobody had would be decoration with consequences attached.
+///
+/// ## Hidden from VoiceOver, deliberately
+///
+/// **A number that changes every second is a VoiceOver hazard.** `Text` is an
+/// accessibility element by default, and an element whose value changes is one
+/// VoiceOver may re-announce — which turns this screen into a number read aloud
+/// once a second with no way for the user to stop it. That is not an
+/// accessibility feature, it is noise with a screen reader attached.
+///
+/// **Nothing is lost.** The same information is in the Today footer as
+/// *"Moment today · 17:59"*, which is a `MetadataRow` with a static label that
+/// does not change and therefore announces once. So the ticking number is taken
+/// out of the tree and the fact survives in a form VoiceOver can actually use —
+/// which is the whole reason to hide it rather than to label it.
 struct CountdownDisplay: View {
 
     let text: String
@@ -83,6 +97,9 @@ struct CountdownDisplay: View {
             .lineLimit(1)
             .contentTransition(.numericText())
             .appAnimation(text)
+            // See the type's note: the footer already carries this as a static
+            // row, and a per-second element is a VoiceOver hazard.
+            .accessibilityHidden(true)
     }
 }
 
