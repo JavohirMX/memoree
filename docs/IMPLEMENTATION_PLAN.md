@@ -313,6 +313,89 @@ that encoded the same wrong assumptions. A suite built from invented data is a d
 what someone believed. `CameraDiagnostics` and `FrameWaitDiagnostics` exist so the next
 question is answered by a measurement instead of by inference from an error string.
 
+### Progress as of 2026-10-01 — three device runs, and the gate is still unmeasurable
+
+**Read this before spending another device run on Phase 4.** Three runs happened, each failed
+differently, and the third failed differently *after* a fix that was verified to work. That is
+the signature of an unreliable harness, not a regression, and the two obvious fixes each break
+something else.
+
+| Run | What happened |
+| --- | --- |
+| 1 | Whole suite, 163 tests. `twentyPacedMoments`, `mirroringIsCorrect`, `capturedPairWritesToPhotos` all failed. **The reasons were lost** — the result bundle was corrupt (`mkstemp: No such file or directory`) and the log was truncated by a `tail -120` |
+| 2 | Capture + Photos suites only, full log. `twoPressesProduceAPair` failed with `configurationFailed("Cannot Record")`, then the daemon died (`connectionDied`, `err=-16453`) and the 20-run test completed **zero** iterations before the process was killed |
+| 3 | Same suites, with one shared service. **`twoPressesProduceAPair` passed in 2.8s, both orders, 4032×3024.** But `sessionRebuilds` took **200.8s** (was 0.583s) and everything after it was degraded. Run abandoned |
+
+**The root cause of all three: session allocations per process.** `AVCaptureSession.init()` is a
+*synchronous* XPC round-trip to the capture daemon (`FigCaptureSessionRemoteCreate`). One device
+run of this suite allocates **eight** sessions back to back, each released before the next. The
+twenty-moment loop was fixed for exactly this on an earlier day — and the fix **was not applied
+to the other seven call sites**. That is the same shape as ADR-019's format selection: a correct
+fix applied where the symptom appeared and nowhere else.
+
+**Run 3's fix worked, and then broke something else.** Sharing one service across the suite fixed
+the allocation problem outright. It failed because `rebuildSession()` allocates a *new*
+`AVCaptureSession` **by design** — replacing a dead one is its entire job — so on a shared service
+it runs against a session previous tests have already started and stopped. 0.583s on a fresh
+service, **200.8s** on the shared one.
+
+**So the two candidate fixes each break something:**
+
+- **Per-test services (current).** Correct isolation, eight allocations, daemon wedges, gate
+  measures nothing.
+- **One shared service (tried, reverted).** One allocation, two-press test green — but the
+  destructive test destroys the shared instance for everything after it.
+
+**This needs a decision, not a fourth attempt:**
+
+1. **Split the suite across two test processes.** The real constraint is allocations *per
+   process*, and two processes get two clean budgets. Swift Testing cannot do this; a second
+   scheme or a UI test target can.
+2. **Reuse one `CaptureSessionController` and *reset* it between tests** rather than rebuilding
+   it, so no test ever allocates — and make `rebuildSession` testable without being the thing
+   that wrecks the shared instance. Closest match to the app, and the most work.
+3. **Accept that the gate runs alone.** `twentyPacedMoments` in its own `xcodebuild`, nothing
+   else selected. One allocation — the shape that works — at the cost of a second invocation per
+   device run.
+
+**A lesson about process, which cost three device runs.** Run 1's failure reasons were lost to a
+corrupt result bundle, so run 2 was scoped identically and spent another twenty minutes learning
+the same thing. Run 3 then re-ran the *whole* suite to verify a fix that the three-second
+two-press test demonstrates on its own. Both were avoidable and both were mine: **when a
+hypothesis has a three-second test, run that test.** A device run is the most expensive
+instrument in this project and the least precise one, and a scoped re-run answers the question in
+minutes rather than twenty.
+
+**Not landed: no change to `LiveCaptureTests`.** It is back to per-test services, with the
+findings recorded in the suite's own documentation so the next person does not re-derive them
+from three failed runs.
+
+### The one real product bug this did find
+
+**The app let the screen lock during a capture.** Nothing anywhere set
+`isIdleTimerDisabled` — confirmed by `grep`, not assumed. A user composes a shot, the display
+dims, the device locks, iOS tears the session down, and the photograph is gone — with no error,
+because there is no error to report when the app was suspended.
+
+It is also, almost certainly, why the runs report a dead daemon: **a test host is a normal app and
+locks on the normal schedule**, and a twenty-moment run is longer than that schedule. Run 1 had to
+be retried from scratch because the phone was locked at launch.
+
+**This is fixed and landed.** Scoped to the camera screen's appearance rather than the app's, and
+restored on `onDisappear` so a cancelled capture does not leave the display pinned on. Holding it
+on the Today screen would drain a battery to show a streak.
+
+### Still outstanding for this phase
+
+- The human mirroring verdict, which only a person can give.
+- A green twenty-moment run — which needs one of the three decisions above first.
+
+**Cosmetic, recorded so it is not rediscovered as new:** every device run logs
+`[SwiftUI] Invalid frame dimension (negative or non-finite)` — 146 times in one run. It fires at
+launch, before any test starts, and is present in the build from before this session's changes,
+so it is not a regression. A layout pass is producing an impossible frame somewhere in the root
+view; worth finding on its own account, and harmless today.
+
 ### Progress as of 2026-09-30
 
 Done and verified on the simulator — 27 capture tests, zero warnings:
