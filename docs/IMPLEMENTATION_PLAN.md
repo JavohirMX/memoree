@@ -346,17 +346,33 @@ service, **200.8s** on the shared one.
 - **One shared service (tried, reverted).** One allocation, two-press test green — but the
   destructive test destroys the shared instance for everything after it.
 
-**This needs a decision, not a fourth attempt:**
+### Decided 2026-10-01 — the gate runs alone, in its own `xcodebuild`
 
-1. **Split the suite across two test processes.** The real constraint is allocations *per
-   process*, and two processes get two clean budgets. Swift Testing cannot do this; a second
-   scheme or a UI test target can.
-2. **Reuse one `CaptureSessionController` and *reset* it between tests** rather than rebuilding
-   it, so no test ever allocates — and make `rebuildSession` testable without being the thing
-   that wrecks the shared instance. Closest match to the app, and the most work.
-3. **Accept that the gate runs alone.** `twentyPacedMoments` in its own `xcodebuild`, nothing
-   else selected. One allocation — the shape that works — at the cost of a second invocation per
-   device run.
+**`Scripts/capture-gate.sh`.** Option 3. One allocation, which is the shape that is known to
+work, and **nothing in production code changed to suit a test**.
+
+- **Not option 1** (split across two test processes) because Swift Testing cannot do it — it
+  needs a second scheme or a UI test target, so it is the most machinery for the least certainty.
+- **Not option 2** (reuse one controller, reset between tests) because that changes
+  `rebuildSession` to suit a test, and `rebuildSession` is doing real work handling
+  `mediaServicesWereReset`. "Closest match to the app" is a virtue only when the app already
+  does the thing.
+
+The cost is a second invocation per device run — measured in seconds, against the
+twenty-minute runs that three failed attempts cost.
+
+**And the runner proves the gate ran.** `-only-testing:` with a misspelled identifier matches
+nothing and xcodebuild reports `** TEST SUCCEEDED **` with exit code 0. **Verified on this
+machine, deliberately, with a typo**, because this project has been bitten three times by
+something that looked like a pass and asserted nothing: four Phase 3 tests that "passed" in a
+millisecond, and a twenty-moment run that reported zero iterations as if it had finished. The
+script greps the output for the gate's own name and fails if it is absent, and reports a third
+state — *inconclusive* — when the name is present but the run did not exit cleanly, so an
+interrupted run is never reported as a pass.
+
+**The other seven tests are unaffected** and still run in the normal device invocation. The
+allocation problem only ever made the *gate* unmeasurable; the cheaper tests are what runs 1
+and 2 were trying to fix, and they do run.
 
 **A lesson about process, which cost three device runs.** Run 1's failure reasons were lost to a
 corrupt result bundle, so run 2 was scoped identically and spent another twenty minutes learning

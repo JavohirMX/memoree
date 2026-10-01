@@ -49,16 +49,16 @@ import Testing
 /// and leaves them, because Memoree never removes anything from the user's
 /// library (ADR-008) and that applies to its own test code too.
 ///
-/// ## KNOWN: this suite cannot currently be trusted to measure anything
+/// ## KNOWN: the gate must run in its own process
 ///
 /// **Each test here builds its own `SequentialCaptureService`, so one device run
-/// allocates eight `AVCaptureSession`s back to back.** `AVCaptureSession.init()`
-/// is a *synchronous* XPC round-trip to the capture daemon
-/// (`FigCaptureSessionRemoteCreate`), and eight of them in one background test
-/// process is enough to wedge it. The same trap is recorded above for the
+/// of the whole suite allocates eight `AVCaptureSession`s back to back.**
+/// `AVCaptureSession.init()` is a *synchronous* XPC round-trip to the capture
+/// daemon (`FigCaptureSessionRemoteCreate`), and eight of them in one background
+/// test process is enough to wedge it. The same trap is recorded above for the
 /// twenty-moment loop, where it was fixed; it was not fixed here.
 ///
-/// What a device run produces today, in order:
+/// What a device run produced, in order, across three attempts:
 ///
 /// 1. `twoPressesProduceAPair` builds a second session while the first is still
 ///    being released and gets `configurationFailed("Cannot Record")` on the
@@ -72,29 +72,40 @@ import Testing
 /// **Sharing one service across the suite fixes steps 1 and 2, and was verified
 /// to: the two-press test then passed in 2.8s, both orders, at 4032×3024. It
 /// breaks a different way.** `rebuildSession()` allocates a *new*
-/// `AVCaptureSession` by design — replacing a dead one is its whole job — so on
-/// a shared service it runs against a session the previous tests have already
+/// `AVCaptureSession` by design — replacing a dead one is its whole job — so on a
+/// shared service it runs against a session the previous tests have already
 /// started and stopped. Measured: **0.583s on a fresh service, 200.8s on the
 /// shared one**, after which every later test is degraded.
 ///
-/// So the two obvious fixes each break something, and neither has been landed.
-/// **This needs a decision, not another attempt:**
+/// So the two obvious fixes each break something.
 ///
-/// - **Split the suite across two test processes.** The real constraint is
-///   session allocations *per process*, and two processes get two clean budgets.
-///   Swift Testing cannot do this; a UI test target or a second scheme can.
-/// - **Reuse a single `CaptureSessionController` and reset it between tests**
-///   rather than rebuilding it, so no test ever allocates. The closest match to
-///   the app, and it needs `rebuildSession` to be testable without being the
-///   thing that wrecks the shared instance.
-/// - **Accept that the gate runs alone.** `twentyPacedMoments` in its own
-///   invocation, nothing else selected. One allocation, which is the shape that
-///   works, at the cost of a second `xcodebuild` per device run.
+/// ## Decided: the gate runs alone, in its own `xcodebuild`
 ///
-/// What is *not* the answer is another attempt without changing something: the
-/// first two runs of this failed differently, and the third failed differently
-/// again, which is the signature of an unreliable harness rather than a
-/// regression.
+/// `Scripts/capture-gate.sh`. One allocation, which is the shape that is known to
+/// work, and nothing in production code changed to suit a test. The cost is a
+/// second invocation per device run, measured in seconds rather than in the
+/// twenty-minute runs three failed attempts cost.
+///
+/// Chosen over **splitting the suite across two test processes** because Swift
+/// Testing cannot do it — it needs a second scheme or a UI test target — and over
+/// **reusing one controller and resetting it** because that changes
+/// `rebuildSession` to suit a test, and `rebuildSession` is doing real work
+/// handling `mediaServicesWereReset`.
+///
+/// ## And the runner proves the gate ran
+///
+/// `-only-testing:` with a misspelled identifier matches nothing, and xcodebuild
+/// reports `** TEST SUCCEEDED **` with exit code 0. **Verified on this machine,
+/// deliberately, with a typo** — which is the point. This project has been bitten
+/// three times by something that looked like a pass and asserted nothing: four
+/// Phase 3 tests that "passed" in a millisecond, and a twenty-moment run that
+/// reported zero iterations as if it had finished. So the script greps the output
+/// for the gate's own name and fails if it is absent. A gate that did not run must
+/// never look like a gate that passed.
+///
+/// **The rest of this suite is unaffected** and still runs in the normal device
+/// invocation. The allocation problem only ever made the *gate* unmeasurable; the
+/// seven cheaper tests are what runs 1 and 2 were trying to fix, and they do run.
 @Suite("Phase 4 — live camera capture", .serialized)
 @MainActor
 struct LiveCaptureTests {
