@@ -187,7 +187,30 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
     /// Frames delivered during the last completed wait, and the wait's outcome.
     ///
-    /// The second field is the whole point of the first. See `totalFramesDelivered`.
+    /// `framesSeen` settled the first question — the output delivers *nothing*,
+    /// it is not being missed. The fields below settle the second, and the one
+    /// that matters is `sessionWasRunning`.
+    ///
+    /// ## The three causes, and which field separates them
+    ///
+    /// All three look identical from outside: `seen=0`, deadline, `noDeliveredFrame`.
+    ///
+    /// - **AVFoundation parked the session.** It thinks it is running and is not
+    ///   calling us. `sessionWasRunning == true`, `framesSinceLast > 0`.
+    /// - **The session really stopped.** `sessionWasRunning == false`. The fix is
+    ///   to restart it, which is cheap and already proven to work.
+    /// - **Frames arrive but the delegate is never called.** A stale connection
+    ///   after the reconfiguration, so the hardware is fine and nothing fires.
+    ///   `sessionWasRunning == true`, but `framesSinceLast` is *also* large —
+    ///   which looks like the first case, and is the reason the connection check
+    ///   below exists.
+    ///
+    /// `connectionIsLive` is what distinguishes the first from the third: after a
+    /// reconfiguration the output's connection object can be replaced, and a
+    /// delegate bound to the old one is never called again while the session
+    /// happily reports itself as running. **That failure is invisible from
+    /// `isRunning` alone**, which is why it gets its own field rather than being
+    /// folded into the session state.
     struct FrameWaitOutcome: CustomStringConvertible {
         let target: CameraPosition
         let from: CameraPosition
@@ -198,13 +221,57 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         let framesSeen: Int
         let timedOut: Bool
 
+        /// `AVCaptureSession.isRunning` when the wait completed.
+        let sessionWasRunning: Bool
+        /// Seconds since *any* frame last arrived — not just during this wait.
+        ///
+        /// **The field that dates the stall.** If this is much larger than
+        /// `duration`, the output had already gone quiet before this swap began,
+        /// which moves the cause somewhere else entirely.
+        let framesSinceLast: TimeInterval
+        /// Whether the video output still has a usable video connection.
+        let connectionIsLive: Bool
+        /// How many inputs the session holds when the wait completed.
+        let inputCount: Int
+
         var description: String {
             let outcome = timedOut ? "TIMEOUT" : "ok"
-            return "\(from.rawValue)->\(target.rawValue) \(outcome) "
+            var line = "\(from.rawValue)->\(target.rawValue) \(outcome) "
                 + String(format: "%.3fs", duration)
                 + " seen=\(framesSeen)"
-                + (rejectedFrames > 0 ? " rejected=\(rejectedFrames)" : "")
+            if timedOut {
+                // Only the failure rows carry the state, because that is all they
+                // are for — a wall of `isRunning=true` on nineteen healthy rows
+                // is noise that hides the one row that matters.
+                line += " running=\(sessionWasRunning)"
+                    + " idle=\(String(format: "%.2fs", framesSinceLast))"
+                    + " connLive=\(connectionIsLive)"
+                    + " inputs=\(inputCount)"
+            }
+            if rejectedFrames > 0 { line += " rejected=\(rejectedFrames)" }
+            return line
         }
+    }
+
+    /// When a frame last arrived at all, on any queue. Sampled inside
+    /// `deliverFrame`, so it is the honest "last time the hardware spoke" rather
+    /// than "last time a wait was satisfied".
+    private var lastFrameAt: DispatchTime?
+
+    /// The state fields, sampled once on `queue` so they agree with each other.
+    private func snapshot(_ wait: FrameWait) -> FrameWaitOutcome {
+        FrameWaitOutcome(
+            target: activePosition,
+            from: positionBeforeSwap,
+            duration: seconds(since: wait.armedAt),
+            rejectedFrames: framesRejectedDuringWait,
+            framesSeen: totalFramesDelivered - framesAtArmTime,
+            timedOut: false,
+            sessionWasRunning: session.isRunning,
+            framesSinceLast: lastFrameAt.map { seconds(since: $0) } ?? -1,
+            connectionIsLive: videoOutput.connection(with: .video) != nil,
+            inputCount: session.inputs.count
+        )
     }
 
     /// The last few waits, newest last. Bounded: the gate needs the history and
@@ -527,14 +594,24 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     // frame are indistinguishable to the caller — both are
                     // `noDeliveredFrame` — and they have opposite fixes. So the
                     // rejection count is the whole point of this record.
-                    self.record(FrameWaitOutcome(
-                        target: self.activePosition,
-                        from: self.positionBeforeSwap,
-                        duration: self.seconds(since: wait.armedAt),
-                        rejectedFrames: self.framesRejectedDuringWait,
-                        framesSeen: self.totalFramesDelivered - self.framesAtArmTime,
-                        timedOut: true
-                    ))
+                    // `timedOut: true`, and the state snapshot taken **here** —
+                    // at the deadline, on `queue`, while the session is in
+                    // whatever state it stalled in. Sampling it later would
+                    // sample a session something else has already touched.
+                    var row = self.snapshot(wait)
+                    row = FrameWaitOutcome(
+                        target: row.target,
+                        from: row.from,
+                        duration: row.duration,
+                        rejectedFrames: row.rejectedFrames,
+                        framesSeen: row.framesSeen,
+                        timedOut: true,
+                        sessionWasRunning: row.sessionWasRunning,
+                        framesSinceLast: row.framesSinceLast,
+                        connectionIsLive: row.connectionIsLive,
+                        inputCount: row.inputCount
+                    )
+                    self.record(row)
 
                     wait.continuation.resume(throwing: CaptureError.noDeliveredFrame(
                         self.activePosition
@@ -569,18 +646,15 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             // with no wait armed and frames that go on to be rejected. Anything
             // less and the measurement cannot answer its own question.
             self.totalFramesDelivered += 1
+            // Stamped unconditionally, for the same reason: `framesSinceLast` is
+            // only meaningful if it records every frame, including ones with no
+            // wait armed and ones that go on to be rejected.
+            self.lastFrameAt = DispatchTime.now()
 
             guard let wait = self.frameWait, let input = self.activeInput else { return }
             guard let expectedPort = input.ports.first else {
                 self.frameWait = nil
-                self.record(FrameWaitOutcome(
-                    target: self.activePosition,
-                    from: self.positionBeforeSwap,
-                    duration: self.seconds(since: wait.armedAt),
-                    rejectedFrames: self.framesRejectedDuringWait,
-                    framesSeen: self.totalFramesDelivered - self.framesAtArmTime,
-                    timedOut: false
-                ))
+                self.record(self.snapshot(wait))
                 // **`noInputAvailable`, not `noDeliveredFrame` — unchanged.** An
                 // attached input with no ports is a missing camera, and the two
                 // errors say different things to the user: one is "this phone has
@@ -605,14 +679,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                 return
             }
             self.frameWait = nil
-            self.record(FrameWaitOutcome(
-                target: self.activePosition,
-                from: self.positionBeforeSwap,
-                duration: self.seconds(since: wait.armedAt),
-                rejectedFrames: self.framesRejectedDuringWait,
-                framesSeen: self.totalFramesDelivered - self.framesAtArmTime,
-                timedOut: false
-            ))
+            self.record(self.snapshot(wait))
             wait.continuation.resume()
         }
     }

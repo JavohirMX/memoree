@@ -387,12 +387,22 @@ struct LiveCaptureTests {
         // Healthy waits finish in single-digit milliseconds, so at 30-60fps a
         // healthy wait should see roughly `duration x frameRate` frames — a
         // handful at most. A timeout that reports `seen=0` is unambiguous.
+        //
+        // **The state columns name the cause.** All three of these look identical
+        // from outside, which is why four fixes have now been tried and only one
+        // helped: nothing about "zero frames" says *why* there are zero frames.
+        //
+        // - `running=false`            → the session really stopped. Restart it.
+        // - `running=true connLive=false` → the output's connection was replaced
+        //   by the reconfiguration and the delegate is bound to a dead object.
+        //   The hardware is fine; nothing is calling us.
+        // - `running=true connLive=true idle<0.5s` → AVFoundation parked the
+        //   output; it thinks it is running and has stopped calling.
+        // - `idle` far larger than the wait → the output had *already* gone quiet
+        //   before this swap began, so the cause is upstream of the swap.
         for outcome in timeouts {
-            let verdict = outcome.framesSeen == 0
-                ? "OUTPUT DEAD — nothing was delivered in "
-                    + String(format: "%.1fs", outcome.duration)
-                : "FRAMES FLOWING but missed — \(outcome.framesSeen) arrived and the wait saw none"
-            print("  TIMEOUT \(outcome) — \(verdict)")
+            print("  TIMEOUT \(outcome)")
+            print("    CAUSE: \(Self.cause(of: outcome))")
         }
         if timeouts.isEmpty { print("  no timeouts") }
 
@@ -464,5 +474,34 @@ struct LiveCaptureTests {
 
         print("live capture: wrote two real photographs to the camera roll")
         #endif
+    }
+
+    /// Names the cause of a frame-wait timeout from the state sampled at the
+    /// deadline.
+    ///
+    /// Extracted because the classification is a chain of five branches and it
+    /// belongs beside the suite that prints it rather than inside the loop that
+    /// does. Each branch is one mechanism, and the *order* is the argument: the
+    /// cheap decisive checks come first, so the most specific answer wins.
+    private static func cause(
+        of outcome: CaptureSessionController.FrameWaitOutcome
+    ) -> String {
+        if outcome.framesSeen > 0 {
+            return "FRAMES FLOWING but missed — \(outcome.framesSeen) arrived"
+        }
+        if !outcome.sessionWasRunning {
+            return "SESSION STOPPED — isRunning=false, so restart it"
+        }
+        if !outcome.connectionIsLive {
+            return "STALE CONNECTION — session is running but the output has no "
+                + "video connection; the delegate is bound to a dead object"
+        }
+        if outcome.framesSinceLast > 10 {
+            return "STALLED EARLY — last frame was "
+                + String(format: "%.1fs", outcome.framesSinceLast)
+                + " ago, before this swap; cause is upstream"
+        }
+        return "OUTPUT PARKED — session running, connection live, but nothing is "
+            + "being delivered"
     }
 }
