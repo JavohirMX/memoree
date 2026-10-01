@@ -62,6 +62,26 @@ echo
 # failure tries to collect diagnostics, which hangs against a wedged capture
 # daemon and reports `BUILD INTERRUPTED` — destroying the failure reason and
 # costing a second twenty-minute run to find out what went wrong.
+# The empty parentheses are load-bearing: a Swift Testing test's identifier is
+# `functionName(displayName)`, and with a custom display name the argument list
+# is *empty* — `twentyPacedMoments()`, not `twentyPacedMoments` and not
+# `twentyPacedMoments(Twenty moments, taken at a human pace, all succeed)`.
+#
+# **Verified, at a cost of one real device run.** The first version of this
+# script omitted them, matched nothing, and reported success. The grep check
+# below caught it — which is the check earning its keep — but the run still cost
+# four minutes. `xcodebuild -enumerate-tests` is the fast way to confirm an
+# identifier, and this comment exists so the next person does not re-derive it.
+#
+#   xcodebuild test -project Memoree.xcodeproj -scheme Memoree \
+#     -destination 'platform=iOS Simulator,name=iPhone 17' \
+#     -enumerate-tests -test-enumeration-format json \
+#     -test-enumeration-output-path /tmp/tests.json
+#
+# Note also that xcodebuild's *XCTest* counter reads "Executed 0 tests" for every
+# Swift Testing run, on every platform. That is not a skip — read the Swift
+# Testing line, "Test run with N tests in M suites", or you will misdiagnose a
+# perfectly good run as an empty one. It was misread here.
 xcodebuild test \
     -project Memoree.xcodeproj \
     -scheme Memoree \
@@ -69,7 +89,7 @@ xcodebuild test \
     -allowProvisioningUpdates \
     DEVELOPMENT_TEAM=MBBD9BRZ67 \
     -collect-test-diagnostics never \
-    -only-testing:MemoreeTests/LiveCaptureTests/twentyPacedMoments \
+    "-only-testing:MemoreeTests/LiveCaptureTests/twentyPacedMoments()" \
     >"$LOG" 2>&1
 STATUS=$?
 
@@ -83,8 +103,8 @@ if ! grep -q "$GATE_NAME" "$LOG"; then
     echo
     echo "xcodebuild exited $STATUS and never mentioned '$GATE_NAME'."
     echo "That is the silent-skip failure: -only-testing matched nothing, which"
-    echo "is indistinguishable from a pass unless you check. Either the test was"
-    echo "renamed, or the identifier is wrong."
+    echo "is indistinguishable from a pass unless you check. The usual cause is"
+    echo "a wrong identifier — see the note above about the empty parentheses."
     echo
     echo "Tail of the log:"
     tail -40 "$LOG"
