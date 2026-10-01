@@ -455,31 +455,37 @@ entry. **Estimate:** 2 days.
 
 ### Open — the window is a reminder, not a deadline (ADR-023)
 
-**Found by opening the app.** At 09:34 on a day whose moment was at 16:00, there was no shutter
-at all: `MomentState.allowsCapture` is false for `scheduled`, and `TodayView` renders the
-shutter only when it is true. The behaviour was correct as written — `AGENTS.md` §2 rule 10 said
-so, `FR-5` said so, and three places asserted it — but the onboarding copy says *"Without this
-you can still open the app and capture whenever you like."* The app was contradicting its own
-first-run screen, and nobody found it except a person trying to photograph something.
+**Found by opening the app.** At 09:34 on a day whose moment was at 16:00 there was no shutter at
+all: `MomentState.allowsCapture` is false for `scheduled`, and `TodayView` renders the shutter
+only when it is true. The behaviour was correct as written — `AGENTS.md` §2 rule 10 said so,
+`FR-5` said so, and three places asserted it — but the onboarding copy says *"Without this you can
+still open the app and capture whenever you like."* The app was contradicting its own first-run
+screen, and nobody found it except a person trying to photograph something.
 
-**Decided (ADR-023):** capture any time, every moment counts, no badge.
+**Decided (ADR-023), revised the same day:** capture at any time; an off-window moment neither
+grows nor breaks the streak; a day with **no moment at all** breaks it; no badge and no
+explanation. This reverses ADR-009, which is marked superseded.
 
-**Not yet implemented.** The work, and the order it should be done in:
+**Not yet implemented.** In order:
 
 | # | Task | Note |
 | --- | --- | --- |
-| 1 | **Decide what the countdown means** | **Blocking.** `mm:ss` "1:47 remaining" implies a deadline that no longer exists. Either drop it, or reframe it as counting down to the *reminder*. A ticking number that lies is worse than no number. |
-| 2 | `MomentState.allowsCapture` → always true | And `TodayView.action` drops its `allowsCapture` guard. FR-5 goes. |
-| 3 | Collapse `lateAvailable` | It existed only to say "closed, but you may still post". Merge into the ordinary not-yet-captured case. The state machine gets smaller. |
-| 4 | Remove `isLate` and `lateBy` from `Moment` | Dead once nothing reads them — the `StreakRecord` mistake. Derivable from `capturedAt` + `DayRecord` if stats ever want them. |
-| 5 | `StreakCalculator` keys on "has a moment" | Makes ADR-009 moot. Its tests are about a state that can no longer occur. |
-| 6 | Fix the onboarding copy | The sentence that was untrue becomes... true. Worth reading aloud before it ships. |
-| 7 | PRD F3, F9; TRD §8 | "Two-minute capture window" is no longer a capture constraint. |
+| 1 | **Decide what the countdown means** | **Blocking, and it is a copy question.** `mm:ss` reading "1:47 remaining" implies a deadline that no longer exists and that now costs the user their streak. Either it goes, or it counts down to the *reminder*. A ticking number that lies is worse than no number — and this one would lie *and* have consequences. |
+| 2 | `MomentState.allowsCapture` → always true | `TodayView.action` drops its guard. FR-5 goes. |
+| 3 | Collapse `lateAvailable` | It existed only to say "closed, but you may still post". Merge into the ordinary not-yet-captured case. |
+| 4 | `currentStreak` skips off-window days | Stop condition becomes "no moment at all" rather than "not on time". The signature already takes both `onTimeDays` and `capturedDays`, so the harder decision is made once and the arithmetic follows. |
+| 5 | **`longestStreak` becomes longest run of days with *any* moment** | **Not optional — the alternative displays a lie.** With `currentStreak` skipping, it can exceed a strictly-consecutive `longestStreak`, and the Today footer would show "best 2" beside a streak of 3. Using the same skip rule for both makes them equal whenever no day is ever missed, so the footer never renders. |
+| 6 | Keep `isLate`/`lateBy` on `Moment` | **Revised from "remove them."** With no badge they drive no UI, but the streak needs to know whether a day counted, and Phase 9's busiest-hour stat is the same data. They are read by the calculator, so they are not dead. Derivable from `capturedAt` + `DayRecord` if ever wanted elsewhere. |
+| 7 | Fix the onboarding copy | The untrue sentence becomes true. Worth reading aloud before it ships. |
+| 8 | PRD F3, F9; TRD §8; AGENTS.md §2 rule 10 | Rule 10 is already struck in `AGENTS.md`; F3 and F9 are now wrong. |
 
-Tests to update, not just add: `MomentStateTests` pins the six states including
-"`scheduled` refuses capture"; `TimeWindowTests` and the `FR-5` early-post refusal in
-`TodayViewModelTests`. The refusal test should be **deleted and replaced** with one asserting the
-opposite — a regression test that keeps asserting the old behaviour is how this got here.
+**Tests to change, not just add.** `StreakCalculatorTests` asserts a late-only day returns zero
+("A late-only day returns zero, not the previous run", "A late day in the past breaks the walk",
+"Consecutive late days are zero") — three tests pinning behaviour this decision reverses. They
+should be **replaced**, not deleted, with the skip rule. `MomentStateTests` pins the six states
+including "`scheduled` refuses capture". The FR-5 early-post refusal in `TodayViewModelTests`
+must be inverted. A test that keeps asserting the old behaviour is a plausible account of how
+this shipped in the first place.
 
 
 

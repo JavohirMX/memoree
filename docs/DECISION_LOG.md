@@ -243,7 +243,10 @@ casually.
 
 ## ADR-009 — A late-only day breaks the streak
 
-**Status:** Accepted · **Flagged as the most likely thing to feel wrong**
+**Status:** **Superseded by ADR-023** · **Flagged as the most likely thing to feel wrong**
+**Reversed:** an off-window day no longer ends a streak — it neither grows it nor breaks it. The
+decision below is preserved unedited. Its reasoning is still the best argument in this log for
+*why* a streak has to mean something, which is the same question ADR-023 had to answer.
 
 **Context.** The brief specified "late posts don't grow the streak". That leaves open whether a
 late day *breaks* the streak or merely leaves it flat.
@@ -814,8 +817,9 @@ the permission level, so that alone would not reopen this.
 
 ## ADR-023 — The window is a reminder, not a deadline
 
-**Status:** Accepted · **Date:** 2026-10-01 · **Found by a person opening the app**
-**Supersedes:** `AGENTS.md` §2 rule 10, and TRD §8's "`scheduled` has no CTA"
+**Status:** Accepted, **revised before implementation** · **Date:** 2026-10-01
+**Supersedes:** `AGENTS.md` §2 rule 10, TRD §8's "`scheduled` has no CTA", and **ADR-009**
+**Found by:** a person opening the app
 
 **Context.** Until now, capture was refused before the moment time. `MomentState.allowsCapture`
 returned false for `scheduled`, and `TodayView` renders the shutter only when
@@ -843,9 +847,37 @@ the promise and the behaviour disagreed.
 
 1. **Capture is permitted at any time on any day.** The shutter is always available; the Today
    screen never withholds it.
-2. **An off-window capture counts.** No penalty of any kind for photographing before or after
-   the two-minute window.
-3. **No badge.** An off-window moment is visually identical to an on-time one.
+2. **An off-window moment is transparent.** It does not grow the streak and it does not reset
+   it. An on-time moment grows the streak; a day with **no moment at all** breaks it.
+3. **No badge, and no explanation.** An off-window moment looks exactly like an on-time one. The
+   streak simply does not move.
+
+**Revised the same day, before implementation.** The first draft of this ADR said an off-window
+capture *counts* — flatly, no penalty. That was rejected in review and the decision reversed:
+capture is unrestricted, but only in-window photographs grow the streak. The reasoning for the
+revision is below; the contradiction that started all of this is unchanged.
+
+**The streak rule, stated exactly** — because "flat" has two readings and one of them is ADR-009
+wearing a different hat:
+
+> Walk back from today. An on-time day counts. An off-window day is **skipped** — neither
+> counted nor treated as an end. A day with no moment at all **ends the walk**.
+
+So `[on-time, on-time, off-window, on-time]` read from today backwards is a streak of **3**. A
+day with no photograph is a genuine miss and still breaks it, and ADR-010 stands unchanged: an
+unposted *today* is not a miss until the day has actually ended.
+
+**`longestStreak` must change too, or the Today screen will show a lie.** It currently counts
+runs of strictly-consecutive on-time days. Under this rule `currentStreak` *skips* off-window
+days, so it can exceed `longestStreak` — a history of on-time, on-time, off-window, on-time
+would display a streak of 3 beside "best 2". A footer whose best number is lower than the current
+one is a bug users report within a day.
+
+**Resolution: `longestStreak` becomes the longest run of consecutive days with *any* moment**,
+on-time or not. That is a genuinely different and more interesting statistic — *your best run of
+days you actually showed up* — it can exceed the current streak, and it is the number the footer
+is actually for. Using the same skipping rule for both would make them equal whenever the user
+has never missed a whole day, which is the common case for anyone still using the app.
 
 **What this costs, stated plainly.** The two-minute window stops being the mechanic. It becomes
 the thing that decides *when the phone interrupts you* and nothing else.
@@ -875,10 +907,23 @@ teeth is that there is one moment per day and it is unretouched.
   Keeping a stored field that nothing reads is the same mistake as `StreakRecord`, which was
   deleted this month. Remove them from `Moment`, or keep them only if Phase 9's stats have a
   concrete use — they are derivable from `capturedAt` against the persisted `DayRecord`.
-- **`StreakCalculator` simplifies.** It keys on `isOnTime`; it will key on "has a moment".
-  `ADR-009` — a late-only day breaks the streak — becomes **moot**, because there are no
-  late-only days. It is not wrong, only unreachable. Its own reversal trigger said it was "the
-  first thing to revisit after thirty days of use"; this is day one, revisited the other way.
+- **`StreakCalculator` changes shape, and the signature already fits.** `currentStreak` takes
+  both `onTimeDays` and `capturedDays`, so the walk can skip rather than stop — the harder
+  decision (how to count) was made once, at the product level, and the arithmetic follows from
+  data that is already there. `ADR-009` — *a late-only day breaks the streak* — is **reversed**,
+  not merely made moot: an off-window day no longer ends the run.
+- **The streak is now genuinely hard, and that is the accepted cost.** One random two-minute
+  slot per day, inside an eleven-hour window. A day counts only if you were ready, by luck, at
+  the right moment. ADR-009 was already flagged as *"the most likely thing to feel wrong"*; this
+  makes it the load-bearing rule rather than a side effect. It is defensible — the streak
+  becomes a real signal of attention, and with the paywall deleted (ADR-015) there is nothing to
+  monetise it with, so harsh is free. It is recorded here so that if the number sits at zero for
+  a month, that is a known trade rather than a surprise.
+- **Nothing on screen says why the streak did not move.** This is a deliberate choice, and it is
+  the one consequence most worth watching. ADR-010's rationale was that a streak which resets for
+  no visible reason *"would look broken, be reported as broken, and destroy trust in the
+  number."* That risk is accepted knowingly: the user photographs, sees "Saved", and the streak
+  sits still. A user who has not read this ADR will experience that as a bug in the first week.
 - **The notification permission matters more than it did.** The window's only remaining job is
   deciding when to interrupt, so declining notifications no longer costs a mild degradation — it
   removes the only thing the window does. The app stays fully usable (AGENTS.md §9), and the
@@ -892,15 +937,20 @@ teeth is that there is one moment per day and it is unretouched.
   concern about looking like the original.
 
 **Alternatives rejected.** *Keep the gate, fix the copy* — the smallest change, and it leaves a
-09:00 user staring at a countdown. *Allow early capture, still badge it late* — asymmetry with no
-principle behind it. *Allow capture but charge the streak for off-window moments* — this was the
-option argued for in review and the user chose against it; it preserves the mechanic and rejects
-the request.
+09:00 user staring at a countdown. *An off-window day breaks the streak (ADR-009 as originally
+written)* — the hardest rule available, and it makes a two-minute daily lottery the price of a
+number; the chosen middle keeps the requirement and softens only the punishment. *A quiet line on
+the Today screen saying the moment fell outside the window* — genuinely more informative, and
+declined: the user chose to hear nothing rather than be told. *Two separate numbers, days
+captured and current streak* — answers the problem without a display contradiction, at the cost
+of a second statistic nobody asked for.
 
-**Reversal trigger.** If thirty days of use show the reminder being ignored and photographs being
-taken at convenient times, the forced window was doing the work and this was the wrong call. That
-is measurable, and it is the same trigger ADR-009 named, arriving far earlier. Restoring the gate
-is a state-machine change in one place.
+**Reversal trigger.** Two, and the first is the more likely. *If the streak reads zero for a
+sustained period while the user keeps photographing*, the rule is too harsh and the badge or the
+explanatory line should come back — that is the ADR-010 failure mode arriving through a different
+door. *If thirty days of use show the reminder being ignored and photographs being taken at
+convenient times*, the forced window was doing the work and unrestricted capture with a soft
+penalty was the wrong shape entirely. Both are measurable from data the app already stores.
 
 ---
 
@@ -923,8 +973,8 @@ A decision log that only records deletions is misleading. These were kept on pur
 
 | Kept | Why |
 | --- | --- |
-| ~~Random daily window~~ | **Struck by ADR-023.** This was listed as *the mechanic* — "without it there is no reason for the app to exist." The window now decides when the phone interrupts you and nothing else; capture is permitted any time and every moment counts. What remains is one unretouched photograph per day, which is a smaller claim than the one this table used to make. |
-| ~~Two-minute duration~~ | **Struck by ADR-023**, with the gate. It no longer bounds anything. The notification fires at the moment time; how long the shutter stays open is no longer a question the app asks. |
+| ~~Random daily window~~ | **Struck by ADR-023.** This was listed as *the mechanic* — "without it there is no reason for the app to exist." The window now decides when the phone interrupts you; capture is permitted at any time, and only in-window photographs grow the streak. What remains is one unretouched photograph per day, which is a smaller claim than the one this table used to make. |
+| ~~Two-minute duration~~ | **Struck by ADR-023**, with the gate. It no longer bounds anything — it does not close a shutter, and nothing is lost when it elapses. It survives only as the width of the streak-qualifying window, and as the notification's arrival time. |
 | The countdown | Client-side `mm:ss`, exactly as BeReal does it — there was never a server countdown to begin with. |
 | Front + back framing | The whole point of the format. |
 | The late marker | Truthfulness about when something happened matters more than a clean-looking grid. |
