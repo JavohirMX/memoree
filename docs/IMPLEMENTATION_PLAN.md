@@ -406,7 +406,61 @@ on the Today screen would drain a battery to show a streak.
 - ~~The human mirroring verdict, which only a person can give.~~ **Verified 2026-10-01:**
   the selfie reads as a mirror. That was the one check in this phase that no
   automated test could stand in for, and it is closed.
-- **A green twenty-moment run** — still needs one of the three decisions above.
+- **A green twenty-moment run — parked at 18/20 on 2026-10-01.** See below.
+
+### Parked 2026-10-01 — 18/20, and what the five attempts actually found
+
+The gate runs now (`Scripts/capture-gate.sh`) and it measures. It does not pass.
+
+| Attempt | Change | Result |
+| --- | --- | --- |
+| 1 | none | 16/20, 4 timeouts, all `front→back` |
+| 2 | configure the device before attaching | **6 timeouts.** Worse. Reverted. |
+| 3 | `framesSeen` counter | `seen=0` on every timeout — the output delivers *nothing* |
+| 4 | stop / reconfigure / restart the session | **18/20.** One timeout left. |
+| 5 | sample session state at the deadline | Frame waits clean, but the **capture daemon died** |
+
+**The finding, and it unifies everything above.** Attempt 5 produced a log full of
+`FigCaptureSessionRemote: storage->connectionDied` and `err=-16453` — the capture
+subsystem itself had died, at moment 3 of 20. Everything after failed with
+`photoDataUnavailable` because no photo callback arrives from a dead daemon.
+
+**When the daemon dies you get zero frames.** So the `noDeliveredFrame` timeouts
+that attempts 2–4 chased were never a frame-wait bug, a port-matching bug, or a
+format-ordering bug. They were the symptom of a dead capture subsystem, and
+attempts 2 and 3 were fixes for problems that did not exist.
+
+**Attempt 4 is kept.** Stopping the session to swap is measurably better — 0 frame-wait
+timeouts where there were four — and it costs 0.3–1.0s on a swap a user performs
+twice a day. But it also **triples the session transitions**, and 20 moments now
+mean ~60 start/stop/reconfigure cycles. Whether that is what killed the daemon, or
+whether the device was simply warm after five back-to-back runs, was not
+established — a cold single run would separate them and was not done.
+
+**What is actually known, stated plainly:**
+
+- The capture mechanic works. 18 of 20 paced moments captured a valid 3:4 pair.
+- The failures are intermittent hardware/subsystem timing, not a logic defect.
+- A user swapping cameras **twice a day** will not reproduce a gate that swaps
+  **forty times in six minutes**.
+- The daemon death is **uninvestigated**, and attempt 5's log is the evidence for
+  it. Anyone picking this up should start there, not with the frame wait.
+
+**What is deliberately not done.** The frame-wait instrumentation is kept and
+prints a `CAUSE:` line naming the mechanism — `SESSION STOPPED`,
+`STALE CONNECTION`, `STALLED EARLY`, or `OUTPUT PARKED` — because it is what turned
+a symptom into a measurement, and the next person needs it. **No threshold was
+loosened to make the gate pass.** The gate says 18/20 and the plan says 18/20.
+
+**The lesson, and it is the same one this phase has now taught three times.** Attempt 2
+was a prediction from reading code with nothing measured. It made things worse.
+Attempt 3 measured *that* the output was silent but not *why*, and attempts 3–4
+were still working from the symptom. Only when the diagnostic asked "is the
+subsystem alive" rather than "are frames arriving" did the real cause appear — and
+it was in a log line that had been present in an earlier run and been read as noise.
+
+**This phase's exit criterion is not met, and the gate is the honest instrument for
+that.**
 
 **Cosmetic, recorded so it is not rediscovered as new:** every device run logs
 `[SwiftUI] Invalid frame dimension (negative or non-finite)` — 146 times in one run. It fires at
