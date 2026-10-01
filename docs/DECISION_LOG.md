@@ -954,6 +954,62 @@ penalty was the wrong shape entirely. Both are measurable from data the app alre
 
 ---
 
+## ADR-024 — The moment time is a secret, unless you have turned off notifications
+
+**Status:** Accepted · **Date:** 2026-10-01
+**Resolves:** the blocking sub-decision in ADR-023's implementation list
+**Supersedes:** TRD §8's `scheduled` → "Big countdown to the moment; 'Next moment at 14:37'"
+
+**Context.** ADR-023 made the window a reminder rather than a deadline, which left one thing
+stranded: the countdown. `TodayView` rendered a large `mm:ss` and the heading *"Next moment at
+16:00"*, inherited from the era when the window closed and missing it cost something. After
+ADR-023 it means nothing — you can photograph at any time — and it is worse than decoration,
+because a number that ticks like a deadline now sits above a rule where missing the window costs
+you the streak.
+
+**Decision.** The moment time is not displayed while notifications are authorised.
+
+- **Notifications on** → no countdown, no clock time, anywhere. The heading states the fact and
+  stops: *Memoree will ask you once today.* The notification is the alert, and the surprise
+  survives.
+- **Notifications off** → the time **is** shown, because it is then the only way the user could
+  ever know when the moment was. Without it, declining notifications would mean keeping the app
+  open all day hoping, which is a dead end (AGENTS.md §6).
+
+This is the one place in Memoree where the UI changes shape based on a permission, and it is
+worth being explicit that the reason is not convenience. It is that the notification and the
+clock are the *same information* delivered twice, and showing both spends the surprise for
+nothing.
+
+**Three places leaked the time, all now closed.** The `scheduled` heading ("Next moment at
+16:00"), the countdown display, and the "Moment today" footer row.
+
+**Consequences.**
+
+- The Today screen is quieter, and the moment is genuinely a surprise. A user who wants to know
+  the time has to turn notifications off — which is a real trade, and is the mechanism by which
+  the product states its preference.
+- `TodayViewModel.countdown` returns `nil` unconditionally and `CountdownDisplay` has no call
+  site. `Theme.Typography.countdown` becomes unused; removing it is a separate sweep, not part of
+  this decision.
+- The "Reminders off" row in the footer stops being an amber warning about a *missing* thing and
+  becomes the explanation for why a clock is now visible. Same copy, different job — worth
+  re-reading the surrounding strings together when it is done.
+- The notification permission is load-bearing in a way it was not before. It is the only channel
+  by which a moment ever arrives, and it is now also the switch that determines whether the app
+  tells you when. ADR-001 has no server to fall back on, so this is the price of the promise.
+
+**Alternatives rejected.** *Show the time always* — simplest, and spends the surprise. *Show the
+countdown, hide the clock* — an incoherent pair; the countdown is the clock. *Never show the time
+regardless* — strands anyone who declined notifications, which AGENTS.md §9 explicitly forbids
+("the ritual degrades; it does not die").
+
+**Reversal trigger.** If users report missing moments they were awake for, the notification is
+not doing its job and the time should come back unconditionally. The notification is the only
+channel, so that failure has no other remedy.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

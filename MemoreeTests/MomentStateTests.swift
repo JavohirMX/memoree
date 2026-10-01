@@ -78,7 +78,11 @@ struct MomentStateResolverTests {
 
         #expect(state == .scheduled(timeUntilStart: 3600))
         #expect(state.isAwaitingMoment)
-        #expect(!state.allowsCapture)
+        // Was `!state.allowsCapture` until ADR-023. The early-post refusal was
+        // `FR-5` and `AGENTS.md` §2 rule 10, and it contradicted the app's own
+        // onboarding copy. Capture is now permitted at any time, so this state
+        // differs from `open` in what it *says*, not in what it permits.
+        #expect(state.allowsCapture)
     }
 
     // MARK: - The window
@@ -176,7 +180,11 @@ struct MomentStateResolverTests {
         let afterMidnight = endOfDay.addingTimeInterval(1)
         let missed = resolve(now: afterMidnight, window: window, dayEnd: endOfDay)
         #expect(missed == .missed)
-        #expect(!missed.allowsCapture)
+        // Was `!missed.allowsCapture`. A missed day now still permits capture —
+        // the day has not rolled over yet, so it is still today (ADR-023), and
+        // the streak rule is what distinguishes a day with no photograph from a
+        // day photographed off-window, not the shutter.
+        #expect(missed.allowsCapture)
     }
 
     // MARK: - End of day
@@ -197,12 +205,28 @@ struct MomentStateResolverTests {
 
     // MARK: - State predicates
 
-    @Test("Only an open or lapsed window permits capture")
+    @Test("Every state permits capture")
     func capturePermissions() throws {
+        // Was "only an open or lapsed window permits capture", and the assertion
+        // that one second before the window opens does *not*. Both of those
+        // are ADR-023: the window no longer gates anything, so the states differ
+        // in what they say rather than in what they permit.
         let window = try interval()
         #expect(resolve(now: window.start, window: window).allowsCapture)
         #expect(resolve(now: window.end.addingTimeInterval(1), window: window).allowsCapture)
-        #expect(!resolve(now: window.start.addingTimeInterval(-1), window: window).allowsCapture)
+        #expect(resolve(now: window.start.addingTimeInterval(-1), window: window).allowsCapture)
+
+        // And a captured moment, for completeness — every case, no exceptions.
+        let captured = MomentFacts(
+            id: UUID(), day: try #require(DayIdentifier(string: "2026-09-30")),
+            isOnTime: true, capturedAt: window.start, windowEndsAt: window.end,
+            retakeCount: 0, hasBTS: false
+        )
+        let state = MomentStateResolver.resolve(
+            now: window.start, interval: window, todayMoment: captured,
+            dayEnd: MomentStateResolver.endOfDay(containing: window.start)
+        )
+        #expect(state.allowsCapture, "re-capture is always permitted (ADR-011)")
     }
 
     @Test("Every state round-trips through the countdown as nil where expected")

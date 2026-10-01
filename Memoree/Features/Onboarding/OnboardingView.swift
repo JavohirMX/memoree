@@ -61,11 +61,11 @@ struct OnboardingView: View {
             stepBody(
                 title: "When should we interrupt you?",
                 body: """
-                Once a day, at a random moment inside your window, Memoree will \
-                ask for a photo.
+                Once a day, at a random moment inside your window, \
+                Memoree will ask for a photo.
 
-                Without this you can still open the app and capture whenever you \
-                like — you will just have to remember.
+                You can photograph whenever you like — only a photo taken \
+                during that moment counts towards your streak.
                 """
             )
 
@@ -105,6 +105,13 @@ struct OnboardingView: View {
     /// Defaults to 11:00–23:00, the band production BeReal observes, so the
     /// reminder never lands at 3am. Wider is more random; narrower is more
     /// predictable.
+    ///
+    /// The window sets **when the notification arrives** and nothing else
+    /// (ADR-023). Capture is permitted at any time; only a photograph taken
+    /// inside the resulting two minutes grows the streak. Which is why this
+    /// screen can be shown at all — asking someone to narrow the band that
+    /// decides when they get asked is a real preference, and it would be a
+    /// strange thing to collect if it had no effect.
     private var windowPicker: some View {
         let settings = environment.momentStore.settings()
         return VStack(spacing: Theme.Spacing.l) {

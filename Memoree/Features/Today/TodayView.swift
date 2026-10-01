@@ -120,10 +120,19 @@ struct TodayView: View {
 
             Spacer(minLength: Theme.Spacing.xl)
 
-            if let countdown = model.countdown,
-               model.state.allowsCapture || model.state.isAwaitingMoment {
-                CountdownDisplay(text: countdown, isUrgent: model.countdownIsUrgent)
-                    .padding(.bottom, Theme.Spacing.xl)
+            // The countdown is gone (ADR-024). It is not merely hidden here —
+            // `TodayViewModel.countdown` is unconditionally `nil`, because a
+            // number ticking like a deadline above a window that no longer
+            // closes is worse than no number. It also cost the streak, which
+            // made it not a cosmetic loss.
+            if model.showsMomentTime,
+               let remaining = model.timeUntilMoment,
+               remaining > 0 {
+                CountdownDisplay(
+                    text: CountdownFormatter.string(fromSeconds: remaining),
+                    isUrgent: false
+                )
+                .padding(.bottom, Theme.Spacing.xl)
             }
 
             action(model)
@@ -199,10 +208,18 @@ struct TodayView: View {
         switch model.state {
         case .scheduled:
             VStack(spacing: Theme.Spacing.s) {
-                Text("Next moment at \(model.momentClockTime)")
+                // The time is a secret unless notifications are off (ADR-024).
+                // With them on, the notification is the alert and naming the
+                // hour here would spend the surprise for nothing — the clock and
+                // the notification are the same information twice.
+                Text(model.showsMomentTime
+                    ? "Next moment at \(model.momentClockTime)"
+                    : "Memoree will ask you once today")
                     .font(Theme.Typography.screenTitle)
                     .foregroundStyle(Theme.Color.textPrimary)
-                Text("Your phone will remind you. Nothing to do until then.")
+                Text(model.showsMomentTime
+                    ? "Nothing to do until then — but you can capture whenever you like."
+                    : "Your phone will remind you. Nothing to do until then.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .multilineTextAlignment(.center)
@@ -295,10 +312,19 @@ struct TodayView: View {
 
     private func footer(_ model: TodayViewModel) -> some View {
         VStack(spacing: Theme.Spacing.xs) {
-            MetadataRow(
-                label: "Moment today",
-                value: model.momentClockTime
-            )
+            // Shown only when the time is being shown at all, and only while it
+            // still lies ahead. After the moment has passed it is history, and
+            // repeating it is noise (ADR-024).
+            if model.showsMomentTime, model.timeUntilMoment != nil {
+                MetadataRow(
+                    label: "Moment today",
+                    value: model.momentClockTime
+                )
+            }
+            // "Reminders off" now does two jobs: it reports a missing
+            // permission, and it explains why a clock is visible at all. Same
+            // copy, different reason — which is worth checking reads correctly
+            // beside the rows above it.
             if !model.notificationsAuthorized {
                 MetadataRow(
                     label: "Reminders",

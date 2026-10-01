@@ -166,13 +166,18 @@ struct TodayViewModelTests {
         await model.reload()
 
         #expect(model.state.isAwaitingMoment)
-        #expect(!model.state.allowsCapture, "FR-5: no capture before momentStart")
-        // Hours roll into the countdown when there are any; minutes are not
-        // clamped to 59, so 72:00 stays 72:00 rather than becoming 12:00.
-        #expect(model.countdown == "1:00:00")
+        // Was `!model.state.allowsCapture` with the message "FR-5: no capture
+        // before momentStart" — the early-post refusal, now ADR-023.
+        #expect(model.state.allowsCapture, "capture is permitted at any time")
+        // Was `model.countdown == "1:00:00"`. The countdown is gone with the
+        // deadline it described (ADR-024), and the time is a secret while
+        // notifications are on — which this harness has, so nothing leaks.
+        #expect(model.countdown == nil)
+        #expect(!model.showsMomentTime)
+        #expect(model.timeUntilMoment == nil)
     }
 
-    @Test("Inside the window the shutter appears and counts down in mm:ss")
+    @Test("Inside the window the shutter appears and still shows no time")
     func openState() async throws {
         let (now, start) = try dayAndStart()
         let harness = try makeHarness(now: now, momentStart: start)
@@ -180,22 +185,60 @@ struct TodayViewModelTests {
         await model.reload()
 
         #expect(model.state.allowsCapture)
-        #expect(model.countdown == "01:30", "90 seconds left of a two-minute window")
-        #expect(!model.countdownIsUrgent)
+        // The window being open changes what the screen *says*, not what it
+        // reveals. "It's time" is not a deadline.
+        #expect(model.countdown == nil)
+        #expect(!model.showsMomentTime)
     }
 
-    @Test("The countdown turns amber only in the last thirty seconds")
-    func urgentCountdown() async throws {
+    @Test("The moment time is a secret while notifications are on")
+    func timeIsHiddenWhileNotificationsAreOn() async throws {
+        // The core of ADR-024: with notifications authorised, the notification
+        // is the alert, and naming the hour would spend the surprise for
+        // nothing. The two are the same information delivered twice.
         let (now, start) = try dayAndStart()
-        let harness = try makeHarness(now: now, momentStart: start)
+        let harness = try makeHarness(
+            now: now, momentStart: start, notificationsAuthorized: true
+        )
+        let model = makeModel(harness, at: start.addingTimeInterval(-3600))
+        await model.reload()
 
-        let inside = makeModel(harness, at: start.addingTimeInterval(95))
-        await inside.reload()
-        #expect(inside.countdownIsUrgent, "25s left")
+        #expect(!model.showsMomentTime)
+        #expect(model.timeUntilMoment == nil)
+        // The value is still computed — the caller asks first. Keeping the
+        // formatting separate means the tests can check the number without also
+        // having to stand up a notification state to see it.
+        #expect(model.momentClockTime == "14:00")
+    }
 
-        let outside = makeModel(harness, at: start.addingTimeInterval(85))
-        await outside.reload()
-        #expect(!outside.countdownIsUrgent, "35s left — not yet")
+    @Test("The moment time is shown when notifications are off")
+    func timeIsShownWhenNotificationsAreOff() async throws {
+        // Because then it is the only way the user could ever know. Declining
+        // notifications must not mean keeping the app open all day hoping.
+        let (now, start) = try dayAndStart()
+        let harness = try makeHarness(
+            now: now, momentStart: start, notificationsAuthorized: false
+        )
+        let model = makeModel(harness, at: start.addingTimeInterval(-3600))
+        await model.reload()
+
+        #expect(model.showsMomentTime)
+        #expect(model.momentClockTime == "14:00")
+        #expect(model.timeUntilMoment == 3600, "an hour out")
+    }
+
+    @Test("No time is shown once the moment has passed")
+    func timeDisappearsAfterTheMoment() async throws {
+        let (now, start) = try dayAndStart()
+        let harness = try makeHarness(
+            now: now, momentStart: start, notificationsAuthorized: false
+        )
+        let model = makeModel(harness, at: start.addingTimeInterval(600))
+        await model.reload()
+
+        // Repeating a time that has passed is noise, not information.
+        #expect(model.showsMomentTime, "the value is still available")
+        #expect(model.timeUntilMoment == nil, "but nothing is counting down to it")
     }
 
     @Test("After the window the shutter stays and the state is lateAvailable")
@@ -324,7 +367,10 @@ struct TodayViewModelTests {
         // And the ritual still works. With no server nothing can re-notify the
         // user later, so the app has to be fully usable without it (TRD §9).
         #expect(model.state.allowsCapture)
-        #expect(model.countdown == "01:30")
+        // Was `model.countdown == "01:30"`. The countdown is gone (ADR-024); what
+        // replaces it is the time being *shown*, because with no notification
+        // this is the user's only way of learning when the moment is.
+        #expect(model.showsMomentTime)
     }
 
     @Test("The pending count is reported for the diagnostics footer")
@@ -344,20 +390,48 @@ struct TodayViewModelTests {
     @Test("The ticker re-derives from the clock and nothing else")
     func ticking() async throws {
         let (now, start) = try dayAndStart()
-        let harness = try makeHarness(now: now, momentStart: start)
-        // One second per read, so a real tick moves the countdown by one.
-        // At the window's start a full two minutes are showing.
-        let model = makeModel(harness, at: start, step: 1)
-        #expect(model.countdown == "02:00")
+        // Notifications off, so there is a countdown to move — the only
+        // configuration in which one exists (ADR-024).
+        let harness = try makeHarness(
+            now: now, momentStart: start, notificationsAuthorized: false
+        )
+        // One second per read, so a real tick moves it by one. An hour out.
+        let model = makeModel(harness, at: start.addingTimeInterval(-3600), step: 1)
+        #expect(model.timeUntilMoment == 3600)
 
         model.startTicking()
         defer { model.stopTicking() }
 
         try await Task.sleep(for: .milliseconds(2100))
-        #expect(model.now > start, "the clock advanced")
-        // Whatever the exact second, the countdown must have moved with it and
-        // must not be stuck on the value from construction.
-        #expect(model.countdown != "02:00")
-        #expect(model.countdown != nil)
+        #expect(model.now > start.addingTimeInterval(-3600), "the clock advanced")
+        // The time remaining must have moved with it, and must not be stuck on
+        // the value from construction.
+        #expect(model.timeUntilMoment ?? 0 < 3600)
+    }
+
+    @Test("The ticker keeps the surprise intact")
+    func tickingDoesNotLeakTheTime() async throws {
+        // The regression that matters: a once-a-second refresh is exactly the
+        // kind of thing that quietly reintroduces a countdown. Asserted
+        // *after* the tick, not only at construction.
+        let (now, start) = try dayAndStart()
+        let harness = try makeHarness(
+            now: now, momentStart: start, notificationsAuthorized: true
+        )
+        let model = makeModel(harness, at: start.addingTimeInterval(-3600), step: 1)
+        // Read the notification state first. `showsMomentTime` is derived from
+        // it, and the initialiser does not fetch it — a fresh model assumes
+        // notifications are off, which is the pessimistic direction and the
+        // right default for a screen that has not yet asked.
+        await model.reload()
+        #expect(!model.showsMomentTime, "precondition: notifications are on")
+
+        model.startTicking()
+        defer { model.stopTicking() }
+        try await Task.sleep(for: .milliseconds(2100))
+
+        #expect(!model.showsMomentTime)
+        #expect(model.timeUntilMoment == nil)
+        #expect(model.countdown == nil)
     }
 }

@@ -6,10 +6,12 @@ import Testing
 /// Phase 2 — streak arithmetic.
 ///
 /// Every function here is pure, so the whole suite runs in microseconds with no
-/// SwiftData container and no device. The cases that matter most are the two
-/// ADR decisions that are easy to conflate:
+/// SwiftData container and no device. The cases that matter most are the two ADR
+/// decisions that are easy to conflate:
 ///
-/// - **ADR-009** a late-only day *breaks* the streak
+/// - **ADR-023** an off-window day is *transparent* — it neither grows the
+///   streak nor ends it. Only a day with **no moment at all** ends the walk.
+///   (This reversed ADR-009, which said a late-only day breaks the streak.)
 /// - **ADR-010** an unposted *today* does *not* break the streak
 ///
 /// Getting either wrong produces a streak that resets every morning, which
@@ -107,31 +109,89 @@ struct CurrentStreakTests {
         ) == 1)
     }
 
-    // MARK: - ADR-009: a late-only day breaks the streak
+    // MARK: - ADR-023: an off-window day is transparent
 
-    @Test("A late-only day returns zero, not the previous run")
-    func lateTodayBreaks() throws {
+    // These four replaced tests that asserted the opposite. They were not
+    // deleted: a test that pins the old behaviour is a plausible account of how
+    // a superseded rule stayed in the codebase, and replacing them with the new
+    // rule is what makes the reversal visible in the diff.
+
+    @Test("An off-window day does not grow the streak, and does not reset it")
+    func offWindowDayIsTransparent() throws {
+        // Today off-window, yesterday on time -> 1. Neither 0 (it reset) nor 2
+        // (it counted). This is the whole of ADR-023 in one assertion.
+        #expect(try streak([("2026-09-30", false), ("2026-09-29", true)], today: "2026-09-30") == 1)
+    }
+
+    @Test("An off-window day alone, with no run behind it, is zero")
+    func offWindowDayAloneIsZero() throws {
+        // Zero because there is nothing to count — not zero because it broke
+        // something. The distinction matters and only the second reading would
+        // survive a later reversal.
         #expect(try streak([("2026-09-30", false)], today: "2026-09-30") == 0)
     }
 
-    @Test("A late today breaks an otherwise perfect run")
-    func lateTodayBreaksPriorRun() throws {
-        // The bug this pins: walking back from yesterday would report 1 here,
-        // because yesterday *was* on time. It must report 0.
-        #expect(try streak([("2026-09-30", false), ("2026-09-29", true)], today: "2026-09-30") == 0)
+    @Test("Consecutive off-window days are skipped, not ended")
+    func consecutiveOffWindow() throws {
+        #expect(try streak([
+            ("2026-09-30", false), ("2026-09-29", false), ("2026-09-28", true)
+        ], today: "2026-09-30") == 1)
     }
 
-    @Test("Consecutive late days are zero")
-    func consecutiveLate() throws {
-        #expect(try streak([("2026-09-30", false), ("2026-09-29", false)], today: "2026-09-30") == 0)
-    }
-
-    @Test("A late day in the past breaks the walk")
-    func lateDayInPastBreaks() throws {
-        // Today on time, yesterday late, day before on time -> 1, not 3.
+    @Test("An off-window day in the past is skipped and the run continues")
+    func offWindowDayInPastIsSkipped() throws {
+        // Today, yesterday and the day before on time, with an off-window day
+        // wedged between two of them -> 3, not 1.
         #expect(try streak([
             ("2026-09-30", true), ("2026-09-29", false), ("2026-09-28", true)
+        ], today: "2026-09-30") == 2)
+    }
+
+    @Test("A day with no moment at all still ends the run")
+    func noMomentStillEndsTheRun() throws {
+        // The distinction ADR-023 draws: no photograph is a genuine miss, and
+        // only that ends the walk. An off-window photograph is not a miss.
+        #expect(try streak([
+            ("2026-09-30", true), ("2026-09-28", true)
         ], today: "2026-09-30") == 1)
+    }
+
+    @Test("The best streak is never lower than the current one")
+    func bestIsNeverBelowCurrent() throws {
+        // The display bug ADR-023 would have caused, pinned so it cannot come
+        // back. `currentStreak` skips off-window days; if `longestStreak` counted
+        // strictly-consecutive *on-time* days it could land below the current
+        // value, and the Today footer would render "best 2" beside a streak of 3.
+        //
+        // Swept across a fortnight of histories rather than asserted once,
+        // because the specific shape that breaks it is a one-in-many pattern
+        // and a single fixture is a fixture that happened to pass.
+        for mask in 0..<(1 << 10) {
+            var onTime: Set<DayIdentifier> = []
+            var captured: Set<DayIdentifier> = []
+            for bit in 0..<10 {
+                let day = try day("2026-09-\(20 + bit)")
+                if mask & (1 << bit) != 0 {
+                    onTime.insert(day)
+                    captured.insert(day)
+                } else if mask & (1 << (bit + 10)) != 0 {
+                    captured.insert(day)          // off-window
+                }
+                // Neither set: a day with no moment at all.
+            }
+            let today = try day("2026-09-30")
+            let current = StreakCalculator.currentStreak(
+                onTimeDays: onTime, capturedDays: captured,
+                today: today, calendar: calendar
+            )
+            let best = StreakCalculator.longestStreak(
+                capturedDays: captured, calendar: calendar
+            )
+            #expect(
+                best >= current,
+                "best \(best) below current \(current) for mask \(mask)"
+            )
+        }
     }
 
     // MARK: - Calendar boundaries
@@ -189,9 +249,14 @@ struct LongestStreakTests {
 
     private var calendar = Calendar(identifier: .gregorian)
 
+    /// Longest run of consecutive days with a moment. Takes plain day strings
+    /// because the statistic no longer cares whether each one was on time
+    /// (ADR-023) — a point worth restating in the helper's signature, since the
+    /// old version of this took `onTimeDays` and would have read as the same
+    /// number under a different name.
     private func longest(_ days: [String]) -> Int {
         let ids = Set(days.compactMap { DayIdentifier(string: $0, calendar: calendar) })
-        return StreakCalculator.longestStreak(onTimeDays: ids, calendar: calendar)
+        return StreakCalculator.longestStreak(capturedDays: ids, calendar: calendar)
     }
 
     @Test("Empty is zero")
@@ -334,8 +399,14 @@ struct SummaryTests {
         #expect(s.totalMoments == 4)
         #expect(s.daysCaptured == 4)
         #expect(s.lateMoments == 1)
-        #expect(s.currentStreak == 3)      // the 27th was late, so it breaks
-        #expect(s.longestStreak == 3)
+        // The 27th was off-window, so it is skipped rather than ending the run:
+        // the 28th, 29th and 30th all count (ADR-023).
+        #expect(s.currentStreak == 3)
+        // `longestStreak` counts days with *any* moment, so the off-window 27th
+        // is inside the best run and it spans all four days. Under the old rule
+        // this would have been 3 — and with `currentStreak` skipping, a best of 3
+        // beside a current of 3 is a number that never says anything.
+        #expect(s.longestStreak == 4)
         #expect(s.onTimePercentage == 0.75)
         #expect(s.averageRetakes == 1.5)    // (0+1+2+3)/4
         #expect(s.btsCount == 2)

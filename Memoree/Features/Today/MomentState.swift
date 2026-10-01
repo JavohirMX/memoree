@@ -25,12 +25,17 @@ enum MomentState: Equatable, Sendable {
     case missed
 
     /// Whether the shutter should be offered.
-    var allowsCapture: Bool {
-        switch self {
-        case .open, .captured, .lateAvailable: return true
-        case .scheduled, .missed: return false
-        }
-    }
+    ///
+    /// **Always `true` since ADR-023.** This used to be false for `scheduled`,
+    /// which is what made the early-post refusal (`FR-5`, `AGENTS.md` §2 rule 10)
+    /// structural rather than a disabled button — a nice piece of work that was
+    /// answering the wrong question, and that contradicted the app's own
+    /// onboarding copy.
+    ///
+    /// Kept as a property rather than deleted so the view reads the same and the
+    /// rule has one home. A view that asked the user for permission it always
+    /// grants is a worse thing than one that never asks.
+    var allowsCapture: Bool { true }
 
     /// True while the countdown is running toward an unopened window.
     var isAwaitingMoment: Bool {

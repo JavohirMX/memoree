@@ -103,24 +103,52 @@ final class TodayViewModel {
     }
 
     /// `mm:ss` for the open window, or the countdown to it. Empty otherwise.
-    var countdown: String? {
-        switch state {
-        case .open(let remaining):
-            return CountdownFormatter.string(fromSeconds: remaining)
-        case .scheduled(let until):
-            return CountdownFormatter.string(fromSeconds: until)
-        default:
-            return nil
-        }
-    }
+    ///
+    /// **Always `nil` since ADR-024.** The countdown was inherited from the era
+    /// when the window closed and missing it cost something. It does not any
+    /// more — you can photograph at any time (ADR-023) — so a number ticking
+    /// like a deadline now sits above a rule where missing the window costs the
+    /// streak. It was not left in place neutrally; it was actively untrue.
+    ///
+    /// Kept as a property rather than deleted so the view and its tests have one
+    /// place to look, and so a future decision to bring timing back is a change
+    /// here rather than a reconstruction.
+    var countdown: String? { nil }
 
     /// Amber under thirty seconds — the only colour besides white.
-    var countdownIsUrgent: Bool {
-        if case .open(let remaining) = state { return remaining <= 30 }
-        return false
+    var countdownIsUrgent: Bool { false }
+
+    /// Whether today's moment time may be shown at all.
+    ///
+    /// **False whenever notifications are authorised** (ADR-024). The
+    /// notification and the clock are the same information delivered twice, and
+    /// showing both spends the surprise for nothing. The notification is the
+    /// alert; the app's job is to have delivered one and then shut up.
+    ///
+    /// True only when the user has declined notifications, because then the
+    /// clock is the *only* way they could ever learn when the moment was —
+    /// declining must not mean keeping the app open all day hoping (AGENTS.md §6).
+    var showsMomentTime: Bool { !notificationsAuthorized }
+
+    /// Seconds until the moment, or `nil` if it has passed.
+    ///
+    /// Gated on `showsMomentTime`, so a caller cannot accidentally render a
+    /// countdown to someone who is supposed to be surprised. The caller is
+    /// expected to check `showsMomentTime` as well — this is a second line of
+    /// defence, not the only one, because the cost of leaking the time is that
+    /// the moment stops being a moment.
+    var timeUntilMoment: TimeInterval? {
+        guard showsMomentTime else { return nil }
+        let remaining = interval.start.timeIntervalSince(now)
+        return remaining > 0 ? remaining : nil
     }
 
     /// Wall-clock time of today's moment, e.g. "14:37".
+    ///
+    /// Always computed, never always displayed — the caller asks
+    /// `showsMomentTime` first. Keeping the formatting separate from the
+    /// decision means the tests can check the value without also having to stand
+    /// up a notification state to see it.
     var momentClockTime: String {
         Self.timeFormatter.string(from: interval.start)
     }
