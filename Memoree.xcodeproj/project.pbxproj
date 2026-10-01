@@ -44,6 +44,7 @@
 		82A3ED94BB96AC6256F2AD15 /* MomentStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9100C5469DB0B8FADEE2D2F /* MomentStoreTests.swift */; };
 		83F404C4CD6E1BE308A1D078 /* TodayViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D29190E45BA95B9369F8C505 /* TodayViewModelTests.swift */; };
 		856494ADEBA6A7E29BC78667 /* NoNetworkingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9634A6C3108A9A772B1AC4D2 /* NoNetworkingTests.swift */; };
+		85D47151EEEEB60E7851BEC3 /* MomentExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBE2D0E42EDD569DE801F57E /* MomentExporter.swift */; };
 		8635C947B96A8DD93F67CEC0 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9AD7FACEC7C44964337A0F /* CameraViewModel.swift */; };
 		8ADAA829C099B4B26F68E3E3 /* InstallSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21BC6C3408F1736BBDA50E67 /* InstallSecret.swift */; };
 		8FD124C3C0DE26E1DDE7BA09 /* MomentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6B76ACD80C3AC9C27826CD /* MomentState.swift */; };
@@ -78,6 +79,7 @@
 		D4EDCB199704C0325F3AB046 /* VoiceOverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 655359A3B7E29DD308A27ADD /* VoiceOverTests.swift */; };
 		D83327E4EFC07C648EF6FA3D /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED58D5D93AAC5BD43FDA4B70 /* SettingsView.swift */; };
 		D8AC26DCE621CAA9480E74BC /* MemoreeApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */; };
+		DA0206F5D3E5437B6E02AA96 /* MomentExporterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACADA2F6A8BD7944EEEC188B /* MomentExporterTests.swift */; };
 		DC4C1394F5AFC4875B82F5B0 /* MemoreeAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = F078D0D5F2174471A9D1CF04 /* MemoreeAppDelegate.swift */; };
 		DD0AC66E24C8C9E2E53324BD /* ArchiveViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 11586B70B27A7BEC8481834B /* ArchiveViewModel.swift */; };
 		DD882102CA9648F77652C558 /* SourceScan.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9305F1F5984423B92AAF49 /* SourceScan.swift */; };
@@ -166,6 +168,7 @@
 		A3AEF188C45BA38EE41A5DB0 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
 		A8083EE130385202F15D7174 /* ArchiveCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveCell.swift; sourceTree = "<group>"; };
 		A9280538F4369959B511B4C1 /* MomentDerivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentDerivation.swift; sourceTree = "<group>"; };
+		ACADA2F6A8BD7944EEEC188B /* MomentExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentExporterTests.swift; sourceTree = "<group>"; };
 		AD917757A35E12DEED178444 /* InMemoryCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InMemoryCaptureService.swift; sourceTree = "<group>"; };
 		B22F42B6A1FFA91C8F16DB76 /* ArchiveViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveViewModelTests.swift; sourceTree = "<group>"; };
 		B9C1DE965579048DB04E0A1D /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
@@ -177,6 +180,7 @@
 		C525B5957A0A6DEA54C172F9 /* StatsViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatsViewModelTests.swift; sourceTree = "<group>"; };
 		C7693115792547B94510B657 /* DayIdentifierTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayIdentifierTests.swift; sourceTree = "<group>"; };
 		CB972B6DBC6BA37BACC36F5E /* InMemoryPhotoLibraryService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InMemoryPhotoLibraryService.swift; sourceTree = "<group>"; };
+		CBE2D0E42EDD569DE801F57E /* MomentExporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentExporter.swift; sourceTree = "<group>"; };
 		CC7F78EA51E71A3AC4786D36 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
 		CCFE5777FB12591C4D4AD5C0 /* MemoreeApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoreeApp.swift; sourceTree = "<group>"; };
 		D29190E45BA95B9369F8C505 /* TodayViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayViewModelTests.swift; sourceTree = "<group>"; };
@@ -221,6 +225,7 @@
 				EF887EAC093FD8C50E7B0980 /* Camera */,
 				CD921C706A2B749BF6FA5943 /* Onboarding */,
 				3A67D939BCE9B5DC02106068 /* Settings */,
+				B904A4CAC3217BD57EFAD93F /* Share */,
 				B864CCFB955E65EB7C8518DB /* Stats */,
 				5144F22B9BEB97F350F0AF5E /* Today */,
 			);
@@ -357,6 +362,7 @@
 				6181DAD5BD1416D9C47784D2 /* LivePhotoRunGuard.swift */,
 				10DEE387D182EF879E7D835F /* MomentCommitTests.swift */,
 				7A59071CE45EB050FA861B6D /* MomentDerivationTests.swift */,
+				ACADA2F6A8BD7944EEEC188B /* MomentExporterTests.swift */,
 				1B664FC8EC0CC2A5B0B55912 /* MomentStateTests.swift */,
 				D9100C5469DB0B8FADEE2D2F /* MomentStoreTests.swift */,
 				0199319C81AC3B09C6F31596 /* MomentWindowChangeTests.swift */,
@@ -397,6 +403,14 @@
 				8A763A1F9DDA1755A4E93074 /* StatsViewModel.swift */,
 			);
 			path = Stats;
+			sourceTree = "<group>";
+		};
+		B904A4CAC3217BD57EFAD93F /* Share */ = {
+			isa = PBXGroup;
+			children = (
+				CBE2D0E42EDD569DE801F57E /* MomentExporter.swift */,
+			);
+			path = Share;
 			sourceTree = "<group>";
 		};
 		B9231DB624B16D273528F4EE /* App */ = {
@@ -610,6 +624,7 @@
 				EBF74A30C81ABB752F19229A /* MomentComposite.swift in Sources */,
 				425E674601FFCC9151C647DC /* MomentDerivation.swift in Sources */,
 				FCC07880F67380F62699E675 /* MomentDetailView.swift in Sources */,
+				85D47151EEEEB60E7851BEC3 /* MomentExporter.swift in Sources */,
 				7327261BF0C49D0FDD459D9D /* MomentFacts.swift in Sources */,
 				DE7C566CDBDFF1C8B2EF3618 /* MomentScheduler.swift in Sources */,
 				8FD124C3C0DE26E1DDE7BA09 /* MomentState.swift in Sources */,
@@ -658,6 +673,7 @@
 				A632C1A434FD18FF4C50E080 /* LivePhotoRunGuard.swift in Sources */,
 				2B9D319B2D985A6015711CCF /* MomentCommitTests.swift in Sources */,
 				77717203E14D72AD646041D1 /* MomentDerivationTests.swift in Sources */,
+				DA0206F5D3E5437B6E02AA96 /* MomentExporterTests.swift in Sources */,
 				E089D39225FDF9AB41907C87 /* MomentStateTests.swift in Sources */,
 				82A3ED94BB96AC6256F2AD15 /* MomentStoreTests.swift in Sources */,
 				A1AE91B186C4DE1FE7FDCF6A /* MomentWindowChangeTests.swift in Sources */,
