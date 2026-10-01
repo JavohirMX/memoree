@@ -387,8 +387,10 @@ on the Today screen would drain a battery to show a streak.
 
 ### Still outstanding for this phase
 
-- The human mirroring verdict, which only a person can give.
-- A green twenty-moment run — which needs one of the three decisions above first.
+- ~~The human mirroring verdict, which only a person can give.~~ **Verified 2026-10-01:**
+  the selfie reads as a mirror. That was the one check in this phase that no
+  automated test could stand in for, and it is closed.
+- **A green twenty-moment run** — still needs one of the three decisions above.
 
 **Cosmetic, recorded so it is not rediscovered as new:** every device run logs
 `[SwiftUI] Invalid frame dimension (negative or non-finite)` — 146 times in one run. It fires at
