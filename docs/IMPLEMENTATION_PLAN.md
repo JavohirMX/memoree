@@ -362,10 +362,72 @@ the streak recompute are Phase 5's orchestration. Stopping there means the shutt
 somewhere real rather than to a dead end (AGENTS.md §6), and it proves the Phase 3 write path on
 hardware in the same run.
 
-**Outstanding:** the 20-run device check, and the human confirmation that the front image is
-mirrored and the rear is not. The mirroring test asserts the mechanism held rather than claiming
-a visual verdict — a selfie is close to symmetric, so only a person can confirm it reads as a
-mirror.
+### Progress as of 2026-10-01 — the sixth device run found the one that mattered
+
+Phase 3 is **closed**: all four live Photos tests pass on an iPhone 17. Phase 4's exit
+criterion ran, and found two more defects that eleven phases of simulator testing could not.
+
+**The camera worked exactly once per app launch.** `configureSession` called
+`canAddOutput(photoOutput)` and then `addOutput(photoOutput)` on *every* `startSession`.
+`stopSession` stops the session but never removes outputs, and `AppEnvironment.captureService`
+is a single cached instance for the life of the process — so the second time the camera screen
+was opened, both outputs were already attached, `canAddOutput` returned false, and the guard
+threw `configurationFailed("photo output rejected")`. The 20-iteration loop hit it on
+iteration 2; nineteen of twenty moments failed.
+
+The message names the photo output and points at authorisation, when the camera is present,
+working, and already configured.
+
+**Why nothing caught it, which is the part worth keeping.** The *inputs* were handled correctly
+the whole time — `attachInput` removes the outgoing input before attaching the new one — so the
+defect is an asymmetry, not an error, and no single code path looks wrong. It exists only
+*across* two sessions. Twenty-seven capture tests passed because the simulator has no camera and
+therefore never re-enters the path. It took someone opening the camera twice on real hardware.
+
+**The 20-run loop was itself wrong, and fixing it hid nothing.** It constructed a new
+`SequentialCaptureService` per iteration, which meant twenty `AVCaptureSession` allocations.
+Constructing one makes a *synchronous* XPC round-trip to the capture daemon
+(`FigCaptureSessionRemoteCreate`), and twenty of them in a background test process tripped the
+watchdog: `0x8BADF00D`, "Failed to terminate gracefully after 5.0s", main thread parked inside
+`_createFigCaptureSession`. That loop was testing a shape the product never runs — the app has
+one session for its whole life. It now reuses one service, which is not a way to dodge a crash
+but the only shape the app is ever in.
+
+**`ensureAlbum` created a duplicate album on every call** (Phase 3). It searched for an existing
+album with `fetchAssetCollections(withLocalIdentifiers: [])` — a fetch for *zero* identifiers,
+which returns nothing, so the "find existing" branch was dead code. Invisible in the app because
+`saveToAlbum` defaults to off and no production path reached it. Two layers of "not shipped"
+hid a defect the first real invocation exposed.
+
+**A lesson about the diagnostic suites.** `CameraDiagnostics` took 158 seconds in one run and
+0.021 in the next, on the same build. It is a printout, not a gate — as this plan says — and
+including it in a routine run cost more wall time than the entire rest of the suite. Excluded
+from the standard device run; keep it for when the next unexplained failure needs those lines.
+
+**Outstanding:** the human confirmation that the front image is mirrored and the rear is not. The
+mirroring test asserts the mechanism held rather than claiming a visual verdict — a selfie is
+close to symmetric, so only a person can confirm it reads as a mirror. The Today screen's
+composite is finally somewhere to look at one.
+
+**How to run it, and why the flags are not optional:**
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcodebuild test -project Memoree.xcodeproj -scheme Memoree \
+  -destination 'platform=iOS,id=<your device>' \
+  -only-testing:MemoreeTests/LiveCaptureTests \
+  -only-testing:MemoreeTests/LivePhotoLibraryTests \
+  -allowProvisioningUpdates DEVELOPMENT_TEAM=MBBD9BRZ67 \
+  -collect-test-diagnostics never
+```
+
+Two device-specific lessons are baked into that command. `DEVELOPMENT_TEAM` is `MBBD9BRZ67`,
+read from the certificate's `OU` — not `MBB9BRZ67`, which differs by one character and is what
+`project.yml` said for five phases. A simulator build never signs, so the wrong value passed
+every test in the project. And `-collect-test-diagnostics never` because when a test *fails*,
+xcodebuild collects a sysdiagnose from the host before exiting, which on a device hangs
+indefinitely with no output and reports `BUILD INTERRUPTED` — destroying the exit code that
+would have said the run had finished. It reads exactly like a frozen test run.
 
 ---
 
