@@ -913,7 +913,7 @@ device run as the only instrument that counts.
 
 ---
 
-## Phase 7 (was 9) — Stats · **next**
+## Phase 7 (was 9) — Stats ✅
 
 > **Reordered ahead of share and BTS, and it is cheaper than it looks:**
 > `StreakCalculator.summary` already computes every number this phase displays —
@@ -937,14 +937,47 @@ reorder intact.
 | Busiest hour | Histogram of `capturedAt` — already computed, never displayed |
 | Streak history | Current and past streaks, in place of BeReal's Memories calendar |
 | Empty states | Zero moments, one moment |
-| BTS count | **Omit if Phase 7 is cut.** A row that always reads "0" is a feature that does not exist. |
+| BTS count | **Omitted.** BTS has no recorder behind it (see Phase 8), so the row would always read "0". |
 
 **Exit:** numbers match the archive by hand-check on three days of data.
 **Estimate:** 1 day.
 
+### Progress as of 2026-10-01 — the numbers were already computed; this is where they were going
+
+Reached by tapping the streak. The header already carries three things and a fourth icon would be
+one too many — but the number the user cares about is the obvious door to its own history, and
+"tap the number to see the numbers" needs no explanation.
+
+**The debt was the coverage, not the view.** `StreakCalculator.summary` has computed every field
+on this screen since Phase 2 and `StreakSummary` is a `Sendable` value with a plain initialiser,
+so for five months there was a whole statistics layer with nothing asserting on most of its
+output: `onTimePercentage` could have been returning nonsense and no test would have noticed.
+Eighteen tests across two files — the arithmetic, and the decisions.
+
+**The phase's one forced copy decision, and it is the answer to a risk ADR-023 accepted knowingly.**
+With the late badge gone, an off-window moment is indistinguishable from an on-time one on every
+screen and the streak silently does not move. ADR-023 said: *"A user who has not read this ADR
+will experience that as a bug in the first week."* The answer is **"375 of 500 on time" describes a
+number; a badge on a photograph described the user.**
+
+**"2 missed" would be both a reprimand and wrong**, so the row is "days with nothing" — and only
+an empty day breaks a streak. `missedDays` counts days *after* your first moment, because you
+cannot have missed a day before you started; my test expected the two preceding days to count and
+was wrong, and the alternative is defensible-looking and wrong — a user who installed last week
+would open this screen to "several days with nothing" on their first launch.
+
+**Two time formats on one screen**, found by screenshotting: "Most often at 8pm" above "11.38"
+below, because the busiest hour used a hardcoded `"ha"` while the history list followed the device
+locale. Both follow the locale now, and the test compares against the same formatter the list uses
+rather than a literal — a test hardcoding "4pm" fails on a 24-hour device and passes on a 12-hour
+one.
+
+Rows that read zero are hidden rather than shown: a user who has never retaken anything is not
+being told they scored zero.
+
 ---
 
-## Phase 8 (was 10) — Polish
+## Phase 8 (was 10) — Polish ✅
 
 > **The Settings screen already exists** — window picker, reminders status, the reinstall
 > warning, the camera-reset hook, pending-count diagnostics — shipped with Phase 6 because the
@@ -953,15 +986,15 @@ reorder intact.
 
 | Task | Notes |
 | --- | --- |
-| Save-to-album toggle | `settings.saveToAlbum` exists and defaults off; nothing surfaces it |
-| BTS toggle + duration | **Only if Phase 7 is built.** Same reason as the BTS count above. |
-| Data export | Needs Phase 8's `MomentExporter` |
-| Dark-mode audit | Assert no `colorScheme` branch anywhere; light mode is not a feature |
-| Dynamic Type | Verify the countdown and metadata at accessibility sizes |
-| VoiceOver | Camera, archive, detail, settings |
-| Reduce Motion | Honour it for the camera-switch animation |
-| Reduce Transparency | N/A on pure black, but verify |
-| Haptics | Capture, and the camera switch |
+| Save-to-album toggle | **Done.** `settings.saveToAlbum` existed since Phase 2 and defaulted off; nothing surfaced it |
+| BTS toggle + duration | **Cut — see below.** There is no `BTSRecorder`, so the toggle would be the dead control `Models.swift` explicitly warns against |
+| Data export | Needs Phase 9's `MomentExporter` |
+| Dark-mode audit | **Done.** Asserted, not intended — and it found a real layering violation on its first run |
+| Dynamic Type | **Done.** "Verify" turned out to mean "the app had none of it" |
+| VoiceOver | **Done.** Camera, archive, detail, settings |
+| Reduce Motion | **Done.** The camera-switch animation it named does not exist; the four that do are wrapped |
+| Reduce Transparency | **Verified N/A**, and asserted so it stays true |
+| Haptics | **Done**, two events — see the note on the camera switch below |
 
 **And one design-system decision lands here.** ADR-025 renamed the amber and gave it one
 reserved job. If a second load-bearing use ever appears it is a new ADR, not a reinterpretation
@@ -969,6 +1002,92 @@ reserved job. If a second load-bearing use ever appears it is a new ADR, not a r
 
 **Exit:** Settings does everything; accessibility pass complete.
 **Estimate:** 2 days.
+
+### Progress as of 2026-10-01 — "verify Dynamic Type" meant "there is none"
+
+**The plan's row said "Dynamic Type | Verify the countdown and metadata at accessibility sizes."
+Verified. Every one of the eight tokens in `Theme.Typography` was `Font.system(size:)` — a fixed
+point size, which does not scale.** Not "scaled a little": not at all. A user at the largest
+accessibility setting saw a pixel-identical screen. Found by screenshotting the same screen at two
+sizes and comparing, which produced the same picture twice.
+
+The ramp is now text styles, and **the point sizes did not move** — `.title2` *is* 22, `.headline`
+*is* 17 semibold, `.subheadline` *is* 15, so the two roles one point apart are still one point
+apart. The two big numerals (64 and 56) have no text style and are the third option: `@ScaledMetric`
+honours the base exactly and applies the user's setting as a multiplier, capped at 2.5× so a numeral
+grows into its space instead of clipping.
+
+**Fixing the fonts exposed four layout bugs that had been invisible for the project's whole life.**
+
+- `MetadataRow` was a two-column `HStack`. At AX5 the label got a fraction of the width — too
+  narrow for any single word, which is when iOS breaks a word *mid-word*. "Photographs" rendered
+  as "**Pho-tographs**".
+- The countdown truncated to `4:53:…`. A `HH:MM:SS` string cannot wrap, so it truncates, and a
+  countdown to nothing is worse than a small one.
+- Today's column is a `VStack` with `Spacer`s, which centres. **A centring stack taller than its
+  screen overflows off *both* ends at once**, so the streak's "375" was sliced through by the
+  status bar and "Next moment at 17:59" read "Next mome…". A `ScrollView` does not help: the
+  column still centres, so half its content is still above the scroll view's top edge. The layout
+  is now replaced at accessibility sizes rather than the existing one wrapped.
+- The two flame icons sat at a fixed 20 and 28 while the numbers beside them grew to 140.
+
+**`ViewThatFits` was the obvious answer for `MetadataRow` and it was wrong.** It worked on Stats,
+then chose the *row* on Today for labels that did not fit and truncated them — inside a
+`ScrollView` the proposal it measures against is not the screen width. **A branch driven by a
+measurement that does not hold is worse than no branch**, because it looks like it is handling the
+problem. `isAccessibilitySize` measures nothing. Both failed attempts are recorded on the type,
+including a `fixedSize` that traded hyphenation for clipping.
+
+**The album toggle, which existed in the model since Phase 2.** `PhotoKitLibrary.ensureAlbum`
+carries a comment saying it: *"Two layers of 'not shipped' hid a defect that the first real
+invocation exposed."* The album add runs **after** the commit and cannot fail it — the photographs
+are what the user asked for and they are already on disk; an album is an organisation of them. It
+is still reported (on the Today footer, because the camera screen is gone by then) and in grey,
+not amber. Turning it off deletes nothing, and the guarantee is structural: `PhotoLibraryService`
+has no delete method at all.
+
+**Haptics: two events, not three.** A haptic describes something *the user did*, not something
+the app did internally — and one shutter press photographs *and* swaps, so buzzing for both would
+tell the user two things happened when they pressed once. `cameraSwitched` has no call site and
+the protocol says so. **The plan's "Capture, and the camera switch" should be read as one event.**
+Writing the tests also found that `shutterPressed`'s doc comment says the *second* press switches
+and the code switches on the first — the behaviour is right and the comment is wrong, recorded
+rather than fixed because it is a product change to ADR-021.
+
+**Reduce Motion's "camera-switch animation" does not exist.** There is no cross-fade; the four
+animations that do exist all go through `.appAnimation`, which substitutes `nil` — removing the
+animation rather than shortening it. A scan enforces it, because a `.animation` that bypasses the
+wrapper is identical in review and ignores the setting silently.
+
+**VoiceOver: the countdown was announcing itself once a second.** A `Text` is an accessibility
+element by default, and one whose value changes every second is one VoiceOver may re-announce.
+Hidden — and defensible, because the same fact is already in the footer as a static row that
+announces once. Also: two of the three composites announce as buttons and one should not.
+
+**The dark-mode audit found a layering violation on its first run.** `OnboardingView` has imported
+AVFoundation and Photos since Phase 0 and called `AVCaptureDevice.requestAccess(for: .video)`
+directly, breaking `AGENTS.md` §3; `Photos` was never used at all. The request now goes through
+`captureService`, which has had `requestAuthorization()` since Phase 1.
+
+### The BTS toggle: cut, and why that is a decision rather than an omission
+
+The plan offered it "only if Phase 7 is built". Phase 7 is built. **It still should not be
+surfaced**, and the reason is already written into `Models.swift`:
+
+> Both defaulted to on and true, which made the settings row describe a feature the app does not
+> have until Phase 7 — *a toggle that says "save your Behind the Scenes clip" and then silently
+> does nothing.*
+
+**There is no `BTSRecorder`.** `btsEnabled` and `saveBTS` are model fields with nothing on the
+other end; `saveBTS` on the library writes bytes nobody produces. The comment's condition was
+written for the reverse case — it assumed Phase 7 *was* BTS. Phase 7 turned out to be Stats and
+BTS moved later, so the condition no longer holds.
+
+Surfacing the toggle now would be exactly the dead control the comment describes, and it would be
+the app's first dead control. **The flag stays in the model, where it is inert and costs nothing,
+and the row waits for a recorder that exists.**
+
+---
 
 ---
 
