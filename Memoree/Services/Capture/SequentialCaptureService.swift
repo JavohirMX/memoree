@@ -83,6 +83,24 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
         try await controller.configureFormat(for: position)
     }
 
+    // MARK: - Diagnostics
+
+    /// The last few frame waits, for a device diagnostic to read.
+    ///
+    /// **Not on `CapturePhotoService`, and that is deliberate.** The protocol is
+    /// what production code and every test double conform to, and a diagnostic
+    /// method on it would mean every double carrying an implementation of
+    /// something production never calls. This is on the concrete service, where
+    /// only a device diagnostic reaches it — the same reasoning that keeps
+    /// `ArchiveThumbnailCache` out of the protocol.
+    func frameWaitDiagnostics() async -> [CaptureSessionController.FrameWaitOutcome] {
+        await controller.frameWaitDiagnostics()
+    }
+
+    func resetFrameWaitDiagnostics() async {
+        await controller.resetFrameWaitDiagnostics()
+    }
+
     func rebuildSession() async throws {
         try await controller.rebuildSession()
     }

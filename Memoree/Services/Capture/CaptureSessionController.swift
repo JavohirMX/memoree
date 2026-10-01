@@ -142,9 +142,97 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     private struct FrameWait {
         let generation: UInt64
         let continuation: CheckedContinuation<Void, Error>
+        /// When the wait was armed, for the diagnostic below.
+        let armedAt: DispatchTime
     }
 
     private var frameWait: FrameWait?
+
+    // MARK: - Frame-wait diagnostics
+
+    /// One observed frame wait, from arming to either acceptance or timeout.
+    ///
+    /// ## Why this exists
+    ///
+    /// The twenty-moment gate measured **16/20, with all four failures being a
+    /// frame-wait timeout on the swap *to* the back camera** — 0/10 into front,
+    /// 4/10 into back. A generic "the output stalls" problem should be roughly
+    /// symmetric, so the asymmetry says something differs on that path, and there
+    /// are two candidates that look identical from the outside:
+    ///
+    /// - **Frames arrive and are rejected** by the port-identity check in
+    ///   `deliverFrame(from:)` — a correctness bug that would also produce
+    ///   black or green photographs, which is what that check exists to prevent.
+    /// - **Frames never arrive** — the back sensor is not producing after the
+    ///   swap, or `applyFormat`'s `activeFormat` assignment is re-configuring the
+    ///   running session.
+    ///
+    /// A timeout reports both cases identically. This records which one it was, so
+    /// **one device run answers the question** instead of three.
+    ///
+    /// It is a bounded ring rather than an unbounded log because this is
+    /// production code: the twenty-moment gate needs the history, and a user who
+    /// takes four hundred photographs does not need it or have the memory.
+    struct FrameWaitOutcome: CustomStringConvertible {
+        /// The camera being swapped **to**.
+        let target: CameraPosition
+        /// The camera being swapped away from.
+        let from: CameraPosition
+        let duration: TimeInterval
+        /// How many frames arrived and were dropped by the port check.
+        let rejectedFrames: Int
+        let timedOut: Bool
+
+        var description: String {
+            let outcome = timedOut ? "TIMEOUT" : "ok"
+            return "\(from.rawValue)->\(target.rawValue) \(outcome) "
+                + String(format: "%.3fs", duration)
+                + (rejectedFrames > 0 ? " rejected=\(rejectedFrames)" : "")
+        }
+    }
+
+    /// The last few frame waits, newest last.
+    private static let diagnosticCapacity = 24
+    private var diagnostics: [FrameWaitOutcome] = []
+
+    /// Frames seen and dropped by the port check during the *current* wait.
+    private var framesRejectedDuringWait = 0
+
+    /// The previous position, captured at swap time for the diagnostic's label.
+    private var positionBeforeSwap: CameraPosition = .back
+
+    /// The recorded frame waits, for a test or a diagnostic to read.
+    ///
+    /// Queue-confined like everything else here, so it is read through
+    /// `frameWaitDiagnostics()` rather than exposed directly.
+    func frameWaitDiagnostics() async -> [FrameWaitOutcome] {
+        await withCheckedContinuation { c in
+            queue.async { c.resume(returning: self.diagnostics) }
+        }
+    }
+
+    /// Clears the recorded history.
+    func resetFrameWaitDiagnostics() async {
+        await withCheckedContinuation { c in
+            queue.async {
+                self.diagnostics = []
+                c.resume()
+            }
+        }
+    }
+
+    /// Records one completed wait. Must run on `queue`.
+    private func record(_ outcome: FrameWaitOutcome) {
+        diagnostics.append(outcome)
+        if diagnostics.count > Self.diagnosticCapacity {
+            diagnostics.removeFirst(diagnostics.count - Self.diagnosticCapacity)
+        }
+    }
+
+    /// Milliseconds between two dispatch instants, without a `Date` allocation.
+    private func seconds(since start: DispatchTime) -> TimeInterval {
+        Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
+    }
 
     /// An armed photo capture. Exactly one at a time.
     private struct PhotoWait {
@@ -404,7 +492,13 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     ))
                     return
                 }
-                self.frameWait = FrameWait(generation: self.generation, continuation: armed)
+                let armedAt = DispatchTime.now()
+                self.frameWait = FrameWait(
+                    generation: self.generation,
+                    continuation: armed,
+                    armedAt: armedAt
+                )
+                self.framesRejectedDuringWait = 0
 
                 // The deadline, armed on the same queue as the wait and
                 // resuming it exactly once. Whichever of frame or deadline
@@ -419,6 +513,20 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                           wait.generation == armedGeneration
                     else { return }
                     self.frameWait = nil
+
+                    // **The diagnostic that matters most.** A timeout here and a
+                    // timeout caused by the port check rejecting every arriving
+                    // frame are indistinguishable to the caller — both are
+                    // `noDeliveredFrame` — and they have opposite fixes. So the
+                    // rejection count is the whole point of this record.
+                    self.record(FrameWaitOutcome(
+                        target: self.activePosition,
+                        from: self.positionBeforeSwap,
+                        duration: self.seconds(since: wait.armedAt),
+                        rejectedFrames: self.framesRejectedDuringWait,
+                        timedOut: true
+                    ))
+
                     wait.continuation.resume(throwing: CaptureError.noDeliveredFrame(
                         self.activePosition
                     ))
@@ -449,14 +557,44 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             guard let wait = self.frameWait, let input = self.activeInput else { return }
             guard let expectedPort = input.ports.first else {
                 self.frameWait = nil
-                wait.continuation.resume(throwing: CaptureError.noInputAvailable(self.activePosition))
+                self.record(FrameWaitOutcome(
+                    target: self.activePosition,
+                    from: self.positionBeforeSwap,
+                    duration: self.seconds(since: wait.armedAt),
+                    rejectedFrames: self.framesRejectedDuringWait,
+                    timedOut: false
+                ))
+                // **`noInputAvailable`, not `noDeliveredFrame` — unchanged.** An
+                // attached input with no ports is a missing camera, and the two
+                // errors say different things to the user: one is "this phone has
+                // no camera", the other is "the camera went quiet". Recording the
+                // diagnostic here is worth it; quietly reclassifying the error is
+                // not, and it is the kind of change that gets made while looking
+                // for something else.
+                wait.continuation.resume(throwing: CaptureError.noInputAvailable(
+                    self.activePosition
+                ))
                 return
             }
             guard connection.inputPorts.contains(where: { $0 === expectedPort }) else {
                 // A frame from the camera we just removed. Correctly ignored.
+                //
+                // **Counted, because "correctly" is a claim this diagnostic is
+                // here to test.** If a swap into the back camera is failing
+                // because every frame arrives on the wrong port, this counter is
+                // what says so — and a handful of rejects is the healthy case,
+                // since frames in flight at the swap always arrive late.
+                self.framesRejectedDuringWait += 1
                 return
             }
             self.frameWait = nil
+            self.record(FrameWaitOutcome(
+                target: self.activePosition,
+                from: self.positionBeforeSwap,
+                duration: self.seconds(since: wait.armedAt),
+                rejectedFrames: self.framesRejectedDuringWait,
+                timedOut: false
+            ))
             wait.continuation.resume()
         }
     }
@@ -605,6 +743,10 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             queue.async { [self] in
                 do {
+                    // Remember where the swap came from, so a recorded wait can
+                    // say `front->back` rather than just `back`. Read here,
+                    // before `attachInput` overwrites `activePosition`.
+                    self.positionBeforeSwap = self.activePosition
                     try attachInput(at: position)
                     try applyFormat(for: position)
                     c.resume()

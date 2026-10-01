@@ -345,6 +345,35 @@ struct LiveCaptureTests {
         print("live capture: 20 paced moments, \(failures.count) failures")
         for failure in failures { print("  \(failure)") }
 
+        // **The frame-wait table, printed on every run.**
+        //
+        // The 16/20 run that found the front->back asymmetry could not say
+        // *why*: a timeout caused by the port check rejecting every arriving
+        // frame is indistinguishable from one caused by no frame arriving, and
+        // the two have opposite fixes. This table separates them in one run.
+        //
+        // What to look for:
+        //
+        // - `rejected` high with `TIMEOUT` → the port check is wrong. That is a
+        //   correctness bug and it would also produce black or green
+        //   photographs, which is exactly what the check exists to prevent.
+        // - `rejected` 0 with `TIMEOUT` → frames genuinely never arrive. The
+        //   back sensor is not producing after the swap, or `applyFormat`'s
+        //   `activeFormat` assignment re-configures the running session.
+        // - `ok` rows clustering high → the 5s deadline is simply too tight and
+        //   the honest fix is a longer one.
+        let waits = await service.frameWaitDiagnostics()
+        print("FRAME-WAITS (\(waits.count))")
+        for outcome in waits { print("  \(outcome)") }
+        let timeouts = waits.filter(\.timedOut)
+        print("FRAME-WAITS summary: \(waits.count) waits, \(timeouts.count) timed out")
+        for outcome in timeouts {
+            print("  TIMEOUT \(outcome) — "
+                  + (outcome.rejectedFrames > 0
+                      ? "frames arrived and were REJECTED by the port check"
+                      : "no frame arrived at all"))
+        }
+
         #expect(failures.isEmpty)
     }
 
