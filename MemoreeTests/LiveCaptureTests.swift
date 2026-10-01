@@ -367,12 +367,34 @@ struct LiveCaptureTests {
         for outcome in waits { print("  \(outcome)") }
         let timeouts = waits.filter(\.timedOut)
         print("FRAME-WAITS summary: \(waits.count) waits, \(timeouts.count) timed out")
+
+        // **The decisive number, and the reason this run is worth its four
+        // minutes.**
+        //
+        // `framesSeen` is how many frames the video output delivered during the
+        // wait, counted before any matching logic. Everything before this
+        // diagnostic could only say *no frame was rejected*, which cannot
+        // distinguish "the output went silent" from "frames are flowing and the
+        // wait is failing to see them".
+        //
+        // - `seen=0` → the output is dead. The camera is not producing, and the
+        //   frame signal this whole design depends on has nothing to signal.
+        //   The bug is in the session, not in the matching.
+        // - `seen=100+` → frames are arriving and being missed. The bug is in
+        //   `deliverFrame` or in how the wait is armed, and no amount of session
+        //   fiddling will fix it.
+        //
+        // Healthy waits finish in single-digit milliseconds, so at 30-60fps a
+        // healthy wait should see roughly `duration x frameRate` frames — a
+        // handful at most. A timeout that reports `seen=0` is unambiguous.
         for outcome in timeouts {
-            print("  TIMEOUT \(outcome) — "
-                  + (outcome.rejectedFrames > 0
-                      ? "frames arrived and were REJECTED by the port check"
-                      : "no frame arrived at all"))
+            let verdict = outcome.framesSeen == 0
+                ? "OUTPUT DEAD — nothing was delivered in "
+                    + String(format: "%.1fs", outcome.duration)
+                : "FRAMES FLOWING but missed — \(outcome.framesSeen) arrived and the wait saw none"
+            print("  TIMEOUT \(outcome) — \(verdict)")
         }
+        if timeouts.isEmpty { print("  no timeouts") }
 
         #expect(failures.isEmpty)
     }

@@ -150,78 +150,68 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
     // MARK: - Frame-wait diagnostics
 
-    /// One observed frame wait, from arming to either acceptance or timeout.
+    /// Total frames the video output has delivered since the last reset.
     ///
-    /// ## Why this exists
+    /// ## Why this is counted at all
     ///
-    /// The twenty-moment gate measured **16/20, with all four failures being a
-    /// frame-wait timeout on the swap *to* the back camera** — 0/10 into front,
-    /// 4/10 into back. A generic "the output stalls" problem should be roughly
-    /// symmetric, so the asymmetry says something differs on that path, and there
-    /// are two candidates that look identical from the outside:
+    /// The gate has failed three times with three different rates — 4/20, then
+    /// 1/20, then 6/20 — and in every failure the frame wait hit its 5s deadline
+    /// with `rejected=0`. `rejected=0` only says *no frame was rejected*; it
+    /// cannot distinguish "no frame arrived" from "frames arrived while no wait
+    /// was armed", because both increment nothing.
     ///
-    /// - **Frames arrive and are rejected** by the port-identity check in
-    ///   `deliverFrame(from:)` — a correctness bug that would also produce
-    ///   black or green photographs, which is what that check exists to prevent.
-    /// - **Frames never arrive** — the back sensor is not producing after the
-    ///   swap, or `applyFormat`'s `activeFormat` assignment is re-configuring the
-    ///   running session.
+    /// This is the measurement that separates them. Sampled at the moment the
+    /// deadline fires:
     ///
-    /// A timeout reports both cases identically. This records which one it was, so
-    /// **one device run answers the question** instead of three.
+    /// - **Counter has not moved** → the output is genuinely silent. The session
+    ///   is not producing, and the frame signal this code depends on has nothing
+    ///   to signal.
+    /// - **Counter has moved a lot** → frames *are* flowing and the wait is
+    ///   failing to see them, which puts the bug in the matching logic rather
+    ///   than in the camera.
     ///
-    /// It is a bounded ring rather than an unbounded log because this is
-    /// production code: the twenty-moment gate needs the history, and a user who
-    /// takes four hundred photographs does not need it or have the memory.
+    /// One number, sampled at the exact moment that matters, and it splits the
+    /// problem in half. Everything else here is bookkeeping; this is the test.
+    private var totalFramesDelivered = 0
+
+    /// The counter when the current wait was armed, so a timeout can report the
+    /// difference rather than the total.
+    private var framesAtArmTime = 0
+
+    /// Frames seen and dropped by the port check during the *current* wait.
+    private var framesRejectedDuringWait = 0
+
+    /// The camera the last swap came from, so a recorded wait can say
+    /// `front->back` rather than just `back`.
+    private var positionBeforeSwap: CameraPosition = .back
+
+    /// Frames delivered during the last completed wait, and the wait's outcome.
+    ///
+    /// The second field is the whole point of the first. See `totalFramesDelivered`.
     struct FrameWaitOutcome: CustomStringConvertible {
-        /// The camera being swapped **to**.
         let target: CameraPosition
-        /// The camera being swapped away from.
         let from: CameraPosition
         let duration: TimeInterval
-        /// How many frames arrived and were dropped by the port check.
+        /// Frames the port check refused.
         let rejectedFrames: Int
+        /// Frames that arrived *at all* during the wait, including rejects.
+        let framesSeen: Int
         let timedOut: Bool
 
         var description: String {
             let outcome = timedOut ? "TIMEOUT" : "ok"
             return "\(from.rawValue)->\(target.rawValue) \(outcome) "
                 + String(format: "%.3fs", duration)
+                + " seen=\(framesSeen)"
                 + (rejectedFrames > 0 ? " rejected=\(rejectedFrames)" : "")
         }
     }
 
-    /// The last few frame waits, newest last.
+    /// The last few waits, newest last. Bounded: the gate needs the history and
+    /// a user taking four hundred photographs does not.
     private static let diagnosticCapacity = 24
     private var diagnostics: [FrameWaitOutcome] = []
 
-    /// Frames seen and dropped by the port check during the *current* wait.
-    private var framesRejectedDuringWait = 0
-
-    /// The previous position, captured at swap time for the diagnostic's label.
-    private var positionBeforeSwap: CameraPosition = .back
-
-    /// The recorded frame waits, for a test or a diagnostic to read.
-    ///
-    /// Queue-confined like everything else here, so it is read through
-    /// `frameWaitDiagnostics()` rather than exposed directly.
-    func frameWaitDiagnostics() async -> [FrameWaitOutcome] {
-        await withCheckedContinuation { c in
-            queue.async { c.resume(returning: self.diagnostics) }
-        }
-    }
-
-    /// Clears the recorded history.
-    func resetFrameWaitDiagnostics() async {
-        await withCheckedContinuation { c in
-            queue.async {
-                self.diagnostics = []
-                c.resume()
-            }
-        }
-    }
-
-    /// Records one completed wait. Must run on `queue`.
     private func record(_ outcome: FrameWaitOutcome) {
         diagnostics.append(outcome)
         if diagnostics.count > Self.diagnosticCapacity {
@@ -229,9 +219,26 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
     }
 
-    /// Milliseconds between two dispatch instants, without a `Date` allocation.
     private func seconds(since start: DispatchTime) -> TimeInterval {
         Double(DispatchTime.now().uptimeNanoseconds - start.uptimeNanoseconds) / 1_000_000_000
+    }
+
+    /// The recorded waits.
+    func frameWaitDiagnostics() async -> [FrameWaitOutcome] {
+        await withCheckedContinuation { c in
+            queue.async { c.resume(returning: self.diagnostics) }
+        }
+    }
+
+    /// Clears the history and the frame counter, so one run measures one thing.
+    func resetFrameWaitDiagnostics() async {
+        await withCheckedContinuation { c in
+            queue.async {
+                self.diagnostics = []
+                self.totalFramesDelivered = 0
+                c.resume()
+            }
+        }
     }
 
     /// An armed photo capture. Exactly one at a time.
@@ -371,6 +378,24 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
     }
 
+    /// Applies `.inputPriority` and the chosen 3:4 format.
+    ///
+    /// Must be called after **every** input swap: `sessionPreset` is not
+    /// reliable across one, and front and rear support different format lists
+    /// (TRD §5.3).
+    func configureFormat(for position: CameraPosition) async throws {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            queue.async { [self] in
+                do {
+                    try applyFormat(for: position)
+                    c.resume()
+                } catch {
+                    c.resume(throwing: Self.map(error, at: self.activePosition))
+                }
+            }
+        }
+    }
+
     // MARK: - Capture
 
     /// Captures one photograph from the camera currently live.
@@ -481,6 +506,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     armedAt: armedAt
                 )
                 self.framesRejectedDuringWait = 0
+                self.framesAtArmTime = self.totalFramesDelivered
 
                 // The deadline, armed on the same queue as the wait and
                 // resuming it exactly once. Whichever of frame or deadline
@@ -506,6 +532,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                         from: self.positionBeforeSwap,
                         duration: self.seconds(since: wait.armedAt),
                         rejectedFrames: self.framesRejectedDuringWait,
+                        framesSeen: self.totalFramesDelivered - self.framesAtArmTime,
                         timedOut: true
                     ))
 
@@ -536,6 +563,13 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// frame from an old one, whatever order they arrive in.
     private func deliverFrame(from connection: AVCaptureConnection) {
         queue.async { [self] in
+            // **Counted before anything else, and counted unconditionally.** The
+            // whole question is whether frames are arriving at all during a wait
+            // that is timing out, so the count has to include frames that arrive
+            // with no wait armed and frames that go on to be rejected. Anything
+            // less and the measurement cannot answer its own question.
+            self.totalFramesDelivered += 1
+
             guard let wait = self.frameWait, let input = self.activeInput else { return }
             guard let expectedPort = input.ports.first else {
                 self.frameWait = nil
@@ -544,6 +578,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     from: self.positionBeforeSwap,
                     duration: self.seconds(since: wait.armedAt),
                     rejectedFrames: self.framesRejectedDuringWait,
+                    framesSeen: self.totalFramesDelivered - self.framesAtArmTime,
                     timedOut: false
                 ))
                 // **`noInputAvailable`, not `noDeliveredFrame` — unchanged.** An
@@ -575,6 +610,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                 from: self.positionBeforeSwap,
                 duration: self.seconds(since: wait.armedAt),
                 rejectedFrames: self.framesRejectedDuringWait,
+                framesSeen: self.totalFramesDelivered - self.framesAtArmTime,
                 timedOut: false
             ))
             wait.continuation.resume()
@@ -621,11 +657,8 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         try attach(photoOutput, rejection: "photo output rejected")
         try attach(videoOutput, rejection: "frame-signal output rejected")
 
-        // One call, for the same reason as the swap path. `startSession` was
-        // never the failing case - it configures before `startRunning()` - but
-        // keeping both paths on the same two functions is what stops the ordering
-        // from drifting apart again.
         try attachInput(at: position)
+        try applyFormat(for: activePosition)
     }
 
     /// Adds `output` to the session, unless it is already there.
@@ -644,23 +677,10 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     }
 
     /// Opens and attaches the input for `position`. Must run on `queue`.
-    ///
-    /// **The device is configured before it is added, not after.** See
-    /// `configureDevice` for the measurement that settled the order and the
-    /// mechanism it avoids: assigning `activeFormat` to a device already in a
-    /// *running* session rebuilds the pipeline, and the frame wait then times out
-    /// with nothing delivered.
-    ///
-    /// So the sequence is configure -> attach -> mirror, and the mirror is last
-    /// because it belongs to the photo output's connection rather than the
-    /// device.
     private func attachInput(at position: CameraPosition) throws {
         guard let device = CaptureFormatSelector.wideAngleDevice(for: position) else {
             throw CaptureError.noInputAvailable(position)
         }
-        // Before the `AVCaptureDeviceInput`, so the device is not yet in a
-        // session and locking it costs nothing.
-        try configureDevice(device, for: position)
         let input = try AVCaptureDeviceInput(device: device)
 
         // Order established on hardware, and both arrangements fail loudly
@@ -696,40 +716,14 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
         activeInput = input
         activePosition = position
-
-        // Last, and only once there is an input to mirror.
-        configureMirroring(for: position)
     }
 
-    /// Configures a device **before** it is attached to a session.
-    ///
-    /// ## Why this is a separate step from `attachInput`
-    ///
-    /// The twenty-moment gate measured 16/20, then 19/20 with instrumentation,
-    /// and the diagnostic settled what the timeout meant. Healthy frame waits are
-    /// **2-30ms**; the failures were **5.016s with zero frames delivered** - a
-    /// cliff, not a slow sensor, so lengthening the deadline would buy nothing.
-    /// `rejected=0` on every wait, so the port check is sound and no black
-    /// photographs are hiding behind it. **The output genuinely went silent.**
-    ///
-    /// The cause is ordering. Assigning `device.activeFormat` and the frame
-    /// durations to a device that is **already in a running session** makes
-    /// AVFoundation tear down and rebuild the pipeline. `startSession` did it
-    /// before `startRunning()` and was fine; `swapInput` did it on a running
-    /// session and stalled. That also explains the asymmetry - the back camera
-    /// has ~57 formats against far fewer on the front, so that is where the
-    /// reconfiguration actually bites.
-    ///
-    /// A device **not yet in a session** can be locked and configured freely.
-    /// Doing it there makes attaching it a single reconfiguration with the format
-    /// already correct, rather than two.
-    ///
-    /// Mirroring stays where it was: it belongs to the photo output's connection,
-    /// which only exists once there is an input.
-    private func configureDevice(
-        _ device: AVCaptureDevice,
-        for position: CameraPosition
-    ) throws {
+    /// Applies the 3:4 format to the active input. Runs on `queue`.
+    private func applyFormat(for position: CameraPosition) throws {
+        guard let input = activeInput else {
+            throw CaptureError.noInputAvailable(position)
+        }
+        let device = input.device
         guard let format = CaptureFormatSelector.selectFormat(for: device) else {
             // The camera is present and open, it just cannot honour Memoree's
             // geometry. Failing loudly beats saving moments at the wrong aspect
@@ -750,18 +744,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         )
         device.activeVideoMinFrameDuration = duration
         device.activeVideoMaxFrameDuration = duration
-    }
 
-    /// Applies the 3:4 format to the **active** input. Runs on `queue`.
-    ///
-    /// Only for a device that is already attached - which after the fix is the
-    /// `startSession` path, where the session is not running yet. A swap
-    /// configures before attaching instead; see `configureDevice`.
-    private func applyFormat(for position: CameraPosition) throws {
-        guard let input = activeInput else {
-            throw CaptureError.noInputAvailable(position)
-        }
-        try configureDevice(input.device, for: position)
         configureMirroring(for: position)
     }
 
@@ -782,13 +765,8 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     // say `front->back` rather than just `back`. Read here,
                     // before `attachInput` overwrites `activePosition`.
                     self.positionBeforeSwap = self.activePosition
-                    // **One call, and that is the fix.** This used to be
-                    // `attachInput` then `applyFormat`, which assigned
-                    // `activeFormat` to a device already in a running session and
-                    // stalled the output. `attachInput` now configures the device
-                    // before adding it, so the swap reconfigures the pipeline once
-                    // instead of twice.
                     try attachInput(at: position)
+                    try applyFormat(for: position)
                     c.resume()
                 } catch {
                     c.resume(throwing: Self.map(error, at: self.activePosition))
