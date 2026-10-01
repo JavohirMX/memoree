@@ -603,14 +603,28 @@ plagues this kind of UI.
 
 | State | Condition | UI |
 | --- | --- | --- |
-| `scheduled` | now < momentStart | Big countdown to the moment; "Next moment at 14:37" |
-| `open` | momentStart ≤ now ≤ windowEndsAt, no moment today | Shutter CTA; `mm:ss` remaining, amber under 30s |
-| `captured` | on-time moment today | Success state; streak shown; capture again allowed (replaces) |
-| `lateAvailable` | now > windowEndsAt, no moment today | "Late" state; capture still permitted |
-| `capturedLate` | late moment today | Amber badge; streak unchanged |
-| `missed` | day over, no moment | "Missed" — no CTA, no nagging |
+| `captured` | a moment exists today | "Saved"; today's composite; re-capture allowed (replaces) |
+| `scheduled` | now < momentStart, no moment today | "Memoree will ask you once today" — or "Next moment at 14:37" when notifications are off |
+| `open` | momentStart ≤ now ≤ windowEndsAt, no moment today | "It's time"; shutter |
+| `windowPassed` | now > windowEndsAt, no moment today | "Today's moment has passed"; shutter still there |
 
-`missed` is quiet. No red, no guilt copy, no notification. The streak simply is what it is.
+**No case carries a payload, and that is the enforcement.** `captured` used to carry
+`late`/`lateBy` and the view rendered an amber "posted 12m late" badge above a sentence
+saying the streak had not grown; `scheduled` and `open` carried countdowns. ADR-023 ruled
+out the badge and both sentences, ADR-024 ruled out the countdown. Rather than delete the
+branches that rendered them, the values went — so a view **cannot** leak the distinction
+whether or not anyone remembers not to. `MomentStateTests` asserts that an on-time and an
+off-window moment resolve identically.
+
+`windowPassed` is not a miss. A day ends only when a day passes with no photograph at all
+(ADR-023), and by the time it has, it is tomorrow and the state is `scheduled` again — which
+is why the separate `missed` state was deleted rather than kept. It was unreachable in the
+app: `endOfDay(containing: now)` is always later than `now`, so the `now < dayEnd` guard
+that led to it always held.
+
+The shutter renders in **every** state. The early-post refusal (`FR-5`) was structural —
+the affordance was absent rather than disabled — and it contradicted the app's own
+onboarding copy, which promised you could photograph whenever you liked.
 
 ## 9. Notification handling
 
@@ -665,10 +679,15 @@ The invariant is at 0/19/20/64 pending, and includes the one that matters most:
 above 64, iOS drops adds silently and the user simply stops being reminded, with
 nothing thrown and nothing logged.
 
-If notifications are denied, `scheduled` and `open` states are still reachable — the Today
-screen shows the countdown and the CTA. The ritual degrades; it does not die. This is the
-correct degradation for a no-server app: nothing can re-notify you, so the app must remain
-fully functional without push.
+If notifications are denied, every state is still reachable and the shutter is still there — the
+Today screen additionally **shows the moment time**, because with no notification it is the
+only way the user could ever learn when the moment was (ADR-024). The ritual degrades; it does
+not die. This is the correct degradation for a no-server app: nothing can re-notify you, so
+the app must remain fully functional without push.
+
+This is the one place the UI changes shape on a permission, and the reason is not convenience:
+the notification and the clock are the same information delivered twice, and showing both
+spends the surprise for nothing.
 
 ## 10. Design system
 
@@ -684,13 +703,19 @@ Dark only. No `colorScheme` branch anywhere — the theme is a constant.
 | `textSecondary` | `#8E8E93` | Timestamps, metadata |
 | `textTertiary` | `#636366` | Disabled |
 | `onAccent` | `#000000` | Label on a white fill |
-| `late` | `#FFD60A` | **Only** amber: late badges, sub-30s countdown |
+| `accent` | `#FFD60A` | **The only** amber, and the app's single accent. One use: a permission the user declined and can only restore in system Settings (ADR-025) |
 | `destructive` | `#FF453A` | Delete confirmation only |
 
-Type ramp (SF Pro, system): countdown 24/700 **tabular**; screen title 22/700; card username
-17/600; body 15/400; metadata 13/400; badge 12/700; button 17/600.
+The amber token was named `late` and reserved for late badges and a sub-30s countdown. ADR-023
+and ADR-024 removed both, and an off-window moment is now deliberately indistinguishable from an
+on-time one — so there was nothing left for the colour to *mean*. It is not called `late`
+anymore, because a token whose name contradicts its only use is the same mistake the badge was.
+See **ADR-025**.
 
-Radii: button and countdown `Capsule`; card 18; BTS inset 14; thumbnail 6; avatar `Circle`.
+Type ramp (SF Pro, system): display 64/700 **tabular**; screen title 22/700; card username
+17/600; body 15/400; metadata 13/400; button 17/600.
+
+Radii: button `Capsule`; card 18; BTS inset 14; thumbnail 6; avatar `Circle`.
 Spacing base 4pt.
 
 Shadows on a black canvas do not read as darkening — they read as opacity. Use

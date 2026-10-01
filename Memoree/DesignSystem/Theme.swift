@@ -33,8 +33,18 @@ enum Theme {
         /// Label on a white fill. Intentional inversion.
         static let onAccent = SwiftUI.Color(hex: 0x000000)
 
-        /// THE ONLY amber. Late badges and a sub-30s countdown. Nothing else.
-        static let late = SwiftUI.Color(hex: 0xFFD60A)
+        /// THE ONLY amber, and the app's single accent.
+        ///
+        /// It used to be reserved for late badges and a sub-30s countdown, both
+        /// of which ADR-023 and ADR-024 removed — an off-window moment is now
+        /// deliberately indistinguishable from an on-time one, so there is
+        /// nothing left for the colour to *mean*. It is no longer called `late`,
+        /// because a token whose name contradicts its only use is the same
+        /// mistake as the badge was. See ADR-025.
+        ///
+        /// Reserved for: a permission the user declined and can only restore in
+        /// the system Settings app. One use, deliberately.
+        static let accent = SwiftUI.Color(hex: 0xFFD60A)
 
         /// Destructive confirmation only. Never a general error colour.
         static let destructive = SwiftUI.Color(hex: 0xFF453A)
@@ -57,7 +67,7 @@ enum Theme {
     // MARK: - Radius
 
     enum Radius {
-        /// Buttons and the countdown pill.
+        /// Buttons.
         static let pill: CGFloat = 500
         /// Modals and sheets.
         static let modal: CGFloat = 24
@@ -78,16 +88,11 @@ enum Theme {
     /// `Font` either, because that would shadow SwiftUI's `Font` inside this
     /// scope and silently break every call site.
     enum Typography {
-        /// The countdown. 700 weight, TABULAR figures so digits do not jitter
-        /// as they change once per second. This is not a nicety.
-        static let countdown = Font.system(size: 24, weight: .bold).monospacedDigit()
-
         static let screenTitle = Font.system(size: 22, weight: .bold)
         static let cardUsername = Font.system(size: 17, weight: .semibold)
         static let body = Font.system(size: 15, weight: .regular)
         static let caption = Font.system(size: 16, weight: .regular)
         static let metadata = Font.system(size: 13, weight: .regular)
-        static let badge = Font.system(size: 12, weight: .bold)
         static let button = Font.system(size: 17, weight: .semibold)
         static let retakePill = Font.system(size: 11, weight: .semibold)
 

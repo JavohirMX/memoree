@@ -6,7 +6,7 @@ import SwiftUI
 ///
 /// Owns the only ticking clock in the app. Rather than a `Timer` per view, a
 /// single timer updates `now` once a second while the screen is on-screen, and
-/// the state is re-derived from it. That keeps the countdown to one source of
+/// the state is re-derived from it. That gives every derived value one source of
 /// truth and means the screen cannot drift out of sync with the resolver.
 @MainActor
 @Observable
@@ -56,15 +56,24 @@ final class TodayViewModel {
     /// Set while the camera is unavailable in this build phase.
     private(set) var cameraAvailable = false
 
+    /// The window the user actually chose, for the Settings screen.
+    ///
+    /// Read from the store rather than derived from `interval`, because
+    /// `interval` is the *resolved* moment for today and a persisted
+    /// `DayRecord` wins over the configured window (TRD §4.1) — so it is the
+    /// wrong thing to show as "your window" even when it is technically
+    /// correct.
+    private(set) var configuredWindow: TimeWindow
+
     private let environment: AppEnvironment
 
     /// The clock.
     ///
     /// Injected rather than read from `Date()` at each use, because `now` is
-    /// the input to every derived value on this screen — the state, the
-    /// countdown, the day rollover, and whether the photographs to show belong
-    /// to today. A view model that reads the real clock cannot be tested at a
-    /// chosen time at all.
+    /// the input to every derived value on this screen — the state, the time
+    /// until the moment, the day rollover, and whether the photographs to show
+    /// belong to today. A view model that reads the real clock cannot be tested
+    /// at a chosen time at all.
     ///
     /// This was not theoretical. The model took a `now: Date` in its initialiser
     /// and then overwrote it with `Date()` on the first `reload()` — so a test
@@ -89,6 +98,7 @@ final class TodayViewModel {
         // which asks the system clock. Same clock as everything else here.
         self.todayMoment = environment.momentStore.facts().last { $0.day == today }
         self.summary = environment.momentStore.summary(today: today)
+        self.configuredWindow = environment.momentStore.settings().timeWindow
     }
 
     // MARK: - Derived state
@@ -97,26 +107,9 @@ final class TodayViewModel {
         MomentStateResolver.resolve(
             now: now,
             interval: interval,
-            todayMoment: todayMoment,
-            dayEnd: MomentStateResolver.endOfDay(containing: now)
+            todayMoment: todayMoment
         )
     }
-
-    /// `mm:ss` for the open window, or the countdown to it. Empty otherwise.
-    ///
-    /// **Always `nil` since ADR-024.** The countdown was inherited from the era
-    /// when the window closed and missing it cost something. It does not any
-    /// more — you can photograph at any time (ADR-023) — so a number ticking
-    /// like a deadline now sits above a rule where missing the window costs the
-    /// streak. It was not left in place neutrally; it was actively untrue.
-    ///
-    /// Kept as a property rather than deleted so the view and its tests have one
-    /// place to look, and so a future decision to bring timing back is a change
-    /// here rather than a reconstruction.
-    var countdown: String? { nil }
-
-    /// Amber under thirty seconds — the only colour besides white.
-    var countdownIsUrgent: Bool { false }
 
     /// Whether today's moment time may be shown at all.
     ///
@@ -213,6 +206,10 @@ final class TodayViewModel {
     func reload() async {
         refreshNow()
         summary = environment.momentStore.summary(today: DayIdentifier(date: now))
+        // Re-read on every reload, not only at construction: the Settings screen
+        // can change the window while the Today screen exists underneath it, and
+        // a stale value here would be a Settings screen that appears not to work.
+        configuredWindow = environment.momentStore.settings().timeWindow
         notificationsAuthorized = await refreshAuthorization()
         pendingNotificationCount = await environment.notificationService.pendingCount()
         await loadTodayImages()

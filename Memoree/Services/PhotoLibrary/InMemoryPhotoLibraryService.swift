@@ -25,6 +25,11 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
         var storedBytes: [String: Data] = [:]
         var missingIdentifiers: Set<String> = []
         var failureToThrow: LibraryError?
+        // The archive's cache traffic, recorded so a test can assert that
+        // prefetching happened rather than only that scrolling did not crash.
+        var prefetchedBatches: [[String]] = []
+        var cancelledPrefetches: [CGSize] = []
+        var purgeCount = 0
     }
 
     private let lock = NSLock()
@@ -59,6 +64,11 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
     func albumMembers(named name: String) -> [String] { lock.withLock { state.albumMembers[name] ?? [] } }
     var latestPair: SavedAssetPair? { lock.withLock { state.pairs.last } }
     var latestLocation: PhotoLocation?? { lock.withLock { state.locations.last } }
+
+    /// Every batch handed to `prefetchThumbnails`, oldest first.
+    var prefetchedBatches: [[String]] { lock.withLock { state.prefetchedBatches } }
+    var cancelledPrefetchSizes: [CGSize] { lock.withLock { state.cancelledPrefetches } }
+    var imageCachePurgeCount: Int { lock.withLock { state.purgeCount } }
 
     // MARK: - PhotoLibraryService
 
@@ -143,6 +153,21 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
                     || identifier.hasPrefix("bts-")
             )
         }
+    }
+
+    // The prefetch half of the read path. Recorded rather than simulated:
+    // there is nothing to warm, and what a test wants to know is *whether* the
+    // grid asked, and for which identifiers.
+    func prefetchThumbnails(_ identifiers: [String], targetSize: CGSize) async {
+        lock.withLock { state.prefetchedBatches.append(identifiers) }
+    }
+
+    func cancelThumbnailPrefetch(targetSize: CGSize) async {
+        lock.withLock { state.cancelledPrefetches.append(targetSize) }
+    }
+
+    func purgeImageCache() async {
+        lock.withLock { state.purgeCount += 1 }
     }
 
     func data(for identifier: String) async throws -> Data {

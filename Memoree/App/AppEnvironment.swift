@@ -150,6 +150,15 @@ final class AppEnvironment {
         pendingCameraRequest = false
     }
 
+    // An earlier version of the archive took a "scroll to this day" request
+    // through the environment, so tapping today's composite could open the grid
+    // at today rather than at the top. It was thirty lines for no behaviour:
+    // the grid is newest-first, so a moment captured today is *already* the first
+    // cell. A `DayIdentifier` would have been the right payload — an index goes
+    // stale before the sheet presents, and a `Moment` is not `Sendable` — but
+    // the request itself was unnecessary, so `TodayView` just opens the archive
+    // and the ordering does the rest.
+
     // MARK: - Debug
 
     /// Rebuilds the camera session from scratch.
@@ -208,5 +217,64 @@ final class AppEnvironment {
             window: window,
             windowDuration: duration
         )
+    }
+
+    // MARK: - Changing the window
+
+    /// Applies a new moment window, starting tomorrow.
+    ///
+    /// **A window change is a real operation, not a settings write.** Every day
+    /// in the horizon has a persisted `DayRecord`, and `interval(for:)` always
+    /// prefers a persisted record over the configured window so that a
+    /// notification cannot move retroactively (TRD §4.1, FR-2). Which means
+    /// writing the new window to settings and stopping there would change
+    /// *nothing at all* for the next 45 days — a control that silently does
+    /// nothing, and the exact failure ADR-023 was written about.
+    ///
+    /// So the future is re-derived and the past is left alone:
+    ///
+    /// - **Today keeps its resolved moment**, even if it now falls outside the
+    ///   new window. It may already have been notified, and re-rolling it would
+    ///   break FR-2 for the one day the user can actually see.
+    /// - **Tomorrow onward is re-derived** from the new window. Any
+    ///   `DayRecord` for those days is discarded so the derivation runs again.
+    /// - **The horizon is refilled immediately**, because the persisted times
+    ///   for the next 45 days are what the notification centre is holding.
+    ///
+    /// Re-deriving a day also has to remove its pending notification, since
+    /// `refreshHorizon` re-adds by identifier and a stale request for the same
+    /// identifier would otherwise leave two notifications for one day. That is
+    /// handled by `NotificationService.refreshHorizon`, which removes before it
+    /// adds and never calls `removeAllPendingNotificationRequests` (AGENTS.md §9).
+    ///
+    /// - Parameter settings: the row to mutate. It is saved here so the caller
+    ///   cannot save the window and forget to re-derive.
+    /// - Returns: whether the window actually changed, so a no-op edit does not
+    ///   churn 45 days of records and 45 notification requests.
+    @discardableResult
+    func updateWindow(_ newWindow: TimeWindow) async -> Bool {
+        let settings = momentStore.settings()
+        guard settings.timeWindow != newWindow else { return false }
+
+        settings.timeWindow = newWindow
+        do {
+            try momentStore.saveSettings(settings)
+        } catch {
+            // The store refused. Leaving the row untouched means the horizon
+            // still matches what is persisted, which is the consistent state.
+            return false
+        }
+
+        // Today is deliberately excluded. See above.
+        let today = DayIdentifier(date: Date())
+        // `try?` because a failure here is recoverable in a way the settings
+        // write above was not: the window is saved, the days that could not be
+        // cleared keep their old times, and the next launch re-derives them.
+        // Discarding a record and failing to save are different failures, and
+        // only the second one needs handling here.
+        _ = try? momentStore.discardDayRecords(from: today.offset(by: 1))
+
+        await refreshHorizonIfNeeded(force: true)
+        return true
     }
 }

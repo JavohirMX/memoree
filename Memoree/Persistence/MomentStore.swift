@@ -252,6 +252,37 @@ final class MomentStore {
         try save()
     }
 
+    /// Discards every persisted day record from `day` onward.
+    ///
+    /// Exists because changing the moment window is not a settings write. Each
+    /// day in the horizon has a resolved `DayRecord`, and `AppEnvironment
+    /// .interval(for:)` prefers a persisted record over the configured window so
+    /// a notification cannot move retroactively (TRD §4.1, FR-2). So a new
+    /// window has to *delete* the future before it can take effect — otherwise
+    /// the picker in Settings is a control that changes nothing for 45 days.
+    ///
+    /// The caller chooses the boundary, and the reason it is not a parameter of
+    /// this function is that the boundary is a product decision rather than a
+    /// storage detail: today keeps its moment even if the new window would place
+    /// it elsewhere, because it may already have been notified.
+    ///
+    /// - Returns: how many records were discarded, so a test can assert the
+    ///   operation did something rather than merely did not fail.
+    @discardableResult
+    func discardDayRecords(from day: DayIdentifier) throws -> Int {
+        let boundary = day.rawValue
+        let descriptor = FetchDescriptor<DayRecord>(
+            predicate: #Predicate { $0.dayIdentifier >= boundary },
+            sortBy: [SortDescriptor(\.dayIdentifier)]
+        )
+        let records = try context.fetch(descriptor)
+        for record in records {
+            context.delete(record)
+        }
+        try save()
+        return records.count
+    }
+
     // MARK: - Settings
 
     /// The singleton settings row, created on first access.

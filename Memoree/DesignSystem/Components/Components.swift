@@ -2,18 +2,17 @@ import SwiftUI
 
 /// Memoree's shared components.
 ///
-/// Black canvas, white type, amber for lateness only. Every colour and spacing
-/// value comes from `Theme` — no literals in views (AGENTS.md §11).
+/// Black canvas, white type, one amber accent used sparingly (AGENTS.md §11).
+/// Every colour and spacing value comes from `Theme` — no literals in views.
 
 /// The full-bleed white pill used for the single primary action.
 ///
 /// There is no brand hue: white *is* the verb, with a black label inverted onto
-/// it. The amber variant exists only for the open-window urgency state.
+/// it.
 struct PrimaryButton: View {
 
     enum Style {
         case filled
-        case amber
         case outlined
     }
 
@@ -39,57 +38,37 @@ struct PrimaryButton: View {
 
     private var background: Color {
         switch style {
-        case .filled, .amber: return foreground
-        case .outlined: return .clear
-        }
-    }
-
-    private var foreground: Color {
-        switch style {
         case .filled: return Theme.Color.textPrimary
-        case .amber: return Theme.Color.late
         case .outlined: return .clear
         }
     }
 
     private var labelColor: Color {
         switch style {
-        case .filled, .amber: return Theme.Color.onAccent
+        case .filled: return Theme.Color.onAccent
         case .outlined: return Theme.Color.textPrimary
         }
     }
 }
 
-/// The countdown, in tabular figures so digits do not jitter once a second.
+/// A time, in tabular figures so the digits do not jitter once a second.
+///
+/// Used for the countdown to the *reminder*, which is shown only when
+/// notifications are off (ADR-024). There is deliberately no "urgent" state:
+/// the amber variant existed to mark the last thirty seconds of a window that
+/// no longer closes, and a number that changed colour as it approached a
+/// deadline nobody had would be decoration with consequences attached.
 struct CountdownDisplay: View {
 
     let text: String
-    var isUrgent: Bool = false
 
     var body: some View {
         Text(text)
             .font(Theme.Typography.display)
             .monospacedDigit()
-            .foregroundStyle(isUrgent ? Theme.Color.late : Theme.Color.textPrimary)
+            .foregroundStyle(Theme.Color.textPrimary)
             .contentTransition(.numericText())
             .animation(.default, value: text)
-    }
-}
-
-/// The amber `late` badge. The only amber element in the app besides the
-/// under-thirty-seconds countdown.
-struct LateBadge: View {
-
-    let text: String
-
-    var body: some View {
-        Text(text)
-            .font(Theme.Typography.badge)
-            .foregroundStyle(Theme.Color.onAccent)
-            .padding(.horizontal, Theme.Spacing.s)
-            .padding(.vertical, Theme.Spacing.xs)
-            .background(Theme.Color.late)
-            .clipShape(Capsule())
     }
 }
 

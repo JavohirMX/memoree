@@ -20,7 +20,8 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
     let day: DayIdentifier
 
     /// Whether the capture landed inside the window. The only thing that
-    /// grows a streak (ADR-009).
+    /// grows a streak (ADR-023) — and, since the UI is not allowed to know
+    /// either way, the only place the distinction survives at all.
     let isOnTime: Bool
 
     let capturedAt: Date
@@ -86,12 +87,17 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
 /// out of agreement with the archive.
 struct StreakSummary: Sendable, Equatable {
 
-    /// Consecutive days with an on-time moment, counting back from today.
+    /// Consecutive on-time days counting back from today, with off-window days
+    /// skipped and a day with no moment ending the walk.
     ///
     /// Today is never itself a miss — see ADR-010.
     let currentStreak: Int
 
-    /// Longest run of consecutive on-time days ever achieved.
+    /// Longest run of consecutive days with *any* moment, on time or not.
+    ///
+    /// Deliberately a different rule from `currentStreak`, and the reason is
+    /// that the same rule would make the two numbers identical for anyone who
+    /// has never missed a whole day. See `StreakCalculator.longestStreak`.
     let longestStreak: Int
 
     /// Days with any moment at all, on time or late.
@@ -101,7 +107,12 @@ struct StreakSummary: Sendable, Equatable {
     /// Stats screen does not have to infer it.
     let totalMoments: Int
 
-    /// Late moments — captured, saved, archived, and not counted anywhere else.
+    /// Off-window moments — captured, saved, archived, and skipped by the walk.
+    ///
+    /// Not displayed anywhere yet. It exists because it is the honest aggregate
+    /// behind `onTimePercentage`, and because the per-moment late marker was
+    /// removed on purpose (ADR-023) — so this is where the distinction between
+    /// on-time and off-window is allowed to be visible, if it ever is.
     let lateMoments: Int
 
     /// On-time moments as a percentage of all moments. 0 when there are none.

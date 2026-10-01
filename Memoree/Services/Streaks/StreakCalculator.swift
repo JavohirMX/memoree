@@ -3,29 +3,38 @@ import Foundation
 /// Streak arithmetic. Pure functions over `DayIdentifier` sets and
 /// `[MomentFacts]` — no SwiftData, no clock, no side effects.
 ///
-/// Two rules drive every function here, and both are easy to get wrong:
+/// Three rules drive every function here, and the first two are easy to get
+/// wrong:
 ///
-/// - **Only an on-time moment grows a streak.** A late day is recorded and
-///   archived, but it breaks the run rather than extending it (ADR-009).
+/// - **Only an on-time moment grows a streak.** An off-window day is recorded
+///   and archived, and the walk **skips** it — neither counted nor treated as an
+///   end. A day with *no* moment at all is what breaks the run (ADR-023, which
+///   reversed ADR-009's "a late day breaks the streak").
 /// - **Today is never itself a miss.** At 09:00 with a moment window of
 ///   11:00–23:00, an unposted today is not a failure. Without this rule the
 ///   streak visibly resets every morning and silently rebuilds by evening
 ///   (ADR-010).
+/// - **`longestStreak` counts any moment, not just on-time ones.** See its own
+///   comment for why the two numbers would otherwise contradict each other.
 enum StreakCalculator {
 
     // MARK: - Current streak
 
-    /// Consecutive days with an on-time moment, counting backwards from today.
+    /// Consecutive on-time days, counting backwards from today, skipping
+    /// off-window days and stopping at the first day with no moment at all.
     ///
     /// Three cases for today, and conflating any two of them is the bug this
     /// function exists to avoid:
     ///
-    /// 1. **On-time today** — count it, walk back from today.
-    /// 2. **Late today** — the run is already broken. Return zero. A late
-    ///    capture is archived but must not let an older run survive
-    ///    underneath it (ADR-009).
-    /// 3. **No moment today** — nothing has failed yet, so walk back from
+    /// 1. **Captured today** — start the walk at today. On-time counts, and
+    ///    off-window is skipped, because both are days you showed up and neither
+    ///    is a failure (ADR-023).
+    /// 2. **No moment today** — nothing has failed yet, so walk back from
     ///    yesterday and leave the streak standing (ADR-010).
+    ///
+    /// The version this replaced returned `0` outright for a late today. That
+    /// was ADR-009, and it made a two-minute daily lottery the price of a
+    /// number rather than a reason to keep one.
     static func currentStreak(
         onTimeDays: Set<DayIdentifier>,
         capturedDays: Set<DayIdentifier>,

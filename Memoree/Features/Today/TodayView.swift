@@ -2,18 +2,21 @@ import SwiftUI
 
 /// The Today screen.
 ///
-/// The whole app in one view: streak, countdown, and what can be done right now.
+/// The whole app in one view: streak, what is true right now, and the shutter.
 /// There is no feed, no discovery and no engagement — what remains after the
 /// social layer is removed is this.
 ///
-/// Copy follows one rule: state the facts, do not plead. `missed` is quiet —
-/// no red, no guilt, no notification. The streak is a number that changed.
+/// Copy follows one rule: state the facts, do not plead. Nothing here mentions
+/// the streak having failed, because nothing on screen is allowed to know
+/// whether it did (ADR-023). The streak is a number that changed, or did not.
 struct TodayView: View {
 
     @Environment(AppEnvironment.self) private var environment
     @State private var model: TodayViewModel?
     @State private var isShowingCamera = false
     @State private var isConfirmingRecapture = false
+    @State private var isShowingSettings = false
+    @State private var isShowingArchive = false
 
     var body: some View {
         // The lifecycle modifiers hang off the outermost container, never off
@@ -36,6 +39,19 @@ struct TodayView: View {
         .onDisappear { self.model?.stopTicking() }
         .fullScreenCover(isPresented: $isShowingCamera) {
             CameraHostView { isShowingCamera = false }
+                .environment(environment)
+        }
+        // Sheets, not pushes. The Today screen is the app's root and the only
+        // thing it shows, so there is no navigation stack to push onto — and
+        // wrapping each destination in its own `NavigationStack` is what gives
+        // them a title and a dismiss button without inventing a hierarchy the
+        // product does not have.
+        .sheet(isPresented: $isShowingSettings) {
+            SettingsView()
+                .environment(environment)
+        }
+        .sheet(isPresented: $isShowingArchive) {
+            ArchiveView()
                 .environment(environment)
         }
         // Reload when the camera closes, not when this view appears.
@@ -85,6 +101,17 @@ struct TodayView: View {
         isShowingCamera = true
     }
 
+    /// Opens the archive.
+    ///
+    /// No "start at today" parameter, and that is worth noting because there was
+    /// one. The grid is newest-first, so a moment captured today is already its
+    /// first cell — tapping the composite lands on it for free. An earlier
+    /// version threaded a `DayIdentifier` through the environment to scroll
+    /// there, which was thirty lines arranging to be a no-op.
+    private func openArchive() {
+        isShowingArchive = true
+    }
+
     private static let recaptureTitle = "Capture again?"
 
     /// Says the cost of the tap before the tap, not after.
@@ -120,19 +147,20 @@ struct TodayView: View {
 
             Spacer(minLength: Theme.Spacing.xl)
 
-            // The countdown is gone (ADR-024). It is not merely hidden here —
-            // `TodayViewModel.countdown` is unconditionally `nil`, because a
-            // number ticking like a deadline above a window that no longer
-            // closes is worse than no number. It also cost the streak, which
-            // made it not a cosmetic loss.
+            // The countdown is gone, and not merely hidden (ADR-024). It is not
+            // rendered for the open window either: a number ticking like a
+            // deadline above a window that no longer closes is worse than no
+            // number, and after ADR-023 missing the window costs the streak,
+            // which made it not a cosmetic loss.
+            //
+            // What remains is a countdown to the *reminder*, shown only when
+            // notifications are off — because then the clock is the only way the
+            // user could ever learn when the moment was (ADR-024).
             if model.showsMomentTime,
                let remaining = model.timeUntilMoment,
                remaining > 0 {
-                CountdownDisplay(
-                    text: CountdownFormatter.string(fromSeconds: remaining),
-                    isUrgent: false
-                )
-                .padding(.bottom, Theme.Spacing.xl)
+                CountdownDisplay(text: CountdownFormatter.string(fromSeconds: remaining))
+                    .padding(.bottom, Theme.Spacing.xl)
             }
 
             action(model)
@@ -148,10 +176,46 @@ struct TodayView: View {
 
     // MARK: - Header
 
+    /// Streak on the left, the two things you can go somewhere on the right.
+    ///
+    /// The archive icon is present even with no moments, and stays greyed rather
+    /// than disappearing. A control that appears on first use is a control the
+    /// user has to discover by having already succeeded — and the empty archive
+    /// is the screen that explains what the app is for.
     private func header(_ model: TodayViewModel) -> some View {
-        HStack {
+        HStack(alignment: .top) {
             StreakDisplay(streak: model.streak, longest: model.longestStreak)
+
             Spacer()
+
+            Button {
+                isShowingArchive = true
+            } label: {
+                Image(systemName: "square.grid.3x3")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .frame(width: 44, height: 44)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .disabled(model.summary.totalMoments == 0)
+            .opacity(model.summary.totalMoments == 0 ? 0.35 : 1)
+            .accessibilityLabel("Archive")
+            .accessibilityHint(model.summary.totalMoments == 0
+                ? "No moments yet"
+                : "Shows every moment you have captured")
+
+            Button {
+                isShowingSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.system(size: 20, weight: .regular))
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .frame(width: 44, height: .infinity)
+                    .contentShape(.rect)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Settings")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -160,11 +224,12 @@ struct TodayView: View {
 
     /// Today's pair, streamed back out of the user's own library.
     ///
-    /// **Not tappable.** There is nowhere for it to go yet — the archive is
-    /// Phase 6 — and a control that looks live and does nothing is a dead end
-    /// (AGENTS.md §6). It carries an accessibility label instead, because two
-    /// unlabelled images are worse than silence: they invite a tap that does
-    /// nothing.
+    /// **Tappable, and goes to today's moment in the archive.** It was
+    /// deliberately not tappable while there was no archive to open — a control
+    /// that looks live and does nothing is a dead end (AGENTS.md §6) — and that
+    /// is no longer the situation. The navigation target is today's row rather
+    /// than the top of the grid, because the user's reason for tapping the
+    /// photograph on this screen is to look at *this* photograph.
     ///
     /// Three states, and all of them are real: captured with both photographs
     /// present, captured with them deleted from Photos, and captured with the
@@ -179,8 +244,16 @@ struct TodayView: View {
             )
             .aspectRatio(3.0 / 4.0, contentMode: .fit)
             .frame(maxHeight: 360)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.card)
+                    .strokeBorder(Theme.Color.divider, lineWidth: 1)
+            }
+            .onTapGesture { openArchive() }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(MomentComposite.accessibilityLabel)
+            .accessibilityAddTraits(.isButton)
+            .accessibilityHint("Opens today's moment in your archive")
         } else if model.todayMissingFromPhotos {
             Text("Today's photos are no longer in your library. The moment is still in your archive.")
                 .font(Theme.Typography.metadata)
@@ -230,50 +303,53 @@ struct TodayView: View {
                 Text("It's time")
                     .font(Theme.Typography.screenTitle)
                     .foregroundStyle(Theme.Color.textPrimary)
+                // A duration, not a deadline. Nothing here counts down and
+                // nothing is lost when it elapses — the two minutes decide
+                // whether this photograph grows the streak, and that is the
+                // whole of what they now do (ADR-023).
                 Text("Two minutes. The scene, and you.")
-                    .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.textSecondary)
-            }
-
-        case .captured(let late, let lateBy):
-            VStack(spacing: Theme.Spacing.m) {
-                Text("Saved")
-                    .font(Theme.Typography.screenTitle)
-                    .foregroundStyle(Theme.Color.textPrimary)
-                if late {
-                    LateBadge(text: "posted \(CountdownFormatter.lateDescription(from: lateBy)) late")
-                    Text("Your photo is in your library. The streak did not grow.")
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                        .multilineTextAlignment(.center)
-                } else {
-                    Text("Your photo is in your library.")
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                        .multilineTextAlignment(.center)
-                }
-            }
-
-        case .lateAvailable:
-            VStack(spacing: Theme.Spacing.m) {
-                LateBadge(text: "late")
-                Text("The window has closed")
-                    .font(Theme.Typography.screenTitle)
-                    .foregroundStyle(Theme.Color.textPrimary)
-                Text("You can still capture. The streak will not grow.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .multilineTextAlignment(.center)
             }
 
-        case .missed:
-            VStack(spacing: Theme.Spacing.s) {
-                Text("Nothing today")
+        case .captured:
+            VStack(spacing: Theme.Spacing.m) {
+                Text("Saved")
                     .font(Theme.Typography.screenTitle)
-                    .foregroundStyle(Theme.Color.textSecondary)
-                Text("Tomorrow is another one.")
+                    .foregroundStyle(Theme.Color.textPrimary)
+                // No late badge, and no sentence about the streak.
+                //
+                // Both existed until ADR-023, and both said the same thing
+                // twice: this photo was outside the window, and that is why your
+                // streak did not grow. The decision was to say neither — an
+                // off-window moment looks exactly like an on-time one, and the
+                // streak simply does not move. `MomentState.captured` carries no
+                // lateness, so this view *cannot* render the badge even by
+                // accident.
+                Text("Your photo is in your library.")
                     .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.textTertiary)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .multilineTextAlignment(.center)
+            }
+
+        case .windowPassed:
+            VStack(spacing: Theme.Spacing.s) {
+                Text("Today's moment has passed")
+                    .font(Theme.Typography.screenTitle)
+                    .foregroundStyle(Theme.Color.textPrimary)
+                // The same information `scheduled` gives, from the other side.
+                // No amber, no "late", and nothing about what it cost — the two
+                // minutes were the only thing that ended, and the streak is
+                // untouched either way (ADR-023).
+                //
+                // The time is not printed here even with notifications off: a
+                // moment that has already been and gone is history, and ADR-024
+                // already stopped showing it.
+                Text("You can still photograph whenever you like.")
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .multilineTextAlignment(.center)
             }
         }
     }
@@ -282,30 +358,30 @@ struct TodayView: View {
 
     /// The shutter.
     ///
-    /// Present only when capture is actually possible. The states that offer it
-    /// are exactly `MomentState.allowsCapture` — so the FR-5 early-post refusal
-    /// is structural: there is no affordance to disable, because the state
-    /// resolver has already decided the window has not opened (TRD §8).
+    /// **Unconditional since ADR-023.** It used to render only when
+    /// `MomentState.allowsCapture` was true, which was false for `scheduled` —
+    /// so before your moment there was no button at all. That was the FR-5
+    /// early-post refusal, built structurally rather than as a disabled
+    /// control, and it was answering the wrong question: the app's own
+    /// onboarding promised you could photograph whenever you liked.
     ///
-    /// Phase 5 shipped this as an `EmptyView()` on purpose. A button that looks
-    /// live and does nothing is a dead end (AGENTS.md §6), so the affordance was
-    /// withheld until something stood behind it. Phase 4 supplies that.
-    @ViewBuilder
+    /// There is no state in which this is absent and no permission behind it.
+    /// Capture is allowed at any time on any day; whether the photograph counts
+    /// is a different question, and one the screen is not allowed to answer.
+    ///
+    /// Re-capture goes through a confirmation, because it orphans the previous
+    /// pair in Photos and the user cannot get it back.
     private func action(_ model: TodayViewModel) -> some View {
-        if model.state.allowsCapture {
-            PrimaryButton(title: model.shutterTitle) {
-                // Re-capture goes through a confirmation, because it orphans the
-                // previous pair in Photos and the user cannot get it back.
-                if model.state.isCaptured {
-                    isConfirmingRecapture = true
-                } else {
-                    isShowingCamera = true
-                }
+        PrimaryButton(title: model.shutterTitle) {
+            if model.state.isCaptured {
+                isConfirmingRecapture = true
+            } else {
+                isShowingCamera = true
             }
-            .accessibilityHint(model.state.isCaptured
-                ? "Replaces today's moment. The earlier photos stay in your library."
-                : "Opens the camera")
         }
+        .accessibilityHint(model.state.isCaptured
+            ? "Replaces today's moment. The earlier photos stay in your library."
+            : "Opens the camera")
     }
 
     // MARK: - Footer
@@ -324,12 +400,15 @@ struct TodayView: View {
             // "Reminders off" now does two jobs: it reports a missing
             // permission, and it explains why a clock is visible at all. Same
             // copy, different reason — which is worth checking reads correctly
-            // beside the rows above it.
+            // beside the rows above it. It is also the app's only use of the
+            // amber accent (ADR-025), which is why it is worth the colour: a
+            // permission the user declined and can only restore in the system
+            // Settings app is the one thing here worth flagging.
             if !model.notificationsAuthorized {
                 MetadataRow(
                     label: "Reminders",
                     value: "off",
-                    valueColor: Theme.Color.late
+                    valueColor: Theme.Color.accent
                 )
             }
             if model.summary.totalMoments > 0 {

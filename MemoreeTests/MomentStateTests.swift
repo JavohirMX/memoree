@@ -5,12 +5,14 @@ import Testing
 
 /// Phase 5 — the Today screen's state resolver.
 ///
-/// Pure function of `(now, interval, todayMoment, dayEnd)`, so every state is
-/// reachable without a clock, a database or a device.
+/// Pure function of `(now, interval, todayMoment)`, so every state is reachable
+/// without a clock, a database or a device.
 ///
 /// The cases that carry real risk are the edges: the window is inclusive at both
-/// ends, `missed` must not fire before the day is actually over, and a day's
-/// moment must win over the clock.
+/// ends, and a day's moment must win over the clock. The third edge — that an
+/// on-time and an off-window moment resolve to the *same* state — is ADR-023's
+/// structural guarantee, and it is the one that a future edit is most likely to
+/// undo by accident.
 @Suite("Phase 5 — MomentStateResolver")
 struct MomentStateResolverTests {
 
@@ -29,15 +31,9 @@ struct MomentStateResolverTests {
     private func resolve(
         now: Date,
         window: MomentInterval,
-        moment: MomentFacts? = nil,
-        dayEnd: Date? = nil
+        moment: MomentFacts? = nil
     ) -> MomentState {
-        MomentStateResolver.resolve(
-            now: now,
-            interval: window,
-            todayMoment: moment,
-            dayEnd: dayEnd ?? MomentStateResolver.endOfDay(containing: now, calendar: calendar)
-        )
+        MomentStateResolver.resolve(now: now, interval: window, todayMoment: moment)
     }
 
     private func onTimeFacts(day: String = "2026-09-30") throws -> MomentFacts {
@@ -54,7 +50,7 @@ struct MomentStateResolverTests {
         )
     }
 
-    private func lateFacts(lateBy: TimeInterval = 600, day: String = "2026-09-30") throws -> MomentFacts {
+    private func offWindowFacts(lateBy: TimeInterval = 600, day: String = "2026-09-30") throws -> MomentFacts {
         let dayIdentifier = try #require(DayIdentifier(string: day, calendar: calendar))
         // The window closed at 14:02; this moment lands `lateBy` after that.
         let windowEnd = dayIdentifier.date.addingTimeInterval(14 * 3600 + 120)
@@ -71,18 +67,12 @@ struct MomentStateResolverTests {
 
     // MARK: - Before the window
 
-    @Test("Before the window opens the state is scheduled with the wait")
+    @Test("Before the window opens the state is scheduled")
     func scheduled() throws {
         let window = try interval()
         let state = resolve(now: window.start.addingTimeInterval(-3600), window: window)
 
-        #expect(state == .scheduled(timeUntilStart: 3600))
-        #expect(state.isAwaitingMoment)
-        // Was `!state.allowsCapture` until ADR-023. The early-post refusal was
-        // `FR-5` and `AGENTS.md` §2 rule 10, and it contradicted the app's own
-        // onboarding copy. Capture is now permitted at any time, so this state
-        // differs from `open` in what it *says*, not in what it permits.
-        #expect(state.allowsCapture)
+        #expect(state == .scheduled)
     }
 
     // MARK: - The window
@@ -90,32 +80,41 @@ struct MomentStateResolverTests {
     @Test("At the opening instant the window is open")
     func opensExactlyOnTime() throws {
         let window = try interval()
-        let state = resolve(now: window.start, window: window)
-
-        #expect(state == .open(remaining: 120))
-        #expect(state.allowsCapture)
+        #expect(resolve(now: window.start, window: window) == .open)
     }
 
-    @Test("At the closing instant it is still open, not late")
+    @Test("At the closing instant it is still open, not lapsed")
     func closingInstantIsStillOpen() throws {
-        // The difference between on time and late is one instant, so the boundary
-        // is pinned deliberately.
+        // The difference between on time and off-window is one instant, so the
+        // boundary is pinned deliberately.
         let window = try interval()
-        let state = resolve(now: window.end, window: window)
-
-        #expect(state == .open(remaining: 0))
-        #expect(!state.isLate)
+        #expect(resolve(now: window.end, window: window) == .open)
     }
 
     @Test("One instant past the close the window has lapsed")
-    func pastCloseIsLateAvailable() throws {
+    func pastCloseIsWindowPassed() throws {
         let window = try interval()
         let state = resolve(now: window.end.addingTimeInterval(1), window: window)
 
-        #expect(state == .lateAvailable(lateBy: 1))
-        #expect(state.allowsCapture)
-        #expect(state.isLate)
-        #expect(!state.countsForStreak)
+        #expect(state == .windowPassed)
+    }
+
+    @Test("A window that lapsed hours ago is still only windowPassed")
+    func longAfterCloseIsStillWindowPassed() throws {
+        // 23:59, with a window that closed at 14:02. This used to be a second
+        // state — `missed` — distinguished by a `dayEnd` argument. It could not
+        // be reached in the app: `endOfDay(containing: now)` is always later
+        // than `now`, so the `missed` branch never executed, and a day that
+        // genuinely ended had already rolled over into tomorrow's `scheduled`.
+        //
+        // The case is gone rather than made reachable, and this pins what
+        // replaced it: an unposted day is not a miss, it is simply a day whose
+        // two minutes are over.
+        let window = try interval()
+        let day = try #require(DayIdentifier(string: "2026-09-30", calendar: calendar))
+        let lateInDay = day.date.addingTimeInterval(23 * 3600 + 59 * 60)
+
+        #expect(resolve(now: lateInDay, window: window) == .windowPassed)
     }
 
     // MARK: - Captured
@@ -130,9 +129,8 @@ struct MomentStateResolverTests {
             moment: try onTimeFacts()
         )
 
-        #expect(state == .captured(late: false, lateBy: 0))
-        #expect(state.countsForStreak)
-        #expect(!state.isLate)
+        #expect(state == .captured)
+        #expect(state.isCaptured)
     }
 
     @Test("A captured moment stays captured after the window closes")
@@ -143,102 +141,76 @@ struct MomentStateResolverTests {
             window: window,
             moment: try onTimeFacts()
         )
-        #expect(state == .captured(late: false, lateBy: 0))
+        #expect(state == .captured)
     }
 
-    @Test("A late moment reports its lateness and does not grow the streak")
-    func capturedLate() throws {
+    // MARK: - The distinction that must not exist
+
+    @Test("An off-window moment resolves to the same state as an on-time one")
+    func onTimeAndOffWindowAreIndistinguishable() throws {
+        // **The structural guarantee ADR-023 asks for.** The Today screen used
+        // to read `late` and `lateBy` off this state and render an amber "posted
+        // 12m late" badge above a sentence explaining that the streak had not
+        // grown. ADR-023 ruled out both: an off-window moment must look exactly
+        // like an on-time one.
+        //
+        // Rather than delete the branch that rendered them, the payload went —
+        // so the view is *unable* to leak the distinction, and this assertion is
+        // the one that fails if somebody puts it back.
         let window = try interval()
-        let state = resolve(
+
+        let onTime = resolve(
+            now: window.start.addingTimeInterval(30),
+            window: window,
+            moment: try onTimeFacts()
+        )
+        let offWindow = resolve(
             now: window.end.addingTimeInterval(600),
             window: window,
-            moment: try lateFacts(lateBy: 600)
+            moment: try offWindowFacts(lateBy: 600)
         )
 
-        #expect(state == .captured(late: true, lateBy: 600))
-        #expect(!state.countsForStreak)
-        #expect(state.showsLateBadge)
+        #expect(onTime == offWindow)
+        #expect(onTime == .captured)
+        #expect(offWindow == .captured)
     }
 
-    // MARK: - Missed
-
-    @Test("Missed requires the day to be over, not merely the window")
-    func missedRequiresDayOver() throws {
+    @Test("A day's moment wins over the clock at every hour of the day")
+    func capturedBeatsEveryOtherState() throws {
+        // One moment, five clocks. The day's moment is the only thing that can
+        // change the answer, so it has to win every time — including long after
+        // the window closed, which is where a stale clock would otherwise show
+        // `windowPassed` and invite a second capture of a day already shot.
         let window = try interval()
         let day = try #require(DayIdentifier(string: "2026-09-30", calendar: calendar))
-        let endOfDay = try #require(
-            calendar.date(byAdding: .day, value: 1, to: day.date))
+        let moment = try onTimeFacts()
 
-        // 23:59 — the window closed hours ago but the day has not ended.
-        let lateInDay = day.date.addingTimeInterval(23 * 3600 + 59 * 60)
-        let stillOpen = resolve(now: lateInDay, window: window, dayEnd: endOfDay)
-        // The window closed at 14:02, so 23:59 is 9h57m past it — not 9h59m.
-        #expect(stillOpen == .lateAvailable(lateBy: 9 * 3600 + 57 * 60),
-                "an unposted day is not a miss until it ends")
-
-        // One second past midnight: now it is a miss.
-        let afterMidnight = endOfDay.addingTimeInterval(1)
-        let missed = resolve(now: afterMidnight, window: window, dayEnd: endOfDay)
-        #expect(missed == .missed)
-        // Was `!missed.allowsCapture`. A missed day now still permits capture —
-        // the day has not rolled over yet, so it is still today (ADR-023), and
-        // the streak rule is what distinguishes a day with no photograph from a
-        // day photographed off-window, not the shutter.
-        #expect(missed.allowsCapture)
-    }
-
-    // MARK: - End of day
-
-    @Test("End of day is the following local midnight")
-    func endOfDayIsLocalMidnight() throws {
-        var eastern = Calendar(identifier: .gregorian)
-        eastern.timeZone = TimeZone(identifier: "America/New_York")!
-
-        // 23:30 on the day the clocks go forward.
-        let lateNight = try #require(eastern.date(from: DateComponents(
-            year: 2027, month: 3, day: 13, hour: 23, minute: 30)))
-        let end = MomentStateResolver.endOfDay(containing: lateNight, calendar: eastern)
-
-        #expect(eastern.component(.day, from: end) == 14)
-        #expect(eastern.component(.hour, from: end) == 0)
-    }
-
-    // MARK: - State predicates
-
-    @Test("Every state permits capture")
-    func capturePermissions() throws {
-        // Was "only an open or lapsed window permits capture", and the assertion
-        // that one second before the window opens does *not*. Both of those
-        // are ADR-023: the window no longer gates anything, so the states differ
-        // in what they say rather than in what they permit.
-        let window = try interval()
-        #expect(resolve(now: window.start, window: window).allowsCapture)
-        #expect(resolve(now: window.end.addingTimeInterval(1), window: window).allowsCapture)
-        #expect(resolve(now: window.start.addingTimeInterval(-1), window: window).allowsCapture)
-
-        // And a captured moment, for completeness — every case, no exceptions.
-        let captured = MomentFacts(
-            id: UUID(), day: try #require(DayIdentifier(string: "2026-09-30")),
-            isOnTime: true, capturedAt: window.start, windowEndsAt: window.end,
-            retakeCount: 0, hasBTS: false
-        )
-        let state = MomentStateResolver.resolve(
-            now: window.start, interval: window, todayMoment: captured,
-            dayEnd: MomentStateResolver.endOfDay(containing: window.start)
-        )
-        #expect(state.allowsCapture, "re-capture is always permitted (ADR-011)")
-    }
-
-    @Test("Every state round-trips through the countdown as nil where expected")
-    func countdownPresence() throws {
-        let window = try interval()
-        // Countdown is derived in the view model; the resolver only guarantees
-        // the states it is defined for. This pins the association.
-        switch resolve(now: window.start, window: window) {
-        case .open(let remaining):
-            #expect(remaining == 120)
-        default:
-            Issue.record("expected .open")
+        for hour in [0, 13, 14, 15, 23] {
+            let now = day.date.addingTimeInterval(Double(hour) * 3600)
+            #expect(resolve(now: now, window: window, moment: moment) == .captured,
+                    "the moment must win at \(hour):00")
         }
+    }
+
+    // MARK: - Exhaustiveness
+
+    @Test("Exactly four states, and each is reachable")
+    func everyStateIsReachable() throws {
+        // The enum is payload-free, so a new case is a compile-time break in
+        // `TodayView.primaryState` rather than a silently unhandled state. This
+        // pins that the four remaining cases are each produced by the resolver
+        // rather than declared and never returned.
+        let window = try interval()
+        let day = try #require(DayIdentifier(string: "2026-09-30", calendar: calendar))
+        let moment = try onTimeFacts()
+
+        let produced: Set<MomentState> = [
+            resolve(now: day.date.addingTimeInterval(13 * 3600), window: window),
+            resolve(now: window.start, window: window),
+            resolve(now: window.end.addingTimeInterval(1), window: window),
+            resolve(now: window.end, window: window, moment: moment)
+        ]
+
+        #expect(produced == [.scheduled, .open, .windowPassed, .captured])
     }
 }

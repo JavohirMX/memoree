@@ -112,7 +112,13 @@ extension TimeWindow {
         return "\(start) – \(end)"
     }
 
-    private static func format(minutes: Int) -> String {
+    /// `11:00`, or `24:00` for end-of-day.
+    ///
+    /// Internal rather than private because `WindowPicker` labels its sliders
+    /// with it. A second copy of this formatting inside the picker would be a
+    /// second place for `24:00` to render as `00:00`, which is the one value
+    /// here that is genuinely easy to get wrong.
+    static func format(minutes: Int) -> String {
         let clamped = min(max(minutes, 0), 24 * 60)
         let hour = clamped / 60
         let minute = clamped % 60

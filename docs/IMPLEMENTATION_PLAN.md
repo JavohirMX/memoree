@@ -468,16 +468,21 @@ explanation. This reverses ADR-009, which is marked superseded.
 
 **Not yet implemented.** In order:
 
-| # | Task | Note |
-| --- | --- | --- |
-| 1 | **Decide what the countdown means** | **Blocking, and it is a copy question.** `mm:ss` reading "1:47 remaining" implies a deadline that no longer exists and that now costs the user their streak. Either it goes, or it counts down to the *reminder*. A ticking number that lies is worse than no number — and this one would lie *and* have consequences. |
-| 2 | `MomentState.allowsCapture` → always true | `TodayView.action` drops its guard. FR-5 goes. |
-| 3 | Collapse `lateAvailable` | It existed only to say "closed, but you may still post". Merge into the ordinary not-yet-captured case. |
-| 4 | `currentStreak` skips off-window days | Stop condition becomes "no moment at all" rather than "not on time". The signature already takes both `onTimeDays` and `capturedDays`, so the harder decision is made once and the arithmetic follows. |
-| 5 | **`longestStreak` becomes longest run of days with *any* moment** | **Not optional — the alternative displays a lie.** With `currentStreak` skipping, it can exceed a strictly-consecutive `longestStreak`, and the Today footer would show "best 2" beside a streak of 3. Using the same skip rule for both makes them equal whenever no day is ever missed, so the footer never renders. |
-| 6 | Keep `isLate`/`lateBy` on `Moment` | **Revised from "remove them."** With no badge they drive no UI, but the streak needs to know whether a day counted, and Phase 9's busiest-hour stat is the same data. They are read by the calculator, so they are not dead. Derivable from `capturedAt` + `DayRecord` if ever wanted elsewhere. |
-| 7 | Fix the onboarding copy | The untrue sentence becomes true. Worth reading aloud before it ships. |
-| 8 | PRD F3, F9; TRD §8; AGENTS.md §2 rule 10 | Rule 10 is already struck in `AGENTS.md`; F3 and F9 are now wrong. |
+| # | Task | Note | Done |
+| --- | --- | --- | --- |
+| 1 | **Decide what the countdown means** | **Blocking, and it is a copy question.** `mm:ss` reading "1:47 remaining" implies a deadline that no longer exists and that now costs the user their streak. Either it goes, or it counts down to the *reminder*. A ticking number that lies is worse than no number — and this one would lie *and* have consequences. | **ADR-024** |
+| 2 | `MomentState.allowsCapture` → always true | `TodayView.action` drops its guard. FR-5 goes. | ✅ — and the predicate is **deleted**, not made constant. A property that is always `true` and a view that asks it are two things to keep honest; the shutter now renders unconditionally. |
+| 3 | Collapse `lateAvailable` | It existed only to say "closed, but you may still post". Merge into the ordinary not-yet-captured case. | ✅ — as **`windowPassed`**, and the payloads went with it. Not merged into `scheduled`: its copy was *"the window has closed"*, which is a different fact from *"the window has not opened"*, and rendering the wrong one is how the app ended up lying in the first place. |
+| 4 | `currentStreak` skips off-window days | Stop condition becomes "no moment at all" rather than "not on time". The signature already takes both `onTimeDays` and `capturedDays`, so the harder decision is made once and the arithmetic follows. | ✅ |
+| 5 | **`longestStreak` becomes longest run of days with *any* moment** | **Not optional — the alternative displays a lie.** With `currentStreak` skipping, it can exceed a strictly-consecutive `longestStreak`, and the Today footer would show "best 2" beside a streak of 3. Using the same skip rule for both makes them equal whenever no day is ever missed, so the footer never renders. | ✅ — pinned by a 1024-history sweep, not a fixture |
+| 6 | Keep `isLate`/`lateBy` on `Moment` | **Revised from "remove them."** With no badge they drive no UI, but the streak needs to know whether a day counted, and Phase 9's busiest-hour stat is the same data. They are read by the calculator, so they are not dead. Derivable from `capturedAt` + `DayRecord` if ever wanted elsewhere. | ✅ — kept on the model, and **removed from `MomentState`**, which is where they were doing harm |
+| 7 | Fix the onboarding copy | The untrue sentence becomes true. Worth reading aloud before it ships. | ✅ |
+| 8 | PRD F3, F9; TRD §8; AGENTS.md §2 rule 10 | Rule 10 is already struck in `AGENTS.md`; F3 and F9 are now wrong. | ✅ — plus F12, TRD §9's degradation note, and the token table |
+
+**One consequence nobody had costed: the amber lost its jobs.** Items 3 and 1 took both uses of
+`#FFD60A` — the badge and the sub-30s countdown — leaving the "Reminders off" row as the only
+thing in the app that is amber. That is **ADR-025**, and it is why the token is now `accent`
+rather than `late`.
 
 **Tests to change, not just add.** `StreakCalculatorTests` asserts a late-only day returns zero
 ("A late-only day returns zero, not the previous run", "A late day in the past breaks the walk",
@@ -485,7 +490,8 @@ explanation. This reverses ADR-009, which is marked superseded.
 should be **replaced**, not deleted, with the skip rule. `MomentStateTests` pins the six states
 including "`scheduled` refuses capture". The FR-5 early-post refusal in `TodayViewModelTests`
 must be inverted. A test that keeps asserting the old behaviour is a plausible account of how
-this shipped in the first place.
+this shipped in the first place. **All done — sixteen tests replaced across four files, none
+deleted without replacement.**
 
 
 
@@ -559,6 +565,55 @@ no-networking assertion that TRD §13 and AGENTS.md §10 have both promised now
 exists.
 
 **Still outstanding for this phase's exit criterion:** the device run.
+
+### Progress as of 2026-10-01 — the state machine got smaller, and that was the point
+
+ADR-023's implementation list had eight items. Seven shipped in the commit above; item 3
+("collapse `lateAvailable`") did not, and shipping seven of eight left the app contradicting
+the decision it had just made. This is the rest of it.
+
+**`MomentState` is now four payload-free cases**: `captured`, `scheduled`, `open`,
+`windowPassed`. The payloads are the interesting part, because they were what the bad UI read.
+`captured` carried `late`/`lateBy`; the view turned those into an amber *"posted 12m late"*
+badge above *"Your photo is in your library. The streak did not grow."* `scheduled` and `open`
+carried countdown values, and nothing read them — the view model computed its own — so they
+existed only for tests to assert on.
+
+**The fix was to delete the data rather than the branches.** ADR-023 decision 3 says an
+off-window moment must look exactly like an on-time one, and the way to make that true rather
+than merely intended is for the state to stop carrying the distinction. A view that *cannot*
+render the badge cannot leak it. This is the same argument as the FR-5 refusal being built
+structurally rather than as a disabled button — the codebase's own idiom, and the reason the
+original refusal was elegant and also wrong.
+
+**`missed` is deleted, and it was already dead.** `endOfDay(containing: now)` is always later
+than `now`, so the `now < dayEnd` guard that selected it always held and the branch never
+executed. A test reached it by injecting a `dayEnd` in the past, which is the shape of a test
+that verifies a function rather than an app: the case had a green test and no callers. The
+resolver's `dayEnd` parameter went with it, and the only DST behaviour it carried — local
+midnight across a transition — is already covered at the `DayIdentifier` layer where it
+belongs.
+
+**Eleven tests replaced, none deleted outright.** The three that mattered most assert the
+absence rather than the presence: that an on-time and an off-window moment resolve to the same
+state; that a day's moment beats the clock at 00:00, 13:00, 14:00, 15:00 and 23:00; and that
+the four states the resolver can produce are exactly the four that exist.
+
+**`windowPassed` needed copy that did not plead.** The old `lateAvailable` said *"The window has
+closed"* and *"The streak will not grow"* — the second sentence is precisely what ADR-023
+rejected. It now says *"Today's moment has passed"* and *"You can still photograph whenever you
+like."* A fact and an invitation, no amber, nothing about what it cost.
+
+**And the amber ran out of jobs, which is ADR-025.** `#FFD60A` existed for the late badge and
+the sub-30s countdown. Both died with the window, leaving one use: the "Reminders off" row. The
+token is renamed `accent` rather than re-documented, because a token whose name contradicts its
+only use is the same mistake the badge was. Seven dead symbols went with it — `LateBadge`,
+`CountdownDisplay.isUrgent`, `PrimaryButton.Style.amber`, `lateDescription`,
+`Theme.Typography.countdown`, `Theme.Typography.badge`, and five `MomentState` predicates.
+
+**`missedDays` is the number that got more honest.** It counts days with *no moment at all*,
+which is now the only thing that breaks a streak, so its doc comment no longer has to explain
+the difference between a late day and a missed one.
 
 ### Progress as of 2026-09-30
 

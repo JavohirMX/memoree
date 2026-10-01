@@ -170,13 +170,19 @@ Use tokens from `DesignSystem/Theme.swift`. Never hardcode a hex value in a view
 | `surfaceElevated` | `#2C2C2E` | Pressed states, chips |
 | `textPrimary` | `#FFFFFF` | Titles, primary actions |
 | `textSecondary` | `#8E8E93` | Timestamps, metadata |
-| `late` | `#FFD60A` | **Only** amber: late badges, sub-30s countdown |
+| `accent` | `#FFD60A` | **The only** amber, and the app's single accent. One use: a declined permission the user can only restore in system Settings (ADR-025) |
 | `destructive` | `#FF453A` | Delete confirmation only |
 
 There is no brand hue. White is the verb. If you find yourself reaching for a second colour,
 re-read `docs/DECISION_LOG.md` §10.
 
 The countdown uses **tabular figures** so digits do not jitter.
+
+**The amber has exactly one job**, reserved for a permission the user declined and cannot fix
+inside the app. It used to mean "late", and it no longer does — an off-window moment is
+deliberately indistinguishable from an on-time one, so there is nothing for it to warn about
+(ADR-023, ADR-025). If you want amber to mean lateness again, that is a new ADR with a written
+reserved job, not a reuse of this one.
 
 ## 12. Before you commit
 

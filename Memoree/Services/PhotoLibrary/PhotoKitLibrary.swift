@@ -44,6 +44,17 @@ struct PhotoKitLibrary: PhotoLibraryService {
 
     private let albumName: String
 
+    /// One manager for the lifetime of the service, and a decoded-image cache
+    /// beside it.
+    ///
+    /// `image(for:targetSize:)` used to construct a `PHCachingImageManager`
+    /// inside the function body. That is invisible behind a single composite and
+    /// ruinous behind a grid, because **the cache lives on the manager** — a
+    /// manager created per request caches nothing, so every scroll of every cell
+    /// went to Photos. See `ArchiveThumbnailCache` for the two tiers.
+    private let imageManager = PHCachingImageManager()
+    private let thumbnails = ArchiveThumbnailCache()
+
     init(albumName: String = "Memoree") {
         self.albumName = albumName
     }
@@ -233,12 +244,28 @@ struct PhotoKitLibrary: PhotoLibraryService {
 
     // MARK: - Reading
 
+    /// The cache key for an image at a size.
+    ///
+    /// Size is part of the key and not a detail: Photos will hand back a
+    /// different decode for a thumbnail and for a full-screen image, so a
+    /// key that omitted the size would return a 96pt thumbnail where a
+    /// 1080pt image was asked for — a bug that renders as a blurry archive
+    /// detail and reads as a Photos problem rather than a cache one.
+    nonisolated static func cacheKey(_ identifier: String, targetSize: CGSize) -> String {
+        let width = Int(targetSize.width.rounded())
+        let height = Int(targetSize.height.rounded())
+        return "\(identifier)@\(width)x\(height)"
+    }
+
     func image(for identifier: String, targetSize: CGSize) async -> UIImage? {
+        let key = Self.cacheKey(identifier, targetSize: targetSize)
+        if let cached = thumbnails.cached(key) { return cached }
+
         guard let asset = PHAsset.fetchAssets(
             withLocalIdentifiers: [identifier], options: nil
         ).firstObject else { return nil }
 
-        let manager = PHCachingImageManager()
+        let manager = imageManager
         let options = PHImageRequestOptions()
         // `highQualityFormat` rather than `opportunistic`, deliberately.
         //
@@ -253,7 +280,7 @@ struct PhotoKitLibrary: PhotoLibraryService {
         options.resizeMode = .fast
         options.isNetworkAccessAllowed = false
 
-        return await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
+        let image = await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
             manager.requestImage(
                 for: asset,
                 targetSize: targetSize,
@@ -264,6 +291,45 @@ struct PhotoKitLibrary: PhotoLibraryService {
                 continuation.resume(returning: image)
             }
         }
+
+        if let image { thumbnails.store(image, for: key) }
+        return image
+    }
+
+    // MARK: - Prefetching
+
+    func prefetchThumbnails(_ identifiers: [String], targetSize: CGSize) async {
+        await thumbnails.prefetch(
+            identifiers: identifiers,
+            targetSize: targetSize,
+            manager: imageManager,
+            options: Self.prefetchOptions
+        )
+    }
+
+    func cancelThumbnailPrefetch(targetSize: CGSize) async {
+        await thumbnails.stopPrefetching(
+            targetSize: targetSize,
+            manager: imageManager,
+            options: Self.prefetchOptions
+        )
+    }
+
+    func purgeImageCache() async {
+        thumbnails.removeAll()
+    }
+
+    /// Options for warming, kept separate from the request options on purpose.
+    ///
+    /// `isSynchronous = false` is what makes this a *prefetch*: warming happens
+    /// off the main thread and the call returns immediately. And
+    /// `deliveryMode` is irrelevant here because `startCachingImages` does not
+    /// deliver, which is the whole difference between the two APIs.
+    private static var prefetchOptions: PHImageRequestOptions {
+        let options = PHImageRequestOptions()
+        options.isNetworkAccessAllowed = false
+        options.isSynchronous = false
+        return options
     }
 
     func assetExists(_ identifier: String) async -> Bool {

@@ -65,16 +65,16 @@ post from a device they did not capture it on. Every one of those requires a ser
 | --- | --- | --- |
 | F1 | Daily moment window | Random time per day, computed on-device, inside a user-set window |
 | F2 | Local notification | Fires at the moment time. No APNs, no server |
-| F3 | Two-minute capture window | Countdown shown as `mm:ss`, computed client-side |
+| F3 | Two-minute qualifying window | The width of the window in which a photograph grows the streak. **Not a gate** — capture is permitted at any time (ADR-023). Countdown shown as `mm:ss`, computed client-side, and only when notifications are off (ADR-024) |
 | F4 | Sequential front + back capture | Rear shot, then front selfie, ~0.3–1s apart |
 | F5 | Composite preview | Rear full-bleed, front inset top-left; tap to swap which is primary |
 | F6 | Unlimited retakes | Counted and stored; the count is a private stat, never social |
 | F7 | Photos save | Front and back written to Photos as **two separate assets**, original quality, EXIF preserved |
 | F8 | Behind the Scenes | Rolling ~5s buffer of the primary camera, optionally saved to Photos and shareable |
-| F9 | Late posting | Allowed after the window, badged, does not grow the streak |
+| F9 | Off-window posting | Allowed, and **indistinguishable from an on-time moment**. No badge, no explanation, and it neither grows nor breaks the streak — the walk skips it. A day with no moment at all is what breaks the streak (ADR-023) |
 | F10 | Streaks | Counts consecutive days with an **on-time** moment |
 | F11 | Optional location | Per-moment opt-in, coordinates only, written to EXIF, never leaves device |
-| F12 | Today screen | Streak, countdown / state, today's capture |
+| F12 | Today screen | Streak, state, today's capture. The moment *time* is shown only when notifications are off (ADR-024) |
 | F13 | Grid archive | All moments, thumbnails streamed from Photos |
 | F14 | Moment detail | Full-bleed view, metadata, BTS playback, share, delete |
 | F15 | Stats | Days captured, streaks, on-time %, average retakes, busiest hour |
@@ -154,17 +154,27 @@ service. It is a single-device capture ritual with a durable archive.
 
 Retake loops back to the camera at any point before Send, and only the final pair is persisted.
 
-### 5.3 Missed the window
+### 5.3 After the window closes
 
-The Today screen moves to a **Late** state. The camera is still available. Capturing produces a
-late-marked moment: saved to Photos, saved to the archive, badged amber, and **the streak does
-not grow**. Late moments are first-class archive entries, not failures to be hidden.
+The Today screen says **"Today's moment has passed"** and the camera is still there. Capturing
+produces an off-window moment: saved to Photos, saved to the archive, **identical on every
+screen to an on-time one**, and the streak does not move — neither up nor down. The walk skips
+the day rather than treating it as a break.
+
+Nothing on screen says so, and that is the decision (ADR-023). An earlier version rendered an
+amber *"posted 12m late"* badge above a sentence explaining that the streak had not grown, which
+meant the user learned the rule by being told they had broken something. Off-window moments are
+first-class archive entries; the honest aggregate (`on-time %`) belongs on the Stats screen,
+where it describes a number rather than a photograph.
+
+A day ends only when a day passes with **no moment at all** — and by then it is tomorrow, so
+there is no state in which the app can tell you that yesterday is gone.
 
 ### 5.4 Archive
 
 Grid, newest first, 3:4 thumbnails read from Photos via `PHAsset`. Tapping opens detail:
-full-bleed image, `on-time` / `late 2h14m` badge, timestamp, coordinates if captured, retake
-count, BTS playback if present, and Share / Delete.
+full-bleed image, timestamp, coordinates if captured, retake count, BTS playback if present, and
+Share / Delete. **No on-time / late badge** — see 5.3.
 
 Deleting a moment removes the archive entry. It does **not** remove the assets from Photos —
 those are the user's files and Memoree does not reach back and destroy them. The archive entry

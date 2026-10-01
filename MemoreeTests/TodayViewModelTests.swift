@@ -20,57 +20,19 @@ struct TodayViewModelTests {
 
     // MARK: - Harness
 
-    /// A tiny real PNG, so the read path resolves actual pixels and the test
-    /// does not carry an image fixture around.
-    private static let pixelPNG: Data = {
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 2, height: 2))
-        let image = renderer.image { context in
-            UIColor.white.setFill()
-            context.fill(CGRect(x: 0, y: 0, width: 2, height: 2))
-        }
-        guard let data = image.pngData() else {
-            Issue.record("could not build the fixture image")
-            return Data()
-        }
-        return data
-    }()
+    /// A tiny real PNG, so the read path resolves actual pixels.
+    private static let pixelPNG = PixelFixture.png
 
     /// A clock that advances a fixed step per read. Step 0 pins time, which is
     /// what nearly every test here wants; the ticker test uses one second.
-    private final class StepClock: @unchecked Sendable {
-        private let origin: Date
-        private let step: TimeInterval
-        private var tick = 0
-
-        init(origin: Date, step: TimeInterval = 0) {
-            self.origin = origin
-            self.step = step
-        }
-
-        func now() -> Date {
-            defer { tick += 1 }
-            return origin.addingTimeInterval(step * Double(tick))
-        }
-    }
-
-    /// Always answers with the same instant.
-    private struct FixedScheduler: MomentScheduler {
-        let start: Date
-
-        func momentInterval(
-            for day: DayIdentifier,
-            window: TimeWindow,
-            windowDuration: TimeInterval
-        ) -> MomentInterval {
-            MomentInterval(start: start, end: start.addingTimeInterval(windowDuration))
-        }
-
-        func momentStart(
-            for day: DayIdentifier,
-            window: TimeWindow,
-            windowDuration: TimeInterval
-        ) -> Date { start }
-    }
+    ///
+    /// `StepClock` and `FixedScheduler` now live in `TestSupport.swift` —
+    /// three suites need them and three copies is three places to miss when
+    /// `MomentScheduler` grows a method. The one here used to count ticks from
+    /// zero and this one advances by `step`; the shared version does the latter,
+    /// which is the same thing at step 0 and the more obvious one otherwise.
+    private typealias StepClock = TestSupport.Clock
+    private typealias FixedScheduler = TestSupport.Scheduler
 
     private struct Harness {
         let environment: AppEnvironment
@@ -156,38 +118,35 @@ struct TodayViewModelTests {
         )
     }
 
-    // MARK: - The six states
+    // MARK: - The four states
 
-    @Test("Before the window opens the screen is scheduled and has no shutter")
+    @Test("Before the window opens the screen is scheduled")
     func scheduledState() async throws {
         let (now, start) = try dayAndStart()
         let harness = try makeHarness(now: now, momentStart: start)
         let model = makeModel(harness, at: start.addingTimeInterval(-3600))
         await model.reload()
 
-        #expect(model.state.isAwaitingMoment)
+        #expect(model.state == .scheduled)
         // Was `!model.state.allowsCapture` with the message "FR-5: no capture
-        // before momentStart" — the early-post refusal, now ADR-023.
-        #expect(model.state.allowsCapture, "capture is permitted at any time")
-        // Was `model.countdown == "1:00:00"`. The countdown is gone with the
-        // deadline it described (ADR-024), and the time is a secret while
-        // notifications are on — which this harness has, so nothing leaks.
-        #expect(model.countdown == nil)
+        // before momentStart" — the early-post refusal, now ADR-023. There is no
+        // predicate left to assert: the shutter renders in every state, and the
+        // state cannot say otherwise.
         #expect(!model.showsMomentTime)
         #expect(model.timeUntilMoment == nil)
     }
 
-    @Test("Inside the window the shutter appears and still shows no time")
+    @Test("Inside the window the state is open, and still no time is shown")
     func openState() async throws {
         let (now, start) = try dayAndStart()
         let harness = try makeHarness(now: now, momentStart: start)
         let model = makeModel(harness, at: start.addingTimeInterval(30))
         await model.reload()
 
-        #expect(model.state.allowsCapture)
+        #expect(model.state == .open)
         // The window being open changes what the screen *says*, not what it
-        // reveals. "It's time" is not a deadline.
-        #expect(model.countdown == nil)
+        // reveals. "It's time" is not a deadline, and nothing counts down to
+        // its end.
         #expect(!model.showsMomentTime)
     }
 
@@ -241,16 +200,18 @@ struct TodayViewModelTests {
         #expect(model.timeUntilMoment == nil, "but nothing is counting down to it")
     }
 
-    @Test("After the window the shutter stays and the state is lateAvailable")
-    func lateAvailableState() async throws {
+    @Test("After the window the state is windowPassed, not late")
+    func windowPassedState() async throws {
         let (now, start) = try dayAndStart()
         let harness = try makeHarness(now: now, momentStart: start)
         let model = makeModel(harness, at: start.addingTimeInterval(600))
         await model.reload()
 
-        #expect(model.state.allowsCapture, "late posting is permitted (F9)")
-        #expect(!model.state.isAwaitingMoment)
-        #expect(model.countdown == nil, "there is no countdown outside the window")
+        #expect(model.state == .windowPassed)
+        // Was `.lateAvailable` with a `LateBadge("late")` above "The streak will
+        // not grow". Both said the same thing twice, and ADR-023 ruled out both:
+        // the two minutes ended, nothing was lost, and the streak was not
+        // touched. What is left is a fact and an invitation.
     }
 
     @Test("A captured moment shows captured, and offers a re-capture")
@@ -269,8 +230,8 @@ struct TodayViewModelTests {
         #expect(model.streak == 1)
     }
 
-    @Test("A late moment is still captured — archived, badged, and not a streak")
-    func capturedLateState() async throws {
+    @Test("An off-window moment is a first-class entry that grows nothing")
+    func capturedOffWindowState() async throws {
         let (now, start) = try dayAndStart()
         let harness = try makeHarness(now: now, momentStart: start)
         try await record(
@@ -281,9 +242,63 @@ struct TodayViewModelTests {
         let model = makeModel(harness, at: start.addingTimeInterval(1800))
         await model.reload()
 
-        #expect(model.state.isCaptured, "a late moment is a first-class entry, not a failure")
-        #expect(model.streak == 0, "and it does not grow the streak (ADR-009)")
+        // The screen is told exactly one thing: you captured today. It is not
+        // told whether that counted, because `MomentState.captured` does not
+        // know — and neither, now, can any view.
+        #expect(model.state.isCaptured, "an off-window moment is an entry, not a failure")
+        #expect(model.streak == 0, "and it does not grow the streak (ADR-023)")
+        // The distinction is still recorded, and still computed honestly — it is
+        // simply not on this screen.
         #expect(model.summary.lateMoments == 1)
+    }
+
+    @Test("The screen cannot tell an on-time moment from an off-window one")
+    func theScreenCannotSeeLateness() async throws {
+        // Two harnesses with identical capture behaviour — same day, same
+        // photographs, same shutter — differing only in *when* the shutter
+        // fired. Every value the Today screen reads is the same. This is
+        // ADR-023 decision 3 asserted at the view-model boundary, where the old
+        // badge was actually rendered.
+        //
+        // Same day on purpose. Using two different days would have made the
+        // photographs differ, and then the assertion would pass for the wrong
+        // reason: it would be testing "two days look alike" rather than "an
+        // on-time moment looks like an off-window one".
+        let (now, start) = try dayAndStart()
+        let today = DayIdentifier(date: now)
+
+        // Inside the two minutes.
+        let onTime = try makeHarness(now: now, momentStart: start)
+        try await record(
+            onTime, on: today, capturedAt: start.addingTimeInterval(20)
+        )
+        let onTimeModel = makeModel(onTime, at: start.addingTimeInterval(30))
+        await onTimeModel.reload()
+
+        // Half an hour after it closed.
+        let offWindow = try makeHarness(now: now, momentStart: start)
+        try await record(
+            offWindow, on: today, capturedAt: start.addingTimeInterval(1800)
+        )
+        let offWindowModel = makeModel(offWindow, at: start.addingTimeInterval(1800))
+        await offWindowModel.reload()
+
+        // Preconditions, so a failure below cannot be a false alarm.
+        #expect(onTimeModel.todayMoment?.isOnTime == true)
+        #expect(offWindowModel.todayMoment?.isOnTime == false)
+        #expect(onTimeModel.summary.lateMoments == 0)
+        #expect(offWindowModel.summary.lateMoments == 1)
+
+        // And the screen cannot tell them apart.
+        #expect(onTimeModel.state == offWindowModel.state)
+        #expect(onTimeModel.shutterTitle == offWindowModel.shutterTitle)
+        #expect(onTimeModel.todayImages != nil)
+        #expect(offWindowModel.todayImages != nil)
+        #expect(onTimeModel.todayMissingFromPhotos == offWindowModel.todayMissingFromPhotos)
+
+        // The only difference, and it is a number rather than a message.
+        #expect(onTimeModel.streak == 1)
+        #expect(offWindowModel.streak == 0)
     }
 
     // MARK: - Reading the photographs back
@@ -366,10 +381,10 @@ struct TodayViewModelTests {
         #expect(!model.notificationsAuthorized)
         // And the ritual still works. With no server nothing can re-notify the
         // user later, so the app has to be fully usable without it (TRD §9).
-        #expect(model.state.allowsCapture)
-        // Was `model.countdown == "01:30"`. The countdown is gone (ADR-024); what
-        // replaces it is the time being *shown*, because with no notification
-        // this is the user's only way of learning when the moment is.
+        #expect(model.state == .open)
+        // What replaces the removed countdown is the time being *shown*,
+        // because with no notification this is the user's only way of learning
+        // when the moment is (ADR-024).
         #expect(model.showsMomentTime)
     }
 
@@ -432,6 +447,5 @@ struct TodayViewModelTests {
 
         #expect(!model.showsMomentTime)
         #expect(model.timeUntilMoment == nil)
-        #expect(model.countdown == nil)
     }
 }

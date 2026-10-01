@@ -1010,6 +1010,66 @@ channel, so that failure has no other remedy.
 
 ---
 
+## ADR-025 — The amber is an accent, not a warning about being late
+
+**Status:** Accepted · **Date:** 2026-10-01
+**Consequence of:** ADR-023 and ADR-024, implemented together
+**Supersedes:** `AGENTS.md` §11 and TRD §10's "`late` — **only** amber: late badges,
+sub-30s countdown"
+
+**Context.** The design system had exactly one non-white colour, `#FFD60A`, and it had
+exactly two jobs: the amber "posted 12m late" badge, and the countdown turning amber in its
+last thirty seconds. Both were reserved for the window, and both died with it — ADR-023 made
+an off-window moment deliberately indistinguishable from an on-time one, and ADR-024 removed
+the countdown because a number ticking like a deadline above a rule with teeth is worse than
+no number.
+
+That left `#FFD60A` with a single remaining use: the "Reminders off" row in the Today footer.
+A permission the user declined, which they can only restore in the system Settings app.
+
+**Decision.** Keep the hex. Rename the token `late` → `accent`, and give it one reserved job:
+**a permission the user declined and cannot fix inside the app.** That is the Today footer's
+"Reminders off", and whatever Settings grows later. Nothing else.
+
+**The reasoning, which is really about naming.** The alternative was to leave the token called
+`late` and re-document it, on the argument that amber will mean lateness again once the Stats
+screen exists and can honestly report on-time percentage. That argument is not wrong, and it is
+also exactly the shape of thing this codebase keeps deleting. A token whose name contradicts
+its only use is the same mistake the badge was, and the codebase's own rule is that persisted
+or exposed names must not lie: `Moment.dayIdentifier` rather than `day` because `id` is the
+primary key, `deletedAt` rather than a parallel `isDeleted` boolean because two fields meaning
+the same thing is one more thing that can disagree with itself.
+
+If amber should mean lateness again, that should arrive as a **new** decision with a new
+reserved job written down — not as a token quietly reinterpreting itself the first time a
+screen wanted a colour.
+
+**What was deleted alongside it**, all of it dead once the badge went, and all of it recorded
+because the count is the point: `LateBadge`, `CountdownDisplay.isUrgent`, `PrimaryButton
+.Style.amber`, `CountdownFormatter.lateDescription`, `Theme.Typography.countdown`,
+`Theme.Typography.badge`, and `MomentState.isLate` / `showsLateBadge` / `allowsCapture` /
+`countsForStreak` / `isAwaitingMoment`. None of it had a caller afterwards.
+
+**A note on what `PrimaryButton.Style.outlined` is not.** It also has no caller. It was left
+in place deliberately: it is a component variant rather than a rule, it is plausibly wanted by
+the Archive and Settings screens, and deleting a variant is not the same as deleting a colour
+that has lost its meaning. That distinction is the reason this ADR exists at all.
+
+**Alternatives rejected.** *Leave it called `late`* — documented above. *Delete the amber
+entirely and let the app be pure black and white* — genuinely tempting, and it would have cost
+the one thing the footer has to say. "Your reminders are off, and only you can fix that" is
+worth exactly one colour, and one colour that appears once is not a brand hue. *Make the
+"Reminders off" row white* — it removes the need for the token at all, and it also removes the
+app's ability to draw attention to anything, ever, which is a worse thing to commit to than a
+single documented accent.
+
+**Reversal trigger.** If a second genuinely load-bearing use for amber appears, this decision
+is not wrong — it is just outgrown, and the honest move is a new ADR naming both jobs. What
+*would* be wrong is a third use arriving by accident, which is what the reserved-job line is
+there to prevent.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:
@@ -1031,11 +1091,11 @@ A decision log that only records deletions is misleading. These were kept on pur
 | --- | --- |
 | ~~Random daily window~~ | **Struck by ADR-023.** This was listed as *the mechanic* — "without it there is no reason for the app to exist." The window now decides when the phone interrupts you; capture is permitted at any time, and only in-window photographs grow the streak. What remains is one unretouched photograph per day, which is a smaller claim than the one this table used to make. |
 | ~~Two-minute duration~~ | **Struck by ADR-023**, with the gate. It no longer bounds anything — it does not close a shutter, and nothing is lost when it elapses. It survives only as the width of the streak-qualifying window, and as the notification's arrival time. |
-| The countdown | Client-side `mm:ss`, exactly as BeReal does it — there was never a server countdown to begin with. |
+| ~~The countdown~~ | **Struck by ADR-024.** Client-side `mm:ss` it was, and there was never a server countdown to copy. But after ADR-023 a number ticking at a deadline nobody had, above a rule where missing the window costs the streak, was actively untrue. What survives is a countdown to the *reminder*, shown only when notifications are off. |
 | Front + back framing | The whole point of the format. |
-| The late marker | Truthfulness about when something happened matters more than a clean-looking grid. |
+| ~~The late marker~~ | **Struck by ADR-023.** "Truthfulness about when something happened matters more than a clean-looking grid" was a good argument while the window closed and missing it cost you. It stopped being true at the moment the window stopped costing anything: an off-window photograph is now indistinguishable from an on-time one, on every screen, and the streak simply does not move. The distinction survives in `StreakSummary.onTimePercentage` and `lateMoments` — an honest aggregate, rather than a badge on the photograph itself. |
 | 3:4 portrait geometry | Matches the camera roll and BeReal's own published spec. |
-| Black canvas, white type, amber only for late | A genuinely excellent design system for a photograph-first app. |
+| Black canvas, white type, one amber accent | A genuinely excellent design system for a photograph-first app. The amber lost its two original jobs and is now reserved for a declined permission (ADR-025). |
 | No filters, no library upload | The authenticity guarantee, preserved. |
 | Unlimited retakes before commit | Trying until the moment is honest is not cheating. |
 

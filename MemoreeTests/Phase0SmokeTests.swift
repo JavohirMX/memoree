@@ -30,15 +30,14 @@ struct Phase0SmokeTests {
         #expect(CountdownFormatter.string(fromSeconds: 3599) == "59:59")
     }
 
-    @Test("Lateness reads as days past 24h, not hours")
-    func lateDescription() {
-        // 5400s is 1h30m. Note that 90s is NOT — that is 1m, and asserting
-        // otherwise masks a real bug in whichever direction it errs.
-        #expect(CountdownFormatter.lateDescription(from: 5400) == "1h30m")
-        #expect(CountdownFormatter.lateDescription(from: 90) == "1m")
-        #expect(CountdownFormatter.lateDescription(from: 300) == "5m")
-        #expect(CountdownFormatter.lateDescription(from: 6 * 86400) == "6d")
-        // Negative lateness clamps rather than rendering a negative duration.
-        #expect(CountdownFormatter.lateDescription(from: -60) == "0m")
+    @Test("Countdown keeps counting past an hour rather than wrapping")
+    func countdownOverOneHour() {
+        // The default window is twelve hours wide, so `h:mm:ss` is the common
+        // case for the one configuration that shows a countdown at all — and it
+        // is shown *before* the moment, counting hours down. Wrapping to `mm:ss`
+        // would render 12:00:00 as 00:00 and read as an imminent moment.
+        #expect(CountdownFormatter.string(fromSeconds: 3600) == "1:00:00")
+        #expect(CountdownFormatter.string(fromSeconds: 12 * 3600) == "12:00:00")
+        #expect(CountdownFormatter.string(fromSeconds: 3600 + 90) == "1:01:30")
     }
 }

@@ -57,6 +57,33 @@ protocol PhotoLibraryService: Sendable {
     /// Whether an asset still exists. Drives tombstoning of orphaned moments.
     func assetExists(_ identifier: String) async -> Bool
 
+    /// Warms Photos' own cache for identifiers about to be displayed.
+    ///
+    /// Separate from `image(for:targetSize:)` because the two do different jobs
+    /// and only one of them can be awaited. The decoded-image cache behind
+    /// `image` makes the *second* draw of a cell free; this makes the *first*
+    /// one cheap, which is the one a scrolling grid actually pays for. A grid
+    /// without it shows empty cells that fill in late, which reads as a broken
+    /// screen rather than a slow one.
+    ///
+    /// Best-effort. A prefetch that cannot be started is not an error — the cell
+    /// requests the image itself when it draws.
+    func prefetchThumbnails(_ identifiers: [String], targetSize: CGSize) async
+
+    /// Stops warming.
+    ///
+    /// Takes a `targetSize` because Photos caches per size, so warming can only
+    /// be stopped for the size it was started at. Cancelling the wrong size
+    /// silently does nothing, which is why the size travels with the call.
+    func cancelThumbnailPrefetch(targetSize: CGSize) async
+
+    /// Drops every decoded image this service is holding.
+    ///
+    /// Called when the archive is dismissed. A grid's worth of decoded images is
+    /// memory the camera will want next, and the camera is the screen that
+    /// cannot afford to be slow.
+    func purgeImageCache() async
+
     /// Original bytes for sharing out of the app.
     func data(for identifier: String) async throws -> Data
 

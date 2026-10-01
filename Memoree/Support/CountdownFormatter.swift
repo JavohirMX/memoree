@@ -2,13 +2,15 @@ import SwiftUI
 
 /// Formats a duration as the `mm:ss` countdown Memoree displays.
 ///
-/// The countdown is rendered entirely on-device from `windowEnd - now`. This is
-/// exactly how production BeReal does it — there was never a server-side
-/// countdown field to copy, only a client-side render of `moment.endDate - now`.
+/// Counts down to the **reminder**, not to a closing window — and it is shown
+/// only when notifications are off, because then it is the sole way the user
+/// could learn when the moment was (ADR-024). Rendered entirely on-device from
+/// `momentStart - now`, exactly as production BeReal does it: there was never a
+/// server-side countdown field to copy.
 ///
-/// Minutes are not clamped to 59. A moment window is two minutes, but if this is
-/// ever used for a longer duration (an hourly reminder, say) `72:00` is more
-/// honest than silently rolling into `12:00`.
+/// Minutes are not clamped to 59. The default window is twelve hours wide, so
+/// `1:47:22` is the common case here and `72:00` is more honest than silently
+/// rolling into `12:00`.
 enum CountdownFormatter {
 
     /// - Parameter remaining: A non-negative interval in seconds. Negative
@@ -23,20 +25,5 @@ enum CountdownFormatter {
             return String(format: "%d:%02d:%02d", hours, minutes, seconds)
         }
         return String(format: "%02d:%02d", minutes, seconds)
-    }
-
-    /// Human-readable lateness, matching the tone of the late badge.
-    ///
-    /// `late 2h14m`, `late 14m`, `late 0m`. Whole days read as days, because a
-    /// streak broken six days ago should not display as "144h".
-    static func lateDescription(from interval: TimeInterval) -> String {
-        let total = max(0, Int(interval))
-        let days = total / 86400
-        let hours = (total % 86400) / 3600
-        let minutes = (total % 3600) / 60
-
-        if days > 0 { return "\(days)d" }
-        if hours > 0 { return "\(hours)h\(minutes)m" }
-        return "\(minutes)m"
     }
 }

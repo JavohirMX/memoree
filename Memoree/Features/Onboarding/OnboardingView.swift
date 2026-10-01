@@ -17,6 +17,15 @@ struct OnboardingView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var step: Step = .welcome
 
+    /// The window being edited, held locally while the step is on screen.
+    ///
+    /// `@State` rather than reading the store inside the `Binding`, because the
+    /// old inline version wrote to the `AppSettings` managed object on every
+    /// slider step. A SwiftData managed object mutated sixty times in a second
+    /// is a write sixty times in a second, and the slider's `get` read it back
+    /// mid-gesture — so the control was fighting the object it was editing.
+    @State private var draftWindow = TimeWindow.default
+
     enum Step: Int, CaseIterable {
         case welcome
         case notifications
@@ -81,7 +90,7 @@ struct OnboardingView: View {
             )
 
         case .window:
-            windowPicker
+            windowStep
         }
     }
 
@@ -112,71 +121,36 @@ struct OnboardingView: View {
     /// screen can be shown at all — asking someone to narrow the band that
     /// decides when they get asked is a real preference, and it would be a
     /// strange thing to collect if it had no effect.
-    private var windowPicker: some View {
-        let settings = environment.momentStore.settings()
-        return VStack(spacing: Theme.Spacing.l) {
+    ///
+    /// The picker itself is `WindowPicker`, shared with Settings. The reason it
+    /// can be shared is that on first run there is nothing to re-derive: no
+    /// `DayRecord` exists yet, so writing the setting *is* the whole operation.
+    /// The Settings copy of the same control has to do considerably more, and
+    /// the comment there explains what.
+    private var windowStep: some View {
+        VStack(spacing: Theme.Spacing.l) {
             stepBody(
                 title: "Your window",
                 body: "Memoree picks a random moment inside this, each day."
             )
 
-            VStack(spacing: Theme.Spacing.m) {
-                HStack {
-                    Text("From")
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                    Spacer()
-                    Text(Self.clock.string(from: settings.windowStartMinutes))
-                        .font(Theme.Typography.body)
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.Color.textPrimary)
-                }
-                Slider(
-                    value: Binding(
-                        get: { Double(settings.windowStartMinutes) },
-                        set: { newValue in
-                            let minutes = Int(newValue)
-                            guard minutes < settings.windowEndMinutes else { return }
-                            settings.windowStartMinutes = minutes
-                            try? environment.momentStore.saveSettings(settings)
-                        }
-                    ),
-                    in: 0...Double(max(60, settings.windowEndMinutes - 60)),
-                    step: 30
-                )
-                .tint(Theme.Color.textPrimary)
+            WindowPicker(
+                window: $draftWindow,
+                onCommit: { window in await environment.updateWindow(window) }
+            )
 
-                HStack {
-                    Text("Until")
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                    Spacer()
-                    Text(Self.clock.string(from: settings.windowEndMinutes))
-                        .font(Theme.Typography.body)
-                        .monospacedDigit()
-                        .foregroundStyle(Theme.Color.textPrimary)
-                }
-                Slider(
-                    value: Binding(
-                        get: { Double(settings.windowEndMinutes) },
-                        set: { newValue in
-                            let minutes = Int(newValue)
-                            guard minutes > settings.windowStartMinutes else { return }
-                            settings.windowEndMinutes = min(minutes, 24 * 60)
-                            try? environment.momentStore.saveSettings(settings)
-                        }
-                    ),
-                    in: Double(min(24 * 60, settings.windowStartMinutes + 60))...Double(24 * 60),
-                    step: 30
-                )
-                .tint(Theme.Color.textPrimary)
-            }
-
-            Text("Wider is more random. You can change this later.")
+            // True now, and the reason it is here. The window is the only thing
+            // that decides when the phone interrupts you, so being able to move
+            // it afterwards is the difference between a preference and a
+            // one-time question. The sentence was previously a promise the app
+            // could not keep — there was no Settings screen to keep it in, and
+            // shipping a window picker without this line is how that came about.
+            Text("Wider is more random. You can change this later in Settings.")
                 .font(Theme.Typography.metadata)
                 .foregroundStyle(Theme.Color.textTertiary)
                 .multilineTextAlignment(.center)
         }
+        .onAppear { draftWindow = environment.momentStore.settings().timeWindow }
     }
 
     // MARK: - Footer
@@ -219,6 +193,17 @@ struct OnboardingView: View {
         settings.onboardingComplete = true
         try? environment.momentStore.saveSettings(settings)
 
+        // The window the user actually chose, on first run.
+        //
+        // `updateWindow` rather than a direct write, so onboarding and Settings
+        // go through one path. On first run there is nothing to re-derive, so
+        // this is close to a plain assignment — but "close to" is the point. The
+        // Settings version of this control has to discard 44 `DayRecord`s and
+        // rebuild the notification horizon to have any effect at all, and a
+        // second code path that skips that step is a bug waiting for the first
+        // person to reach Settings.
+        Task { await environment.updateWindow(draftWindow) }
+
         // Schedule only after the prompt, so the horizon is not thrown away by
         // a later authorisation.
         Task { await environment.refreshHorizonIfNeeded(force: true) }
@@ -238,24 +223,5 @@ struct OnboardingView: View {
 
     private func requestCameraPermission() async {
         _ = await AVCaptureDevice.requestAccess(for: .video)
-    }
-
-    // MARK: - Formatting
-
-    private static let clock: DateComponentsFormatter = {
-        let formatter = DateComponentsFormatter()
-        formatter.allowedUnits = [.hour, .minute]
-        formatter.zeroFormattingBehavior = .pad
-        return formatter
-    }()
-}
-
-extension DateComponentsFormatter {
-    /// Formats minutes-from-midnight as a clock time.
-    func string(from minutes: Int) -> String {
-        var components = DateComponents()
-        components.hour = minutes / 60
-        components.minute = minutes % 60
-        return string(from: components) ?? "00:00"
     }
 }
