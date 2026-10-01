@@ -91,6 +91,17 @@ protocol PhotoLibraryService: Sendable {
 
     /// Ensures the optional `Memoree` album exists and returns its identifier.
     func ensureAlbum(named name: String) async throws -> String?
+
+    /// Adds already-created assets to a named album, creating it if needed.
+    ///
+    /// Separate from `saveMomentPair` because it has to run *after* the assets
+    /// exist: adding to a collection references assets by identifier, so the two
+    /// cannot share a `performChanges` block. The consequence is that an album
+    /// failure happens after the photographs are safely in the library, which is
+    /// why the caller treats it as a note rather than a failure — see
+    /// `CameraViewModel.fileIntoAlbumIfAsked`.
+    @discardableResult
+    func addAssets(_ identifiers: [String], toAlbumNamed name: String) async throws -> String?
 }
 
 /// Coordinates attached to a moment. Never resolved to a place name.

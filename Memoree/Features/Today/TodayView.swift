@@ -513,6 +513,16 @@ struct TodayView: View {
                     value: "\(model.summary.totalMoments)"
                 )
             }
+            // Reported, in secondary grey rather than amber. The photographs are
+            // in the user's library and the archive knows about them — nothing has
+            // been lost — so this is a note about an organisation failing, not a
+            // permission the user declined. Amber has exactly one job (ADR-025).
+            if let albumFailure = model.albumFailure {
+                Text(albumFailure)
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
         }
         // The whole footer is hidden when there is nothing to say — no moments
         // and no missing permission.
@@ -525,6 +535,11 @@ struct TodayView: View {
         // AGENTS.md §6). The hook now lives in Settings' diagnostics section,
         // where being visible is the entire point, and this is a layout decision
         // about rows only.
-        .opacity(model.summary.totalMoments > 0 || !model.notificationsAuthorized ? 1 : 0)
+        .opacity(
+            model.summary.totalMoments > 0
+                || !model.notificationsAuthorized
+                || model.albumFailure != nil
+                ? 1 : 0
+        )
     }
 }

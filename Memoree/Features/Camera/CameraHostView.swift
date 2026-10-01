@@ -29,7 +29,27 @@ struct CameraHostView: View {
                 service: environment.captureService,
                 photoLibrary: environment.photoLibrary,
                 haptics: environment.haptics,
-                record: environment.makeMomentRecorder()
+                record: environment.makeMomentRecorder(),
+                // Read per commit rather than captured once, so the Settings
+                // toggle applies to a moment captured before it was flipped as
+                // well as one captured after.
+                //
+                // **`MainActor.run` rather than a bare `await`.** `MomentStore` is
+                // `@MainActor` and returns a SwiftData model, which is not
+                // `Sendable` — so `await environment.momentStore.settings()` hops
+                // to the main actor and then tries to hand an `AppSettings` back
+                // across, which Swift 6 refuses. Reading the `Bool` *inside* the hop
+                // means only a `Bool` crosses, which is the whole reason this is a
+                // `Bool` and not a settings object.
+                shouldFileIntoAlbum: {
+                    await MainActor.run {
+                        environment.momentStore.settings().saveToAlbum
+                    }
+                },
+                // Reported to the environment rather than only to the camera
+                // screen, because that screen is gone by the time anyone could
+                // act on it. Today reads it back once on its next reload.
+                reportAlbumFailure: { environment.noteAlbumFailure($0) }
             )
             self.model = created
         }

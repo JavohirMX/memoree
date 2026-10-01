@@ -77,6 +77,25 @@ final class CameraViewModel {
 
     private let service: CapturePhotoService
     private let haptics: HapticFeedback
+
+    /// Whether the user wants each moment filed into the `Memoree` album.
+    ///
+    /// A closure and not a `Bool`, so the setting is read at *commit* time rather
+    /// than at construction — a moment captured with the toggle off and committed
+    /// after it was turned on should be filed, and the reverse should not. Held
+    /// as `nil` when the screen was built without one, which is what the camera
+    /// tests do and what makes "no album preference" expressible at all.
+    private let shouldFileIntoAlbum: (@Sendable () async -> Bool)?
+
+    /// Where an album failure goes.
+    private let reportAlbumFailure: (@Sendable (String) -> Void)?
+
+    /// Set when the photographs were saved but the album add did not happen.
+    ///
+    /// Surfaced by the review screen and on the Today footer rather than swallowed.
+    /// The photographs are safe either way; the user asked for something that did
+    /// not occur and deserves to be told.
+    private(set) var albumFailure: String?
     private let photoLibrary: PhotoLibraryService
 
     /// Persists an accepted pair as a moment.
@@ -133,6 +152,11 @@ final class CameraViewModel {
         photoLibrary: PhotoLibraryService,
         haptics: HapticFeedback = InMemoryHapticFeedback(),
         record: MomentRecorder? = nil,
+        shouldFileIntoAlbum: (@Sendable () async -> Bool)? = nil,
+        /// Where to report a failed album add. Separate from
+        /// `shouldFileIntoAlbum` so a test can assert the album behaviour without
+        /// also needing somewhere to put the failure.
+        reportAlbumFailure: (@Sendable (String) -> Void)? = nil,
         chooseFirstCamera: (() -> CameraPosition)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
@@ -140,6 +164,8 @@ final class CameraViewModel {
         self.photoLibrary = photoLibrary
         self.haptics = haptics
         self.record = record
+        self.shouldFileIntoAlbum = shouldFileIntoAlbum
+        self.reportAlbumFailure = reportAlbumFailure
         self.previewLayer = service.previewLayer
         self.chooseFirstCamera = chooseFirstCamera ?? {
             CameraPosition.allCases.randomElement() ?? .back
@@ -359,13 +385,63 @@ final class CameraViewModel {
             // should be saying that — and sometimes the failure is a permission
             // they declined an hour ago.
             phase = Self.phase(for: error)
+            return
+        }
+
+        // **After** the moment is recorded, and outside the `do`.
+        //
+        // Ordering is the whole design. The commit above is what the user asked
+        // for and it must not be able to fail because an *organisation* of the
+        // photographs failed; an album is a convenience. Putting this last also
+        // means a failed commit does not add assets to an album for a moment that
+        // was never written, which would leave a duplicate pair in the user's
+        // library that the archive does not know about (ADR-004).
+        await fileIntoAlbumIfAsked()
+    }
+
+    /// Files the pair into the `Memoree` album, if the user asked for that.
+    ///
+    /// **Off by default and reads the setting through a closure rather than the
+    /// store**, because `CameraViewModel` has no persistence and must not have one
+    /// (`AGENTS.md` §3: Features holds views and view models). The Settings
+    /// toggle is therefore a live dependency, not a snapshot — the album can be
+    /// turned on or off between moments without restarting anything.
+    ///
+    /// ## Why this cannot fail the commit
+    ///
+    /// The photographs are **already saved** by the time this runs, and they are
+    /// the thing the user asked for. An album is an organisation of them. So a
+    /// failure here is recorded and reported and the moment still commits —
+    /// otherwise a full disk or a deleted album would cost the user the actual
+    /// photographs to save a convenience.
+    ///
+    /// The counter-argument — "the user turned on a toggle and it silently did
+    /// nothing" — is answered by `albumFailure` surfacing on the Today footer and
+    /// in Settings, not by risking the write.
+    private func fileIntoAlbumIfAsked() async {
+        guard albumFailure == nil, await shouldFileIntoAlbum?() == true, let assets = writtenAssets
+        else { return }
+
+        do {
+            try await photoLibrary.addAssets(
+                [assets.back, assets.front],
+                toAlbumNamed: Self.albumName
+            )
+        } catch {
+            let message = "The photographs were saved, but they could not be added "
+                + "to the \(Self.albumName) album."
+            albumFailure = message
+            reportAlbumFailure?(message)
         }
     }
 
-    /// Hands the finished pair to the archive.
+    /// The album's name.
     ///
-    /// A no-op when no recorder was injected, which is what makes the camera
-    /// screen usable — and testable — without a persistence layer.
+    /// A constant rather than something the user can rename: Memoree does not
+    /// have accounts, settings sync, or a place to put a name, and a renameable
+    /// album whose name lived only on the device would be one more thing to lose.
+    static let albumName = "Memoree"
+
     private func recordMoment(_ pair: CapturedPair) async throws {
         guard let record, let assets = writtenAssets else { return }
         try await record(

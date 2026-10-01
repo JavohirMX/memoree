@@ -223,6 +223,25 @@ final class AppEnvironment {
         pendingCameraRequest = true
     }
 
+    /// A note about the last moment that could not be filed into the album.
+    ///
+    /// **Stored here and read once**, because the camera screen has already been
+    /// dismissed by the time anyone could react to it, and there is no other
+    /// object alive that outlives both. Consuming it clears it, so a footer that
+    /// reports it does not report it forever.
+    private var pendingAlbumFailure: String?
+
+    /// Records a failure from the capture screen's album add.
+    func noteAlbumFailure(_ message: String) {
+        pendingAlbumFailure = message
+    }
+
+    /// Takes the pending album failure, if any, and clears it.
+    func consumeAlbumFailure() -> String? {
+        defer { pendingAlbumFailure = nil }
+        return pendingAlbumFailure
+    }
+
     func consumeCameraRequest() {
         pendingCameraRequest = false
     }

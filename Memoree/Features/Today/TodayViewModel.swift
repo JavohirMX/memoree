@@ -53,6 +53,14 @@ final class TodayViewModel {
     /// Diagnostics for the Settings screen: how many notifications are pending.
     private(set) var pendingNotificationCount = 0
 
+    /// A recent moment was saved but not filed into the album.
+    ///
+    /// **Surfaced on Today rather than only in Settings** because the user has to
+    /// open the camera to trigger it, and by the time they reach Settings the
+    /// moment is over. The photographs are safe; what failed was an organisation
+    /// of them, and saying so once here costs one line.
+    private(set) var albumFailure: String?
+
     /// Set while the camera is unavailable in this build phase.
     private(set) var cameraAvailable = false
 
@@ -66,6 +74,29 @@ final class TodayViewModel {
     private(set) var configuredWindow: TimeWindow
 
     private let environment: AppEnvironment
+
+    /// Whether to file each moment into a `Memoree` album, for the capture screen.
+    ///
+    /// **Lives on the environment rather than being passed into
+    /// `CameraViewModel`.** The view model holds no persistence and must not
+    /// (`AGENTS.md` §3: Features holds views and view models), and `MomentStore` is
+    /// `@MainActor` — so a `@Sendable` closure capturing it cannot *return* a
+    /// `AppSettings` model, because that is not `Sendable`. A `Bool` read on the
+    /// main actor is fine, and it is the only thing the camera screen wanted.
+    ///
+    /// Reading it per commit rather than once at construction is deliberate: the
+    /// preference can be flipped between moments, and a value snapshotted when the
+    /// camera screen was built would file today's moment according to a setting
+    /// from before the user changed it.
+    func shouldFileIntoAlbum() async -> Bool {
+        environment.momentStore.settings().saveToAlbum
+    }
+
+    /// Where the capture screen reports an album failure it could not surface
+    /// itself, because it is already dismissed by then.
+    func reportAlbumFailure(_ message: String) {
+        environment.noteAlbumFailure(message)
+    }
 
     /// The clock.
     ///
@@ -212,6 +243,10 @@ final class TodayViewModel {
         configuredWindow = environment.momentStore.settings().timeWindow
         notificationsAuthorized = await refreshAuthorization()
         pendingNotificationCount = await environment.notificationService.pendingCount()
+        // Cleared on every reload: the album may have been fixed by the user, or
+        // the add may have been turned off in Settings, and a footer that reports
+        // a problem the user has already resolved is noise.
+        albumFailure = environment.consumeAlbumFailure()
         await loadTodayImages()
     }
 

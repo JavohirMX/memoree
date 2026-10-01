@@ -35,12 +35,28 @@ struct SettingsView: View {
     /// backgrounded, and this screen is the one place that can say so.
     @State private var remindersAuthorized = false
 
+    /// Whether to also file each moment into a `Memoree` album.
+    ///
+    /// `@State` rather than read straight from the store, because the toggle has
+    /// to reflect what was actually *written* — and the album add is a second
+    /// `performChanges` after the assets exist, which can fail on its own. A
+    /// toggle that reads the stored value would spring back to off after a
+    /// failure with nothing on screen to say why.
+    @State private var saveToAlbum = false
+
+    /// Set when the album add failed after the photographs were already saved.
+    ///
+    /// Reported rather than swallowed: the photographs are safe, which is the part
+    /// that matters, but the user asked for something that did not happen.
+    @State private var albumFailure: String?
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     windowSection
                     remindersSection
+                    photosSection
                     permanenceSection
                     diagnosticsSection
                 }
@@ -188,6 +204,53 @@ struct SettingsView: View {
 
     // MARK: - Diagnostics
 
+    // MARK: - Photos
+
+    /// Whether Memoree also files each moment into an album of its own.
+    ///
+    /// **Off by default, and the default is the point.** The photographs are
+    /// already in the user's library — that is the whole promise (ADR-001, no
+    /// server, no app storage). A second copy in a Memoree album is a
+    /// convenience for scrolling back, and it is the user's Photos library
+    /// getting one more album they did not ask for. So the answer is no until
+    /// someone says yes.
+    ///
+    /// **Turning it off never deletes the album.** ADR-008 forbids reaching into
+    /// the library to remove anything, and an album Memoree created is now the
+    /// user's to keep or delete themselves. A toggle that silently deleted things
+    /// would be the single worst control in the app.
+    private var photosSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            Text("Photos")
+                .font(Theme.Typography.screenTitle)
+                .foregroundStyle(Theme.Color.textPrimary)
+
+            SettingsRow(
+                title: "Keep a \(CameraViewModel.albumName) album",
+                subtitle: "Also file each moment into an album alongside your "
+                    + "library. Turning this off never deletes anything.",
+                control: {
+                    Toggle(
+                        "",
+                        // Not `$saveToAlbum` directly: the toggle has to write
+                        // through to the store, or the value survives only until
+                        // the next `reload()`.
+                        isOn: Binding(
+                            get: { saveToAlbum },
+                            set: { enabled in
+                                saveToAlbum = enabled
+                                applyAlbumPreference(enabled)
+                            }
+                        )
+                    )
+                    .labelsHidden()
+                }
+            )
+        }
+    }
+
+    // MARK: - Diagnostics
+
     /// Facts about what the app has scheduled, and the one recovery hook worth
     /// being able to reach.
     ///
@@ -225,9 +288,25 @@ struct SettingsView: View {
 
     private func reload() async {
         window = environment.momentStore.settings().timeWindow
+        saveToAlbum = environment.momentStore.settings().saveToAlbum
         remindersAuthorized = await environment.notificationService
             .authorizationStatus().willDeliver
         pendingCount = await environment.notificationService.pendingCount()
+    }
+
+    /// Writes the album preference, and nothing else.
+    ///
+    /// **No album is created here, and none is deleted.** `albumCreationAttempted`
+    /// is deliberately left alone: it guards against re-creating an album the user
+    /// deleted themselves, and creating an empty album the moment somebody visits
+    /// Settings to look at the toggle would be the app littering their library
+    /// with a folder it has not put anything in. The album appears when the first
+    /// moment is actually filed into it.
+    private func applyAlbumPreference(_ enabled: Bool) {
+        let settings = environment.momentStore.settings()
+        settings.saveToAlbum = enabled
+        try? environment.momentStore.saveSettings(settings)
+        if enabled { albumFailure = nil }
     }
 
     /// Applies a new window and reports whether anything moved.

@@ -62,6 +62,9 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
     var createdAlbums: [String] { lock.withLock { state.albumCreations } }
     var didAttemptAlbumCreation: Bool { lock.withLock { state.albumCreationAttempted } }
     func albumMembers(named name: String) -> [String] { lock.withLock { state.albumMembers[name] ?? [] } }
+    /// Every pair written, in order. A count is not enough to assert *which*
+    /// assets were filed into an album.
+    var savedPairs: [SavedAssetPair] { lock.withLock { state.pairs } }
     var latestPair: SavedAssetPair? { lock.withLock { state.pairs.last } }
     var latestLocation: PhotoLocation?? { lock.withLock { state.locations.last } }
 
@@ -180,19 +183,48 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
     }
 
     func ensureAlbum(named name: String) async throws -> String? {
-        lock.withLock {
-            state.albumCreationAttempted = true
-            if !state.albumCreations.contains(name) {
-                state.albumCreations.append(name)
-                state.albumMembers[name] = []
-            }
-            return "album-\(name)"
-        }
+        lock.withLock { ensureAlbumSynchronously(named: name) }
     }
 
     /// Test-only: record album membership without a real PhotoKit collection.
     func record(assets identifiers: [String], intoAlbumNamed name: String) {
         lock.withLock { state.albumMembers[name, default: []].append(contentsOf: identifiers) }
+    }
+
+    @discardableResult
+    func addAssets(_ identifiers: [String], toAlbumNamed name: String) async throws -> String? {
+        guard !identifiers.isEmpty else { return nil }
+
+        return try lock.withLock {
+            // Mirrors the real library's one check that matters: every identifier
+            // has to resolve to an asset that exists. Adding a phantom would
+            // silently produce an album with a hole in it.
+            let known = Set(state.pairs.flatMap { [$0.back, $0.front] })
+            let missing = identifiers.filter { !known.contains($0) }
+            guard missing.isEmpty else {
+                throw LibraryError.assetMissing("one or more assets did not resolve")
+            }
+
+            let identifier = try ensureAlbumSynchronously(named: name)
+            state.albumMembers[name, default: []].append(contentsOf: identifiers)
+            return identifier
+        }
+    }
+
+    /// `ensureAlbum` without re-entering the lock.
+    ///
+    /// `NSLock` is not recursive, so the public `ensureAlbum(named:)` cannot be
+    /// called from inside `addAssets`'s `withLock`. Duplicating four lines beats
+    /// restructuring the whole type around a recursive lock, and the duplication
+    /// is the *identical* logic so the two cannot disagree about what "ensure"
+    /// means.
+    private func ensureAlbumSynchronously(named name: String) -> String {
+        state.albumCreationAttempted = true
+        if !state.albumCreations.contains(name) {
+            state.albumCreations.append(name)
+            state.albumMembers[name] = []
+        }
+        return "album-\(name)"
     }
 }
 
