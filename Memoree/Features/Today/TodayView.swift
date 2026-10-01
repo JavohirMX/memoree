@@ -46,13 +46,69 @@ struct TodayView: View {
         // wrapping each destination in its own `NavigationStack` is what gives
         // them a title and a dismiss button without inventing a hierarchy the
         // product does not have.
-        .sheet(isPresented: $isShowingSettings) {
+        // Settings is a **full-screen cover, not a sheet**, and the reason is
+        // one a screenshot settled.
+        //
+        // It shipped as a sheet and rendered as iOS presents sheets by default:
+        // the `.medium` detent, about half the screen. `.presentationDetents
+        // ([.large])` was tried in both places a modifier can go — on the
+        // `NavigationStack` inside `SettingsView`, and on the content at the
+        // `.sheet` — and was **silently ignored both times**. The drag indicator
+        // appeared and the sheet stayed at `.medium`, which is the worst kind of
+        // failure: evidence the modifier was applied, and no effect from it.
+        //
+        // Rather than keep fighting it, the screen was made what it actually is.
+        // Four sections of real content with a title and a Done button is a task,
+        // not a peek — and a full-screen cover has no detent to get wrong. It
+        // also matches the camera, which is already a full-screen cover, so there
+        // is one convention rather than two.
+        //
+        // The archive stays a sheet. A grid you flick through and dismiss is
+        // exactly what a sheet is for.
+        .fullScreenCover(isPresented: $isShowingSettings) {
             SettingsView()
                 .environment(environment)
         }
         .sheet(isPresented: $isShowingArchive) {
             ArchiveView()
                 .environment(environment)
+                // Explicit rather than left to the default, for the same reason
+                // as Settings: a grid you have to drag up to fill is a grid that
+                // looks broken.
+                .presentationDetents([.large])
+        }
+        .onAppear {
+            // Development affordance, DEBUG-only: open a screen at launch so its
+            // first frame can be looked at without a finger on the phone.
+            //
+            // Exists because the alternative is a blind screen. Two defects in
+            // this codebase were invisible to every test and obvious in a
+            // screenshot — a `.task` attached to a branch that only renders once
+            // its model exists (black screen, Phase 5), and a slider editing a
+            // SwiftData managed object mid-gesture. `simctl` cannot tap, so
+            // without this there is no way to see a new screen at all short of a
+            // human holding the device.
+            //
+            //   -MemoreeOpen archive
+            //   -MemoreeOpen settings
+            //
+            // The destination is the *next* argument, not part of this one: a
+            // command line is a list of separate strings, so
+            // `simctl launch … -MemoreeOpen archive` arrives as two entries and
+            // parsing the name out of the flag finds nothing. The first version
+            // did exactly that and silently did nothing, which is the worst
+            // possible failure for a diagnostic — it looks like the screen is
+            // broken rather than the flag.
+            let arguments = ProcessInfo.processInfo.arguments
+            guard let flag = arguments.firstIndex(of: "-MemoreeOpen"),
+                  arguments.indices.contains(flag + 1)
+            else { return }
+
+            switch arguments[flag + 1] {
+            case "archive": isShowingArchive = true
+            case "settings": isShowingSettings = true
+            default: break
+            }
         }
         // Reload when the camera closes, not when this view appears.
         //
@@ -417,24 +473,18 @@ struct TodayView: View {
                     value: "\(model.summary.totalMoments)"
                 )
             }
-
-            #if DEBUG
-            // The camera reset hook, reachable (TRD §5.5, AGENTS.md §6).
-            //
-            // `mediaServicesWereReset` is silent and lethal: no error, no
-            // callback, no log — the preview just freezes. It is also the most
-            // common cause of "my camera app froze" in the field. A recovery path
-            // only a test can reach is a recovery path nobody has watched work,
-            // so this goes through the real service rather than a fake. Debug
-            // builds only, so it cannot ship.
-            Button("Reset camera services") {
-                Task { await environment.simulateMediaServicesReset() }
-            }
-            .font(Theme.Typography.metadata)
-            .foregroundStyle(Theme.Color.textTertiary)
-            .padding(.top, Theme.Spacing.m)
-            #endif
         }
+        // The whole footer is hidden when there is nothing to say — no moments
+        // and no missing permission.
+        //
+        // **This used to hide a control rather than just rows.** The DEBUG camera
+        // reset button lived here, so on a fresh install with notifications
+        // granted the footer was at `opacity(0)` and the button was still there,
+        // still hit-testable, and invisible: a recovery hook guarding the camera's
+        // one silent failure that nobody could see or press (TRD §5.5,
+        // AGENTS.md §6). The hook now lives in Settings' diagnostics section,
+        // where being visible is the entire point, and this is a layout decision
+        // about rows only.
         .opacity(model.summary.totalMoments > 0 || !model.notificationsAuthorized ? 1 : 0)
     }
 }

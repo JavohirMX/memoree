@@ -805,6 +805,56 @@ is no UI test target in this project. Two options and neither is free: add a UI 
 synthetic rows and record a manual scroll. **Not yet done, and it is the only thing between this
 phase and closed.**
 
+### Progress as of 2026-10-01 (later) — the seeder, and three defects only a screenshot found
+
+`-MemoreeSeedMoments 500` now works, and the seeded archive renders: 500 rows, three across,
+3:4, lazily built, no hang. The rows carry **no asset identifiers on purpose** — seeding real
+photographs would write 500 pairs into the user's actual camera roll, and Memoree has add-only
+authorisation and can never clean them up (ADR-008).
+
+**Three defects that no test could have found, all in one afternoon of screenshotting.**
+
+- **Settings rendered at the `.medium` sheet detent**, about half the screen, with its last
+  section cut off mid-sentence. The view compiled, every string was present, and all 239 tests
+  passed. `.presentationDetents([.large])` was then tried in **both** places a modifier can go —
+  on the `NavigationStack` inside `SettingsView`, and on the content at the `.sheet` — and was
+  **silently ignored both times**. The drag indicator appeared, which is evidence the modifier
+  was applied, and the sheet stayed at `.medium`. A modifier that does nothing while showing
+  evidence of having been applied is worse than one that is obviously missing.
+
+  The fix was not another modifier. Settings is now a **`fullScreenCover`**, and the reasoning is
+  the design point rather than the workaround: four sections with a title and a Done button is a
+  *task*, not a peek, and a full-screen cover has no detent to get wrong. It also matches the
+  camera, so there is one convention instead of two. **The archive stays a sheet** — a grid you
+  flick through and dismiss is exactly what a sheet is for.
+
+- **Settings had no title and no dismiss button**, which is *why* it wanted to be a short sheet.
+  Built as a sheet with a drag handle and nothing else, a settings screen most people will not
+  find their way out of. Both were added.
+
+- **A black void filled the top half of Settings.** `CanvasBackground()` was a *sibling* of the
+  `ScrollView` rather than its background, so it claimed vertical space that only it wanted and
+  pushed the first section more than half way down the screen. As a `.background` it paints
+  behind the content and competes for nothing.
+
+**A second DEBUG affordance, for the same reason as the seeder.** `simctl` cannot tap, so a new
+screen cannot be *looked at* without a human holding a phone:
+
+```
+-MemoreeOpen archive
+-MemoreeOpen settings
+```
+
+The first version parsed the destination out of the flag's own string, and `simctl launch`
+delivers arguments as a list — so the flag silently did nothing. Which is the worst possible
+failure for a diagnostic: it looks like the screen is broken rather than the flag. It now reads
+the *next* argument.
+
+**Three defects in a row, none of them reachable by a test, and all three found in about ten
+minutes** with no device, no signing, and no twenty-minute wait. This is the strongest argument in
+the project for keeping a way to see a screen — and the strongest argument against treating the
+device run as the only instrument that counts.
+
 ---
 
 ## Phase 7 — Behind the Scenes · **last, and possibly cut**

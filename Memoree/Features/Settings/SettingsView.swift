@@ -37,8 +37,6 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack {
-            CanvasBackground()
-
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     windowSection
@@ -46,8 +44,31 @@ struct SettingsView: View {
                     permanenceSection
                     diagnosticsSection
                 }
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, Theme.Spacing.xl)
                 .padding(.vertical, Theme.Spacing.xl)
+            }
+            // The background as a `background`, not a sibling view.
+            //
+            // As a sibling — a `CanvasBackground()` above the `ScrollView` — the
+            // scroll view got a shorter proposal than the screen and left the
+            // first section floating more than half way down, with a black void
+            // above it. The background claimed space that only it wanted. As an
+            // actual background it is painted behind the content and competes
+            // for nothing.
+            .background(CanvasBackground())
+            .scrollIndicators(.hidden)
+            // A title and a Done button, because this screen was first built
+            // with neither — which is why it wanted to be a short sheet with a
+            // drag handle and nothing else. A settings screen you can only leave
+            // by flicking the sheet downward is a settings screen most people
+            // will not find their way out of.
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
             }
         }
         .task { await reload() }
