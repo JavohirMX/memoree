@@ -61,9 +61,29 @@ Nothing can be built until this is fixed, and the failure message is misleading.
 
 ---
 
-## Phase 1 — Models and the moment scheduler
+## Phase 1 — Models and the moment scheduler ✅
 
 **This is the highest-risk logic in the app. Do it before any UI.**
+
+> **Status: complete; the plan had simply never been marked.** The exit criterion
+> is met — a real notification is pending at a correct, plausible, stable time,
+> and it does not move across relaunches.
+>
+> One promised item was missing, and the reason it was missing is the useful
+> part: the **refill invariant test** could not be written, because the horizon
+> decision was interleaved with `UNUserNotificationCenter` calls and the system
+> centre cannot be subclassed into a test double. The decision was therefore
+> unobservable, and the test stayed unwritten through two refactors and four
+> phases. It is now `NotificationHorizonPlanner` — a pure function over value
+> types — with the invariant asserted at 0/19/20/64 pending.
+>
+> `NotificationService` also had no test double at all, and could not have had
+> one: `TodayViewModel` and `OnboardingView` both read the real status through
+> `as? UserNotificationService`, so a double was not merely absent but
+> *unreachable* — every test took the "not the production type" branch while
+> appearing to exercise the real path. The status is now
+> `NotificationAuthorization` on the protocol, matching the pattern the camera
+> and Photos services already use.
 
 | Task | Notes |
 | --- | --- |
@@ -371,6 +391,77 @@ First real feature slice. Everything below it is presentation.
 **Exit:** the complete daily loop works end to end on device. Capture, save, streak, archive
 entry. **Estimate:** 2 days.
 
+### Progress as of 2026-10-01 — the loop closes
+
+Phase 5's last task is done. The daily loop is end to end, and the reason
+this took as long as it did is the thing worth recording.
+
+**The loop did not close, and 163 tests passed throughout.**
+`MomentStore.record` had **zero call sites in the app target**. `commit()` wrote
+both photographs to Photos and stopped, so the archive row was never written,
+`todayMoment` was permanently `nil`, the `captured` and `capturedLate` states
+were unreachable, the streak never moved, and dismissing the camera returned you
+to "It's time". Every existing test was about a piece of that flow. None of them
+was about the flow.
+
+The seam is a `MomentRecorder` closure built in `AppEnvironment` — the one place
+that can see both the store and the derived window. `Services` may not import
+`Persistence` (AGENTS.md §3), so the camera screen cannot do this itself, and a
+`Services`-level protocol for it would have had no seam that improved anything.
+The window is resolved *inside* the recorder rather than passed in, because
+lateness is derived from it in `MomentStore.record` and the whole point of that
+derivation is that no caller can disagree with it. See **ADR-022** for the
+ordering, and for why the tidier-looking alternative is the one that lies.
+
+**Three defects found while closing it.**
+
+- **`retry()` destroyed the photographs.** It cleared `captured` on every
+  attempt, so a retryable *library write* failure threw both halves away — the
+  exact case its own test comment called "nothing was lost, the photographs are
+  still in memory". The test passed because it only asserted
+  `phase != .permissionDenied`, a statement about permissions rather than about
+  the pair. That test is now strengthened: it asserts the photographs survive,
+  and that the retry re-runs the commit rather than the shutter.
+- **The retry rule needed a flag, not just a memo.** `writtenAssets == nil`
+  cannot tell a failed *write* from a failed *capture* — both leave it `nil` with
+  the pair intact — and answering "re-arm the shutter" for a failed commit sends
+  the user back to the camera with photographs already on disk.
+- **The moment's time is the second shutter press, not the commit.** The pair is
+  two photographs up to half a minute apart while the user composes the selfie,
+  and it stops being a moment at the second one. Using commit time would make
+  lateness depend on how long someone stared at the review screen.
+
+**The Today screen now shows today's moment**, read back out of the user's own
+library — the first thing in the app that *reads* from Photos. Everything before
+it only writes. This is TRD §6.5's read path meeting its first consumer, and
+Phase 6 inherits it rather than rebuilding it. `MomentFacts` carries the two
+`PHAsset.localIdentifier`s, which is why it is the only `Sendable` boundary
+between SwiftData and a view.
+
+**Two testability defects that only surfaced once a test existed.**
+
+- `TodayViewModel` took a `now: Date` in its initialiser and then overwrote it
+  with `Date()` on the first `reload()`. A test could construct the exact state
+  it wanted and watch the real clock replace it a line later. It now holds a
+  clock, like `CameraViewModel` and `UserNotificationService` already did. A
+  test problem today; a correctness problem the moment a timezone changes.
+- `InMemoryPhotoLibraryService.image(for:)` returned `nil` unconditionally, with
+  a comment saying tests assert the call rather than the result. True while
+  nothing consumed it. The Today composite does, so every one of its states would
+  have been unreachable in a test — and a double that cannot exercise the code it
+  stands in for is a double that hides bugs.
+
+**Also closed here.** There was no `UNUserNotificationCenterDelegate` at all,
+which was two broken features rather than one missing one: iOS *suppresses* a
+notification arriving while the app is foreground, and a tap did nothing but
+launch the app. The tap is now routed in-process, with no URL scheme — there is
+none, deliberately. See TRD §9. Re-capture is confirmed before the tap, because
+add-only authorisation means the earlier pair is never removed. And the
+no-networking assertion that TRD §13 and AGENTS.md §10 have both promised now
+exists.
+
+**Still outstanding for this phase's exit criterion:** the device run.
+
 ### Progress as of 2026-09-30
 
 Done and verified on a running simulator:
@@ -387,6 +478,9 @@ Not yet: recording the moment itself. Phase 4 supplies the shutter and the camer
 `commit()` writes the pair to Photos — but `MomentStore.record`, the streak recompute, and the
 captured state in the UI all remain Phase 5 work. Until then a capture is saved to the library
 and not yet in the archive.
+
+> **Superseded 2026-10-01.** All three are done. See *Progress as of 2026-10-01 —
+> the loop closes* below.
 
 Observed on the simulator: today's moment derived at **21:54**, inside the 11:00–23:00
 default window, stable across launches, countdown ticking 1:27:52 → 1:26:46. That is

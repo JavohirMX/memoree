@@ -102,9 +102,17 @@ enum CameraPosition: String, Sendable, Equatable, CaseIterable {
     case back
     case front
 
-    /// The camera a moment opens with. BeReal records BTS on the primary
-    /// camera, and rear is the default primary (ADR-013).
-    static let `default`: CameraPosition = .back
+    /// **No `default` here on purpose.** There was one, documented as "the rear
+    /// is the default primary (ADR-013)", and ADR-021 superseded it: the camera
+    /// a moment opens on is random per moment, because fixing the order would
+    /// reintroduce exactly the predictability the rest of the design removes.
+    /// It was unused when that happened, but a `static let default` on an enum
+    /// is an invitation — a call site reaching for it would reinstate the old
+    /// behaviour without anybody noticing, and the comment would still be
+    /// quoting an ADR that no longer says it.
+    ///
+    /// The BTS question ADR-013 and ADR-021 both left open — "the primary
+    /// camera" is now whichever the user shot first — is a Phase 7 decision.
 
     var opposite: CameraPosition { self == .back ? .front : .back }
 }

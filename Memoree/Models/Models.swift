@@ -127,26 +127,6 @@ final class DayRecord {
     }
 }
 
-/// A streak value. Two rows exist: `id == "current"` and `id == "longest"`.
-@Model
-final class StreakRecord {
-
-    @Attribute(.unique) var id: String
-    var value: Int
-    var startedAt: Date?
-    var endedAt: Date?
-
-    static let currentKey = "current"
-    static let longestKey = "longest"
-
-    init(id: String, value: Int, startedAt: Date? = nil, endedAt: Date? = nil) {
-        self.id = id
-        self.value = value
-        self.startedAt = startedAt
-        self.endedAt = endedAt
-    }
-}
-
 /// Singleton settings row.
 ///
 /// Time window, capture duration, BTS preferences and album behaviour.
@@ -176,9 +156,14 @@ final class AppSettings {
         windowStartMinutes: Int = TimeWindow.default.startMinutes,
         windowEndMinutes: Int = TimeWindow.default.endMinutes,
         windowDuration: Int = 120,
-        btsEnabled: Bool = true,
+        // Off, because there is no recorder. Both defaulted to on and true,
+        // which made the settings row describe a feature the app does not have
+        // until Phase 7 — a toggle that says "save your Behind the Scenes clip"
+        // and then silently does nothing. Both become meaningful the moment
+        // `BTSRecorder` exists, and neither costs anything to flip first.
+        btsEnabled: Bool = false,
         btsDuration: Double = 5.0,
-        saveBTS: Bool = true,
+        saveBTS: Bool = false,
         saveToAlbum: Bool = false,
         albumCreationAttempted: Bool = false,
         onboardingComplete: Bool = false

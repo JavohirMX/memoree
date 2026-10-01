@@ -150,6 +150,25 @@ final class AppEnvironment {
         pendingCameraRequest = false
     }
 
+    // MARK: - Debug
+
+    /// Rebuilds the camera session from scratch.
+    ///
+    /// `mediaServicesWereReset` is the one failure in the camera stack that
+    /// raises no error, fires no delegate callback, and leaves no log line — the
+    /// preview simply freezes. It is also the most common cause of "my camera
+    /// app froze" in the field, which means the recovery path is the part of this
+    /// code that most needs exercising and least gets to (TRD §5.5, AGENTS.md §6).
+    ///
+    /// Reachable from a DEBUG-only row in the Today footer for exactly that
+    /// reason. The earlier version exposed `CameraViewModel
+    /// .simulateMediaServicesReset()` and **nothing called it** — a hook only a
+    /// test could reach, guarding a path no user would ever see. This one goes
+    /// through the real service, so what it exercises is the production rebuild.
+    func simulateMediaServicesReset() async {
+        try? await captureService.rebuildSession()
+    }
+
     // MARK: - Horizon maintenance
 
     /// Tops up the notification horizon and persists newly resolved days.

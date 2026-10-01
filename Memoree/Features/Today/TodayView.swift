@@ -312,6 +312,23 @@ struct TodayView: View {
                     value: "\(model.summary.totalMoments)"
                 )
             }
+
+            #if DEBUG
+            // The camera reset hook, reachable (TRD §5.5, AGENTS.md §6).
+            //
+            // `mediaServicesWereReset` is silent and lethal: no error, no
+            // callback, no log — the preview just freezes. It is also the most
+            // common cause of "my camera app froze" in the field. A recovery path
+            // only a test can reach is a recovery path nobody has watched work,
+            // so this goes through the real service rather than a fake. Debug
+            // builds only, so it cannot ship.
+            Button("Reset camera services") {
+                Task { await environment.simulateMediaServicesReset() }
+            }
+            .font(Theme.Typography.metadata)
+            .foregroundStyle(Theme.Color.textTertiary)
+            .padding(.top, Theme.Spacing.m)
+            #endif
         }
         .opacity(model.summary.totalMoments > 0 || !model.notificationsAuthorized ? 1 : 0)
     }

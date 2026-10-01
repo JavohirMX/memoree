@@ -120,7 +120,16 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     private let videoOutput = AVCaptureVideoDataOutput()
 
     private var activeInput: AVCaptureDeviceInput?
-    private var activePosition: CameraPosition = .default
+
+    /// The live camera, once a session is configured.
+    ///
+    /// Starts as `.back` and that is a placeholder, never an observation: it is
+    /// only read from paths that run after `startSession(on:)` has set it, and
+    /// from `map(_:at:)` during a configuration that is already failing. Making
+    /// it optional would mean guarding every read for nil in exchange for a
+    /// state the type cannot represent — there is no "no camera" moment inside a
+    /// running session, because one is attached before anything is captured.
+    private var activePosition: CameraPosition = .back
 
     /// Incremented on every input swap.
     ///
@@ -214,8 +223,8 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     state = .running
                     c.resume()
                 } catch {
-                    state = .failed(Self.map(error))
-                    c.resume(throwing: Self.map(error))
+                    state = .failed(Self.map(error, at: self.activePosition))
+                    c.resume(throwing: Self.map(error, at: self.activePosition))
                 }
             }
         }
@@ -267,8 +276,8 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     state = .running
                     c.resume()
                 } catch {
-                    state = .failed(Self.map(error))
-                    c.resume(throwing: Self.map(error))
+                    state = .failed(Self.map(error, at: self.activePosition))
+                    c.resume(throwing: Self.map(error, at: self.activePosition))
                 }
             }
         }
@@ -286,7 +295,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     try applyFormat(for: position)
                     c.resume()
                 } catch {
-                    c.resume(throwing: Self.map(error))
+                    c.resume(throwing: Self.map(error, at: self.activePosition))
                 }
             }
         }
@@ -577,7 +586,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     try applyFormat(for: position)
                     c.resume()
                 } catch {
-                    c.resume(throwing: Self.map(error))
+                    c.resume(throwing: Self.map(error, at: self.activePosition))
                 }
             }
         }
@@ -662,7 +671,16 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     // MARK: - Errors
 
     /// Normalises anything thrown inside the session into a `CaptureError`.
-    static func map(_ error: Error) -> CaptureError {
+    ///
+    /// - Parameter position: **The camera that was live when the error happened,
+    ///   and it is passed in rather than defaulted.** `deviceNotConnected` maps
+    ///   to `noInputAvailable(position)`, and an earlier version supplied
+    ///   `CameraPosition.default` — which reported a missing camera as a *rear*
+    ///   camera problem even when the front sensor had dropped. The two demand
+    ///   different responses, and the archive keeps whichever one this names
+    ///   forever. ADR-019 is the same mistake one layer down: a plausible default
+    ///   standing in for a fact the hardware alone knows.
+    static func map(_ error: Error, at position: CameraPosition) -> CaptureError {
         if let captureError = error as? CaptureError { return captureError }
 
         let nsError = error as NSError
@@ -674,7 +692,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         case AVError.deviceInUseByAnotherApplication.rawValue:
             return .inUseByAnotherApp
         case AVError.deviceNotConnected.rawValue:
-            return .noInputAvailable(.default)
+            return .noInputAvailable(position)
         default:
             return .configurationFailed(nsError.localizedDescription)
         }
@@ -744,7 +762,12 @@ private final class SingleShotPhotoDelegate: NSObject, AVCapturePhotoCaptureDele
         defer { completion() }
 
         if let error {
-            continuation.resume(throwing: CaptureSessionController.map(error))
+            // `position`, not the controller's live camera: this delegate was
+            // created for one specific capture, and by the time the error
+            // arrives that camera is the one that is actually broken.
+            continuation.resume(
+                throwing: CaptureSessionController.map(error, at: position)
+            )
             return
         }
         guard let data = photo.fileDataRepresentation() else {

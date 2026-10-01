@@ -720,6 +720,98 @@ BTS following the random order is a Phase 7 decision.
 
 ---
 
+## ADR-022 — Write to Photos first, record second, and never repeat a step that succeeded
+
+**Status:** Accepted · **Date:** 2026-10-01 · **Found by reading a shipped code path that did nothing**
+
+**Context.** A moment is two steps, and until now they were one:
+
+```
+capture → photoLibrary.saveMomentPair(…)   ← the whole of commit()
+```
+
+`MomentStore.record` had no call sites in the app target. The photographs
+reached the user's library and the archive was never written, so `todayMoment`
+was permanently `nil`, the `captured` and `capturedLate` states on the Today
+screen were unreachable, the streak never moved, and dismissing the camera
+returned the user to "It's time". 163 tests passed throughout — nothing
+asserted that a capture became a moment.
+
+Closing that gap raised a question the code had been avoiding by being
+incomplete: **which step comes first?**
+
+**Decision.** Photos first, then the archive row. And the two are tracked
+separately, so a failure in the second never re-runs the first.
+
+```swift
+writtenAssets = try await photoLibrary.saveMomentPair(…)   // step 1
+try await recordMoment(pair)                              // step 2
+```
+
+`CameraViewModel` memoises `writtenAssets`, and `retry()` re-runs only the step
+that failed.
+
+**Rationale for the ordering.** The two orderings fail differently, and one
+failure is recoverable while the other is a lie.
+
+- **Photos first** (chosen). A crash between the steps leaves two photographs
+  in a library the user already owns, made by an **add-only** permission that
+  physically cannot delete them. Inert. The user has two images they did not
+  intend to keep, in an app whose entire thesis is that those images are
+  theirs.
+- **Record first** (rejected). A crash between the steps leaves an archive row
+  whose `localIdentifier`s point at assets that do not exist. It renders as
+  "missing from Photos" — which tells the user a moment was saved when nothing
+  was. One is untidy; the other is a false statement, in exactly the direction
+  the user cannot check for themselves.
+
+Record-first looks tidier, because the moment exists before the riskier
+operation. That appeal is worth naming, because it is the argument for the
+version that lies.
+
+**Rationale for tracking the steps separately.** A commit is idempotent only if
+you know how far it got. Retrying the whole thing after step 2 fails writes a
+*second* pair to Photos — permanently, because add-only authorisation means
+Memoree can never take it back (ADR-008). A user who hit one flaky disk write
+would silently accumulate duplicate pairs with no way to clean them up.
+
+**Consequences.**
+- `retry()` no longer clears `captured`. An earlier version did, on every
+  attempt, which destroyed both photographs after a library write failed — the
+  one case where nothing had been lost. Its test only asserted
+  `phase != .permissionDenied`, which is a statement about permissions rather
+  than about the pair, so it passed throughout.
+- `isCommitting` exists because `writtenAssets == nil` cannot distinguish a
+  failed *write* from a failed *capture*: both leave it `nil` with the pair
+  intact, and answering "re-arm the shutter" for a failed commit sends the user
+  back to the camera with photographs already on disk.
+- `CommittedCapture.capturedAt` is the **second shutter press**, not the commit.
+  The pair is two photographs up to half a minute apart while the user composes
+  the selfie, and it stops being a moment at the second one. Using commit time
+  would make lateness depend on how long someone stared at the review screen.
+- The recorder is an injected closure, not a `Services` type. `Services` may not
+  import `Persistence` (AGENTS.md §3), so a service that needed the store could
+  not honestly exist; and a protocol with one production implementation and no
+  seam that improved anything is an abstraction, not a boundary.
+- **Re-capture orphans the previous pair, permanently, and says so.** The Today
+  screen confirms before the tap, naming the consequence. This is not damage —
+  it is what add-only authorisation means — and the user is entitled to know it
+  before they commit rather than discovering four assets later.
+
+**Alternatives rejected.** Record first (above). Retrying the whole commit and
+accepting duplicates — a photo library that silently doubles is worse than a
+moment that needs two taps. Deleting the first pair on a failed record, which
+add-only authorisation cannot do and which would reverse ADR-008 if it could.
+Persisting a "pending" row and reconciling it on launch: a reconciliation pass
+running on every launch to fix a failure that a boolean already fixes.
+
+**Reversal trigger.** If Memoree ever moved off add-only authorisation — a
+reversal of ADR-008 in its own right — the orphan becomes cleanable and the
+confirmation copy should change with it. Nothing about the *ordering* depends on
+the permission level, so that alone would not reopen this.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

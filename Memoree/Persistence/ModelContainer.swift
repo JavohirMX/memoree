@@ -11,11 +11,23 @@ enum Persistence {
     /// Support directory, excluded from iCloud backup by the URL resource value
     /// below — moment metadata is device-local by design (ADR-001), and
     /// replicating it would quietly become a sync mechanism.
+    ///
+    /// ## `StreakRecord` used to be here
+    ///
+    /// A stored `current` and `longest`, never written and never read. It
+    /// contradicted TRD §7, which recomputes the streak on every read precisely
+    /// because "a stored counter is one more thing that can drift out of
+    /// agreement with the archive" — and it was still a live SwiftData model,
+    /// which means it still owned a table and still appeared in every migration
+    /// check. A registered-but-unused model is not free.
+    ///
+    /// Removing a model from a schema is a **destructive migration**: existing
+    /// stores are reset. Free before a release, and worth stating rather than
+    /// discovering after someone has an archive worth keeping.
     static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
         let schema = Schema([
             Moment.self,
             DayRecord.self,
-            StreakRecord.self,
             AppSettings.self,
         ])
 

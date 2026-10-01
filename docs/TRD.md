@@ -614,12 +614,56 @@ plagues this kind of UI.
 
 ## 9. Notification handling
 
-`MemoreeApp` registers `UNUserNotificationCenterDelegate` and, in
-`userNotificationCenter(_:willPresent:withCompletionHandler:)`, returns
+`MemoreeApp` registers `UNUserNotificationCenterDelegate` via
+`@UIApplicationDelegateAdaptor`, and in
+`userNotificationCenter(_:willPresent:withCompletionHandler:)` returns
 `[.banner, .sound]` so tapping is not required.
 
-Deep link: notification category `MOMENT` with no action buttons. Tapping foregrounds the app
-into the camera, because the tap *is* the intent.
+**The delegate is not optional, and its absence was two separate bugs.** Without
+a delegate, iOS *suppresses* a notification arriving while the app is in the
+foreground — the user is looking at the screen the reminder is meant to
+interrupt, and nothing appears. Without `didReceive`, tapping a reminder only
+launches the app, discarding the intent that made them tap. The ritual's one
+trigger silently degraded to "works if you happen to be elsewhere".
+
+Deep link: notification category `MOMENT` with no action buttons. Tapping
+foregrounds the app into the camera, because the tap *is* the intent.
+
+**How the tap is routed.** There is no URL scheme and no universal link —
+`Info.plist` registers neither, deliberately, because Memoree makes no network
+calls (AGENTS.md §2.1). So the tap is delivered in-process: the delegate raises a
+flag on `AppEnvironment` and `TodayView` watches it.
+
+- The flag is checked on appear **and** on change. A cold launch delivers the tap
+  before `TodayView` has registered an observer, and `.onChange` only fires for
+  changes that happen after it exists.
+- It is consumed once. `TodayView` reappears every time the camera is dismissed,
+  and a tap from twenty minutes ago must not re-open the camera on the next
+  visit.
+- Neither the delegate nor the environment is a singleton. The delegate is owned
+  by the property wrapper and handed the one closure it needs.
+- `UIApplicationDelegate` is main-actor isolated and
+  `UNUserNotificationCenterDelegate` is not, so conforming to both crosses an
+  isolation boundary. The two callbacks are `nonisolated` — which the system
+  genuinely requires — and the handler they forward to lives in a lock-guarded
+  box rather than on the main-actor instance. That is what makes the annotation
+  honest instead of merely silencing the compiler.
+
+**Opening the camera is not gated on the window.** A stale reminder tapped hours
+late opens the camera regardless, and `MomentState.allowsCapture` decides whether
+a shutter is offered. Refusing to open it would be the worse answer: the user
+tapped because they wanted to photograph something, and "late" is a supported
+state (F9, ADR-009), not an error.
+
+**The horizon decision is pure and separately tested.** `UNUserNotificationCenter`
+is a thin shell that reports what is pending and does what it is told;
+`NotificationHorizonPlanner` decides what to schedule, from value types alone.
+This split exists because the decision is otherwise **unobservable** — the system
+centre cannot be subclassed into a test double — which is why Phase 1's refill
+invariant test was never written and stayed unwritten through two refactors.
+The invariant is at 0/19/20/64 pending, and includes the one that matters most:
+above 64, iOS drops adds silently and the user simply stops being reminded, with
+nothing thrown and nothing logged.
 
 If notifications are denied, `scheduled` and `open` states are still reachable — the Today
 screen shows the countdown and the CTA. The ritual degrades; it does not die. This is the
