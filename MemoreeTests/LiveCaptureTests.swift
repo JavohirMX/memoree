@@ -224,9 +224,26 @@ struct LiveCaptureTests {
         let composePause: Duration = .milliseconds(700)
         var failures: [String] = []
 
+        // **One** service for all twenty iterations.
+        //
+        // This used to construct a `SequentialCaptureService` inside the loop,
+        // which meant twenty `AVCaptureSession` allocations — and constructing
+        // one is not free: `AVCaptureSession.init()` makes a *synchronous* XPC
+        // round-trip to the capture daemon (`FigCaptureSessionRemoteCreate`).
+        // Twenty of those in a background test process tripped the watchdog and
+        // the app was SIGKILLed: `0x8BADF00D`, "Failed to terminate gracefully
+        // after 5.0s", main thread parked inside `_createFigCaptureSession`.
+        //
+        // The important part is that this was never something the app does.
+        // `AppEnvironment.captureService` is lazy and cached, so the whole app
+        // has exactly one session for its lifetime; what varies is the camera
+        // screen being opened and closed. Reusing one service here is therefore
+        // not a way to dodge a crash — it is the only shape the product ever
+        // runs in, and the old loop was testing something no user could reach.
+        let service = SequentialCaptureService()
+
         for moment in 1...20 {
             do {
-                let service = SequentialCaptureService()
                 let opening = CameraPosition.allCases[moment % 2]
                 try await service.startSession(on: opening)
 
@@ -254,6 +271,8 @@ struct LiveCaptureTests {
                 print("CAPTURE moment \(moment)/20 FAILED: \(error)")
             }
         }
+
+        await service.stopSession()
 
         // Printed unconditionally on success too, so a green run carries its
         // own evidence rather than relying on someone remembering to look.

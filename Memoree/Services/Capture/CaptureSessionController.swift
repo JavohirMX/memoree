@@ -483,18 +483,41 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         // would not be the one that was asked for (TRD §5.3).
         session.sessionPreset = .inputPriority
 
-        guard session.canAddOutput(photoOutput) else {
-            throw CaptureError.configurationFailed("photo output rejected")
-        }
-        session.addOutput(photoOutput)
-
-        guard session.canAddOutput(videoOutput) else {
-            throw CaptureError.configurationFailed("frame-signal output rejected")
-        }
-        session.addOutput(videoOutput)
+        // Outputs are attached **once** and left alone.
+        //
+        // `stopSession` stops the session; it does not remove outputs, and
+        // `AppEnvironment.captureService` is a single cached instance for the
+        // life of the process. So this method runs again the *second* time the
+        // camera screen is opened — and by then both outputs are already
+        // attached, at which point `canAddOutput` returns **false** and the
+        // guard below threw `configurationFailed("photo output rejected")`.
+        //
+        // The consequence in the field was that the camera worked exactly once
+        // per app launch. A 20-iteration device loop found it on iteration 2;
+        // no simulator test could, because the simulator has no camera and never
+        // re-enters this path. The inputs were already handled correctly —
+        // `attachInput` removes the outgoing one — so the asymmetry was
+        // invisible until somebody counted sessions.
+        try attach(photoOutput, rejection: "photo output rejected")
+        try attach(videoOutput, rejection: "frame-signal output rejected")
 
         try attachInput(at: position)
         try applyFormat(for: activePosition)
+    }
+
+    /// Adds `output` to the session, unless it is already there.
+    ///
+    /// `session.outputs` is `[Any]`, so the containment check is an identity
+    /// comparison rather than `Equatable` — these are the same objects, not
+    /// equal values.
+    private func attach(_ output: AVCaptureOutput, rejection: String) throws {
+        let alreadyAttached = session.outputs.contains { ($0 as AnyObject) === output }
+        guard !alreadyAttached else { return }
+
+        guard session.canAddOutput(output) else {
+            throw CaptureError.configurationFailed(rejection)
+        }
+        session.addOutput(output)
     }
 
     /// Opens and attaches the input for `position`. Must run on `queue`.
@@ -685,7 +708,14 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
         let nsError = error as NSError
         guard nsError.domain == AVFoundationErrorDomain else {
-            return .configurationFailed(nsError.localizedDescription)
+            // The domain and code are kept, not just the prose. "Cannot Record"
+            // is the localized description Apple chose for more than one
+            // underlying error, so a sentence that could have come from three
+            // different causes is a sentence you cannot act on. The numbers can
+            // be looked up.
+            return .configurationFailed(
+                "\(nsError.localizedDescription) [\(nsError.domain) \(nsError.code)]"
+            )
         }
 
         switch nsError.code {

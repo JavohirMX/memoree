@@ -3,6 +3,20 @@ import Testing
 
 @testable import Memoree
 
+/// Whether the repository is reachable from the process running these tests.
+///
+/// True on a simulator, where `#filePath` names a real directory on the build
+/// machine. False on hardware, where it names a path the device has never heard
+/// of. See the suite's documentation for why that is a property of the check and
+/// not a bug in it.
+private let sourceIsReadableOnThisHost: Bool = {
+    #if targetEnvironment(simulator)
+    return true
+    #else
+    return false
+    #endif
+}()
+
 /// The "no server" commitment, asserted rather than intended.
 ///
 /// TRD §13 lists this as a verification strategy and AGENTS.md §10 says the
@@ -25,7 +39,24 @@ import Testing
 /// audit and cannot catch a request smuggled in through a C library, but it is
 /// exact about what it claims: **no file in `Memoree/` names a networking
 /// type.** The `nm -u` audit in Phase 11 remains the backstop for the rest.
-@Suite("No networking")
+///
+/// ## Why the suite is disabled on a device
+///
+/// `#filePath` is resolved by the *compiler* and baked into the binary as a
+/// string, so it names a path on the machine that built the app. That path
+/// exists on a simulator and does not exist on hardware, and the first device
+/// run failed all four tests with "the app source is not where this test
+/// expects it".
+///
+/// This is a real limitation, stated rather than hidden. A source scan cannot be
+/// performed on-device, because the source is not there. The device-side
+/// complement is the Phase 11 binary audit.
+///
+/// `.enabled(if:)` rather than an early `return`, deliberately: Swift Testing
+/// counts a returned test as **passed**, which is precisely how four live tests
+/// in this project "passed" in a millisecond having asserted nothing, twice.
+/// A disabled suite is reported as not run.
+@Suite("No networking", .enabled(if: sourceIsReadableOnThisHost))
 struct NoNetworkingTests {
 
     /// Type names, matched on **word boundaries**.

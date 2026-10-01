@@ -182,11 +182,28 @@ struct PhotoKitLibrary: PhotoLibraryService {
     // MARK: - Albums
 
     func ensureAlbum(named name: String) async throws -> String? {
+        // Search by **kind**, not by identifiers.
+        //
+        // This asked `fetchAssetCollections(withLocalIdentifiers: [])` — a
+        // fetch for *zero* specific identifiers, which returns an empty result
+        // and therefore never finds anything. Every call fell through to the
+        // creation path, so the function created a fresh album every time it was
+        // asked for one that already existed. A live device test caught it on
+        // the first hardware run of Phase 3; the simulator could not, because it
+        // cannot create an album at all.
+        //
+        // The bug was invisible in the app for a second reason: `saveToAlbum`
+        // defaults to **off** and `albumCreationAttempted` guards the rest, so
+        // no production path reaches this until the user turns it on in Settings
+        // (Phase 10). The one caller that would have hit it was not reachable
+        // yet. Two layers of "not shipped" hid a defect that the first real
+        // invocation exposed.
+        let collections = PHAssetCollection.fetchAssetCollections(
+            with: .album, subtype: .any, options: nil
+        )
+
         // `PHFetchResult` is neither `Sequence` nor `Collection`, so the
         // enumerator block is the supported way to scan it for a title.
-        let collections = PHAssetCollection.fetchAssetCollections(
-            withLocalIdentifiers: [], options: nil
-        )
         let found = PlaceholderBox()
         collections.enumerateObjects { collection, _, stop in
             if collection.localizedTitle == name {
