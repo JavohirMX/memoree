@@ -168,7 +168,7 @@ struct CameraView: View {
         .disabled(!model.canCapture)
         .opacity(model.canCapture ? 1 : 0.4)
         .accessibilityLabel("Take a photo")
-        .animation(.default, value: model.canCapture)
+        .appAnimation(model.canCapture)
     }
 
     // MARK: - Review

@@ -64,11 +64,25 @@ struct CountdownDisplay: View {
 
     var body: some View {
         Text(text)
-            .font(Theme.Typography.display)
+            // Not `.font(...)`: the 64pt numeral has no text style, so it is
+            // applied as a scaled modifier. See `Theme.Typography.displaySize`.
+            .scaledDisplayFont(Theme.Typography.displaySize)
             .monospacedDigit()
             .foregroundStyle(Theme.Color.textPrimary)
+            // **A `HH:MM:SS` string cannot wrap, so it is truncated instead** —
+            // "4:53:…" is a countdown to nothing. `minimumScaleFactor` lets the
+            // font give way rather than the digits, which is the whole point: the
+            // number is the number, and a smaller complete one beats a larger
+            // broken one.
+            //
+            // This is the one place in the app where the text shrinks rather than
+            // the layout growing, and it is a deliberate exception to the cap in
+            // `ScaledDisplayFont`: the cap sets how large it may *try* to be, and
+            // this is what happens when even that is too large for the width.
+            .minimumScaleFactor(0.5)
+            .lineLimit(1)
             .contentTransition(.numericText())
-            .animation(.default, value: text)
+            .appAnimation(text)
     }
 }
 
@@ -85,7 +99,10 @@ struct StreakDisplay: View {
         VStack(spacing: Theme.Spacing.xs) {
             HStack(spacing: Theme.Spacing.xs) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 20))
+                    // Scales with the number beside it, for the same reason as the
+                    // Stats screen's flame: 20 at the default setting, and it does
+                    // not stay 20 while the streak's `.title2` becomes a wall.
+                    .scaledDisplayFont(20)
                     .foregroundStyle(streak > 0 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
                 Text("\(streak)")
                     .font(Theme.Typography.screenTitle)
@@ -119,18 +136,72 @@ struct MetadataRow: View {
     let value: String
     var valueColor: Color = Theme.Color.textSecondary
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
-        HStack {
-            Text(label)
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
-            Spacer()
-            Text(value)
-                .font(Theme.Typography.body)
-                .monospacedDigit()
-                .foregroundStyle(valueColor)
+        Group {
+            if typeSize.isAccessibilitySize {
+                stacked
+            } else {
+                row
+            }
         }
         .accessibilityElement(children: .combine)
+    }
+
+    /// Two columns, below the accessibility sizes and only below them.
+    ///
+    /// **This was a `HStack` and a `Spacer`, unconditionally**, which is fine at
+    /// 15pt and wrong at every accessibility size. In an `HStack` both texts are
+    /// squeezed into a share of the width, so at AX5 the label got a fraction of
+    /// the screen — too narrow for any single word, which is when iOS breaks a
+    /// word *mid-word*: "Pho-tographs", "pho-tographed". The values did the same
+    /// thing to themselves and wrapped into vertical stacks of digits.
+    ///
+    /// ## Two attempts that did not work, and why they are not here
+    ///
+    /// **`fixedSize` on the label.** Stopped the hyphenation and started
+    /// clipping instead — "375 days in a row" ran off both edges. Worse than
+    /// hyphenating, because a clipped digit is a *wrong number*.
+    ///
+    /// **`ViewThatFits(in: .horizontal)`.** The obvious idiomatic answer, and it
+    /// worked on the Stats screen — until it was used on Today, where the row was
+    /// chosen for labels that did not fit and truncated them to "Next mome…" and
+    /// "Nothing to do u…". Inside a `ScrollView` the proposal it measures against
+    /// is not the screen width, so its measurement is not the measurement that
+    /// decides whether the row fits. **A layout that picks a branch from a
+    /// measurement that does not hold is worse than no branch at all**, because it
+    /// looks like it is handling the problem.
+    ///
+    /// `isAccessibilitySize` is the answer instead: it does not measure anything,
+    /// so it cannot be wrong about a width it was never shown.
+    private var row: some View {
+        HStack(alignment: .firstTextBaseline) {
+            labelText
+            Spacer(minLength: Theme.Spacing.m)
+            valueText
+        }
+    }
+
+    /// One column, so the label gets the whole width to wrap on.
+    private var stacked: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+            labelText
+            valueText
+        }
+    }
+
+    private var labelText: some View {
+        Text(label)
+            .font(Theme.Typography.body)
+            .foregroundStyle(Theme.Color.textSecondary)
+    }
+
+    private var valueText: some View {
+        Text(value)
+            .font(Theme.Typography.body)
+            .monospacedDigit()
+            .foregroundStyle(valueColor)
     }
 }
 

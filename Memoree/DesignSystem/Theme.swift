@@ -87,17 +87,64 @@ enum Theme {
     /// `Type` (it collides with the `foo.Type` metatype expression), and not
     /// `Font` either, because that would shadow SwiftUI's `Font` inside this
     /// scope and silently break every call site.
+    ///
+    /// ## Every token is a text style, and that is load-bearing
+    ///
+    /// **This whole ramp used to be `Font.system(size:)`, which does not scale
+    /// with Dynamic Type at all.** Not "scaled a little" — not at all. A fixed
+    /// point size is a fixed point size, so a user who had raised their text size
+    /// to the largest accessibility setting saw a pixel-identical screen, in an
+    /// app whose settings screen explains what a permission is for.
+    ///
+    /// Found by screenshotting the same screen at
+    /// `accessibility-extra-extra-extra-large` and at the default size and
+    /// comparing. The two were the same picture.
+    ///
+    /// `Font.system(_:weight:)` takes a `TextStyle` and scales with the setting.
+    /// The weights are kept because the design leans on weight for hierarchy —
+    /// white is the verb, and boldness is the only other emphasis available in a
+    /// single-hue app — and `.weight(_:)` on a text style preserves both.
+    ///
+    /// The point sizes are preserved at the default setting, which is what keeps
+    /// the design intact: `.title2` *is* 22, `.headline` *is* 17 semibold,
+    /// `.subheadline` *is* 15, `.callout` *is* 16, `.footnote` *is* 13,
+    /// `.caption2` *is* 11. So this is not a redesign — it is the same ramp that
+    /// finally responds to the setting.
     enum Typography {
-        static let screenTitle = Font.system(size: 22, weight: .bold)
-        static let cardUsername = Font.system(size: 17, weight: .semibold)
-        static let body = Font.system(size: 15, weight: .regular)
-        static let caption = Font.system(size: 16, weight: .regular)
-        static let metadata = Font.system(size: 13, weight: .regular)
-        static let button = Font.system(size: 17, weight: .semibold)
-        static let retakePill = Font.system(size: 11, weight: .semibold)
+        /// 22 at the default size. The largest role on any screen except the
+        /// numerals themselves.
+        static let screenTitle = Font.system(.title2).weight(.bold)
 
-        /// Large display type for the Today screen's primary moment state.
-        static let display = Font.system(size: 64, weight: .bold).monospacedDigit()
+        /// 17 semibold. Named for BeReal's username row, which Memoree does not
+        /// have — kept so the ramp stays a ramp and a future card has a slot.
+        static let cardUsername = Font.system(.headline)
+
+        /// 15. The workhorse: every paragraph of copy in the app.
+        static let body = Font.system(.subheadline)
+
+        /// 16. Slightly larger than `body`, for copy that is read rather than
+        /// scanned.
+        static let caption = Font.system(.callout)
+
+        /// 13. Timestamps, metadata, and anything that is a fact about a
+        /// photograph rather than a sentence.
+        static let metadata = Font.system(.footnote)
+
+        static let button = Font.system(.headline)
+
+        /// 11. The smallest text in the app, and the one most at risk from an
+        /// accessibility size — so it is a text style rather than a literal, and
+        /// it is a caption *style* rather than a small custom size.
+        static let retakePill = Font.system(.caption2).weight(.semibold)
+
+        /// The Today countdown: 64 at the default setting.
+        ///
+        /// **A `CGFloat`, not a `Font`.** There is no text style at 64 — the
+        /// largest is `.largeTitle` at 34 — so a `Font` here would either not scale
+        /// or would be half the size. Use `.scaledDisplayFont(Theme.Typography.displaySize)`
+        /// where this goes, which honours the number exactly and applies the user's
+        /// text-size setting as a multiplier. See `ScaledFont.swift`.
+        static let displaySize: CGFloat = 64
     }
 
     // MARK: - Shadow

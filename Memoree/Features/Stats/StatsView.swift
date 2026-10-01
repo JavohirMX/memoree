@@ -68,10 +68,17 @@ struct StatsView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
             HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 28))
+                    // Scaled, and anchored to the same `.largeTitle` the numeral
+                    // uses, so the two stay in proportion. At the default setting
+                    // this is 28 — unchanged — and at AX5 it grows with the number
+                    // beside it instead of sitting there like a period.
+                    .scaledDisplayFont(28)
                     .foregroundStyle(Theme.Color.textPrimary)
                 Text("\(model.summary.currentStreak)")
-                    .font(.system(size: 56, weight: .bold))
+                    // Scales with the user's text-size setting. `Typography` has
+                    // no 56pt text style, so it is the modifier's job — see
+                    // `ScaledFont.swift`.
+                    .scaledDisplayFont(56)
                     .monospacedDigit()
                     .foregroundStyle(Theme.Color.textPrimary)
             }

@@ -237,6 +237,21 @@ struct TodayView: View {
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.top, Theme.Spacing.l)
         .padding(.bottom, Theme.Spacing.l)
+        // The one accessibility concession on this screen, and it is a structural
+        // one rather than a font one.
+        //
+        // Below the accessibility sizes this column centres itself with
+        // `Spacer(minLength:)` on either side of the state copy. At an
+        // accessibility size the copy is several times taller than the screen, so
+        // the column overflows — and because a `VStack` centres its overflowing
+        // content, the overflow went off **both** ends at once: "Next moment at"
+        // read "Next mome…" and "Nothing to do until then" read "Nothing to do
+        // u…", while the streak's "375" was sliced through by the status bar.
+        //
+        // Scrolling cannot fix a `VStack` that centres. Replacing the layout *at
+        // accessibility sizes only* is what can, and it costs nothing at the sizes
+        // where the design was drawn.
+        .scrollableAtAccessibilitySizes()
     }
 
     // MARK: - Header

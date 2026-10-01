@@ -106,7 +106,7 @@ struct SettingsView: View {
                 .foregroundStyle(Theme.Color.textTertiary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
-                .animation(.default, value: didApply)
+                .appAnimation(didApply)
         }
     }
 

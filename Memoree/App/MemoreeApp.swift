@@ -37,6 +37,15 @@ struct MemoreeApp: App {
                 }
             }
             .preferredColorScheme(.dark)
+            // Reduce Motion, published once here and read by every
+            // `.appAnimation` in the tree.
+            //
+            // Applied at the root rather than per screen because the setting is
+            // global: a per-screen subscription is a per-screen chance to be
+            // wrong, and a screen that forgot it would animate for a user who
+            // asked it not to — invisibly, because the rest of the app would be
+            // behaving correctly.
+            .observingReduceMotion()
             .task { await bootstrap() }
         }
     }
@@ -107,7 +116,7 @@ struct RootView: View {
                 OnboardingView()
             }
         }
-        .animation(.default, value: environment.momentStore.settings().onboardingComplete)
+        .appAnimation(environment.momentStore.settings().onboardingComplete)
     }
 }
 
