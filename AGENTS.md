@@ -210,3 +210,6 @@ reserved job, not a reuse of this one.
   inference as established fact.
 - **Prefer removing code to adding it.** The entire premise is that most of BeReal is
   unnecessary. That instinct is usually right.
+- **Talk to the user plainly.** Short messages, plain words, no ceremony. Say what happened and
+  what is needed next, then stop. Long essays are for `docs/` and commit messages, not for the
+  conversation. If something did not work, one sentence on what and one on why is enough.
