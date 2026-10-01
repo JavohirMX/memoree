@@ -17,6 +17,7 @@ struct TodayView: View {
     @State private var isConfirmingRecapture = false
     @State private var isShowingSettings = false
     @State private var isShowingArchive = false
+    @State private var isShowingStats = false
 
     var body: some View {
         // The lifecycle modifiers hang off the outermost container, never off
@@ -69,6 +70,12 @@ struct TodayView: View {
             SettingsView()
                 .environment(environment)
         }
+        // Stats is a full-screen cover for the same reason Settings is: it is a
+        // screen with a title and a Done button, not a peek.
+        .fullScreenCover(isPresented: $isShowingStats) {
+            StatsView()
+                .environment(environment)
+        }
         .sheet(isPresented: $isShowingArchive) {
             ArchiveView()
                 .environment(environment)
@@ -91,6 +98,7 @@ struct TodayView: View {
             //
             //   -MemoreeOpen archive
             //   -MemoreeOpen settings
+            //   -MemoreeOpen stats
             //
             // The destination is the *next* argument, not part of this one: a
             // command line is a list of separate strings, so
@@ -107,6 +115,7 @@ struct TodayView: View {
             switch arguments[flag + 1] {
             case "archive": isShowingArchive = true
             case "settings": isShowingSettings = true
+            case "stats": isShowingStats = true
             default: break
             }
         }
@@ -234,13 +243,29 @@ struct TodayView: View {
 
     /// Streak on the left, the two things you can go somewhere on the right.
     ///
+    /// **The streak is tappable and opens Stats.** The header already carries
+    /// three things, and a fourth icon would be one too many — but the number the
+    /// user cares about is the obvious door to its own history, and "tap the
+    /// number to see the numbers" needs no explanation.
+    ///
     /// The archive icon is present even with no moments, and stays greyed rather
     /// than disappearing. A control that appears on first use is a control the
     /// user has to discover by having already succeeded — and the empty archive
     /// is the screen that explains what the app is for.
     private func header(_ model: TodayViewModel) -> some View {
         HStack(alignment: .top) {
-            StreakDisplay(streak: model.streak, longest: model.longestStreak)
+            Button {
+                isShowingStats = true
+            } label: {
+                StreakDisplay(streak: model.streak, longest: model.longestStreak)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(
+                model.streak == 0
+                    ? "No current streak"
+                    : "Streak of \(model.streakDescription)"
+            )
+            .accessibilityHint("Opens your statistics")
 
             Spacer()
 
