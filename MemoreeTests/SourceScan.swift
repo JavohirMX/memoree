@@ -44,6 +44,37 @@ enum SourceScan {
         try files(matching: { $0.hasSuffix(".swift") })
     }
 
+    /// Every Swift file in the test target.
+    ///
+    /// **Added for the live suite's count check**, which needs to read
+    /// `LiveCaptureTests.swift` — and `swiftFiles()` could not, because it is
+    /// scoped to `Memoree/` deliberately: every existing caller is asserting
+    /// something about *production* code, and quietly widening that root would
+    /// have let app-only invariants start passing by scanning tests instead.
+    ///
+    /// A second named root is the honest shape. The alternative — scanning
+    /// `MemoreeTests/` from the design-system invariants — would have made all of
+    /// them vacuous.
+    static func testFiles() throws -> [URL] {
+        let root = appRoot.deletingLastPathComponent()
+            .appendingPathComponent("MemoreeTests", isDirectory: true)
+        guard FileManager.default.fileExists(atPath: root.path) else {
+            throw SourceScanError.sourceNotWhereExpected(root)
+        }
+        return try FileManager.default
+            .subpathsOfDirectory(atPath: root.path)
+            .filter { $0.hasSuffix(".swift") }
+            .map { root.appendingPathComponent($0) }
+    }
+
+    /// One file in the test target, by name.
+    static func testFile(named name: String) throws -> URL {
+        try #require(
+            try testFiles().first { $0.lastPathComponent == name },
+            "\(name) was not found in MemoreeTests/"
+        )
+    }
+
     /// Files in the app target with any of `extensions`.
     static func files(extensions: Set<String>) throws -> [URL] {
         try files { extensions.contains(URL(fileURLWithPath: $0).pathExtension) }

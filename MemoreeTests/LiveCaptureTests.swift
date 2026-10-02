@@ -42,6 +42,13 @@ import Testing
 /// every skip prints a banner, and `LiveCaptureRunGuardTests` fails the run
 /// unless at least one test here genuinely executed.
 ///
+/// **The expected count is a stored property, not a literal.** It used to say
+/// "\(executed) of 6 live tests executed", and adding the lens survey made that
+/// a lie on the same day it was written. A guard that miscounts is a guard
+/// nobody should trust: the number exists so a reader can tell *how much* of the
+/// suite ran, and a wrong number is worse than none — it looks like information.
+/// `expectedCount` is the single place to change when a test is added.
+///
 /// ## Nothing is deleted
 ///
 /// The photographs captured here are never written to Photos by this suite, so
@@ -121,6 +128,21 @@ struct LiveCaptureTests {
 
     nonisolated static var runCount: Int { runCounter.count }
 
+    /// How many tests here should execute on a host with real cameras.
+    ///
+    /// **The guard used to interpolate a bare `6` into its failure message**, and
+    /// it went stale the moment the lens survey was added — the kind of small lie
+    /// that makes a diagnostic stop being believed. So the number lives here, next
+    /// to the counter it is compared against.
+    ///
+    /// **And it is checked against the source, not trusted.** Writing this as
+    /// `7` was wrong immediately: there are nine `@Test`s in this file, and two of
+    /// them (`mirroringIsCorrect`, `capturedPairWritesToPhotos`) are easy to
+    /// forget when counting by eye. `LiveCaptureRunGuardTests` scans this file
+    /// and fails if the two disagree, so a literal nobody has to remember is the
+    /// only kind that stays correct.
+    nonisolated static let expectedCount = 9
+
     private final class RunCounter: @unchecked Sendable {
         private let lock = NSLock()
         private var total = 0
@@ -185,6 +207,171 @@ struct LiveCaptureTests {
         } else {
             print("device reports no 3:4 format; capture will report noThreeByFourFormat")
         }
+    }
+
+    // MARK: - Lens survey
+
+    /// What the hardware actually offers, in one place.
+    ///
+    /// **This test exists to collect facts, and most of it deliberately does not
+    /// assert.** It prints a table of every built-in lens: whether a 3:4 format
+    /// exists for it, and its real zoom ceiling. Asserting on the ultra-wide row
+    /// in particular would fail the run and tell us nothing the print does not
+    /// already say — and a measurement that can fail is not a measurement.
+    ///
+    /// ## Why it is needed
+    ///
+    /// Zoom and lens switching were asked for, and both hinge on one unknown that
+    /// cannot be answered off-device. `CaptureFormatSelector` only ever considers
+    /// `.builtInWideAngleCamera`, and `CameraPosition` has exactly two cases, so
+    /// the app has no lens axis at all. The question is whether the other lenses
+    /// can honour Memoree's geometry:
+    ///
+    /// - **Ultra-wide is the risk.** It is a square sensor. If it reports no 3:4
+    ///   format at all then a 0.5× control is not a button that behaves oddly, it
+    ///   is a button that throws `noThreeByFourFormat` on every press. Nobody
+    ///   should ship that, and nobody should ship a guess about it either.
+    /// - **Telephoto** is a 4:3 sensor and very likely qualifies, but "very
+    ///   likely" is not a measurement.
+    /// - **Zoom ceilings come from the format**, not the marketing number:
+    ///   `activeFormat.videoMaxZoomFactor` is what the sensor will actually do.
+    ///
+    /// ## Why it allocates nothing
+    ///
+    /// This suite's documented trap is that `AVCaptureSession.init()` is a
+    /// synchronous XPC round-trip and eight of them in one process wedge the
+    /// capture daemon. This test **never constructs a session** — it only reads
+    /// `AVCaptureDevice.Formats` — so it cannot contribute to that, and it runs
+    /// first so its output is at the top of the log.
+    ///
+    /// Device-only, and named so: see the suite documentation.
+    @Test("DEVICE ONLY — survey every built-in lens and what 3:4 costs it")
+    func surveyEveryLens() throws {
+        guard requireCamera() else { return }
+
+        let discovery = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [
+                .builtInWideAngleCamera,
+                .builtInTelephotoCamera,
+                .builtInUltraWideCamera,
+                .builtInDualCamera,
+                .builtInTripleCamera
+            ],
+            mediaType: .video,
+            position: .unspecified
+        )
+
+        var lines: [String] = []
+        lines.append("")
+        lines.append("┌─ LENS SURVEY " + String(repeating: "─", count: 52))
+        lines.append("│ lens              position  3:4?  formats  zoom min…max")
+        lines.append("├" + String(repeating: "─", count: 64))
+
+        for device in discovery.devices {
+            let selected = CaptureFormatSelector.selectFormat(for: device)
+
+            // Zoom belongs to a **format**, not to a device, so read it off the
+            // format the app would actually apply. `selectFormat` returns a
+            // format rather than dimensions, and a format must be applied to the
+            // device that produced it, so the lookup is by dimensions back to
+            // the original.
+            let reference = selected.flatMap { wanted in
+                device.formats.first {
+                    CaptureFormatSelector.matches(
+                        CaptureFormatSelector.dimensions(of: $0),
+                        CaptureFormatSelector.dimensions(of: wanted)
+                    )
+                }
+            }
+
+            lines.append("│ " + pad(device.deviceType.rawValue, 18)
+                + pad(describe(device.position), 10)
+                + pad(selected == nil ? "NO" : "yes", 6)
+                + pad("\(device.formats.count)", 9)
+                + zoomRange(of: reference, device: device))
+
+            if selected == nil {
+                lines.append("│   ↳ no 3:4. Ratios on offer: \(ratioSpread(device))")
+            }
+
+            // **Switch-over factors only exist on virtual devices.** An empty
+            // array is the documented answer for a real lens, and it is the
+            // answer that matters: on a `.builtInDualCamera` the app could let
+            // AVFoundation hand off between constituents by setting one zoom
+            // factor, which would be *seamless* zoom with no session restart at
+            // all — the thing ADR-003 listed as the cost of going sequential.
+            let switchOver = device.virtualDeviceSwitchOverVideoZoomFactors
+            if !switchOver.isEmpty {
+                lines.append("│   ↳ switch-over at: "
+                    + switchOver.map { String(format: "%.2f", $0.doubleValue) }
+                        .joined(separator: ", "))
+            }
+        }
+        lines.append("└" + String(repeating: "─", count: 64))
+        lines.append("")
+
+        print(lines.joined(separator: "\n"))
+
+        // **The one assertion.** The rear wide angle offering 3:4 is the premise
+        // the entire app rests on (ADR-019) — without it, capture reports
+        // `noThreeByFourFormat` and nothing works. If this fails, none of the
+        // printed numbers above need reading.
+        let rearWide = try #require(CaptureFormatSelector.wideAngleDevice(for: .back))
+        #expect(
+            CaptureFormatSelector.selectFormat(for: rearWide) != nil,
+            "the rear wide angle must offer a 3:4 format or Memoree cannot capture"
+        )
+    }
+
+    private func pad(_ text: String, _ width: Int) -> String {
+        text.count >= width ? text + " " : text + String(repeating: " ", count: width - text.count)
+    }
+
+    private func describe(_ position: AVCaptureDevice.Position) -> String {
+        switch position {
+        case .back: return "back"
+        case .front: return "front"
+        default: return "unspecified"
+        }
+    }
+
+    /// `1.00…2.50`, or `—` when the device has no usable format to read.
+    ///
+    /// **The two ends come from two different types, and the SDK is not
+    /// symmetric.** The ceiling is `AVCaptureDeviceFormat.videoMaxZoomFactor`;
+    /// the floor is `AVCaptureDevice.minAvailableVideoZoomFactor`. There is no
+    /// `videoMinZoomFactor` on either — this function's first two versions each
+    /// tried one and neither compiled, so the names below are read out of
+    /// `AVCaptureDevice.h` rather than remembered.
+    ///
+    /// That asymmetry is the finding, not a footnote. **The ceiling is
+    /// per-format**, so it has to be re-read after every `activeFormat` change
+    /// rather than cached once per device — and `applyFormat` runs on every
+    /// camera swap. A zoom value remembered across a swap is a zoom value that
+    /// may have been clamped out from under itself.
+    private func zoomRange(of format: AVCaptureDevice.Format?, device: AVCaptureDevice) -> String {
+        guard let format else { return "—" }
+        return String(
+            format: "%.2f…%.2f",
+            device.minAvailableVideoZoomFactor,
+            format.videoMaxZoomFactor
+        )
+    }
+
+    /// The distinct aspect ratios a device's formats offer, widest first.
+    ///
+    /// Printed only for lenses with no 3:4, because that is the case where the
+    /// diagnosis matters: a lens offering only 1.00 and 1.78 is a square sensor,
+    /// and a 0.5× control cannot be built on it.
+    private func ratioSpread(_ device: AVCaptureDevice) -> String {
+        var seen: Set<Double> = []
+        for format in device.formats {
+            let dimensions = CaptureFormatSelector.dimensions(of: format)
+            guard dimensions.width > 0, dimensions.height > 0 else { continue }
+            let ratio = Double(dimensions.width) / Double(dimensions.height)
+            seen.insert((ratio * 100).rounded() / 100)
+        }
+        return seen.sorted(by: >).map { String(format: "%.2f", $0) }.joined(separator: ", ")
     }
 
     // MARK: - Session lifecycle

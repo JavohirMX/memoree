@@ -21,6 +21,41 @@ import Testing
 @Suite("Phase 4 — live capture run guard")
 struct LiveCaptureRunGuardTests {
 
+    @Test("The live suite's expected count matches the tests it actually contains")
+    func expectedCountMatchesTheSource() throws {
+        // **A literal count rots, and this one rotted immediately.** The failure
+        // message used to interpolate a bare `6`; adding the lens survey made that
+        // wrong on the same day. Replacing it with `expectedCount` on the suite
+        // just moved the problem — the first value written there was `7`, and
+        // there are nine `@Test`s in that file, because two of them are easy to
+        // forget when counting by eye.
+        //
+        // So the count is **measured from the source** instead. This runs
+        // everywhere, including on a simulator where every live test skips and
+        // `runCount` is 0, which is exactly why it belongs in its own test: the
+        // other guard can only be exercised on a device, and by then a stale
+        // count has already been printed as though it were information.
+        //
+        // Counting `@Test` in the source is an approximation — a `@Test` inside a
+        // disabled branch or a comment would inflate it — and `SourceScan`
+        // strips comments, so only a real declaration can match.
+        let declarations = try SourceScan.codeLines(
+            of: SourceScan.testFile(named: "LiveCaptureTests.swift")
+        )
+        .filter { $0.code.hasPrefix("@Test") }
+
+        #expect(
+            declarations.count == LiveCaptureTests.expectedCount,
+            """
+            LiveCaptureTests.expectedCount is \(LiveCaptureTests.expectedCount) but the \
+            file contains \(declarations.count) @Test declarations, at lines \
+            \(declarations.map(\.number).map(String.init).joined(separator: ", ")).
+            The guard prints this number, so a wrong one is worse than none — \
+            it looks like information. Update expectedCount.
+            """
+        )
+    }
+
     @Test("The live camera suite is not silently skipped")
     func liveTestsWereNotSilentlySkipped() {
         let executed = LiveCaptureTests.runCount
@@ -32,7 +67,7 @@ struct LiveCaptureRunGuardTests {
             The live camera suite was skipped, so Phase 4's exit criterion — \
             20 reliable captures on hardware — is NOT met.
 
-            \(executed) of 6 live tests executed.
+            \(executed) of \(LiveCaptureTests.expectedCount) live tests executed.
 
             This host has no camera. The simulator returns nil from \
             AVCaptureDevice.default, has no capture session, and reports \
