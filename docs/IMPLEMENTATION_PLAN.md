@@ -1332,6 +1332,57 @@ version called `colour(...)` inside a nested loop, re-fetching
 A slow test is not a harmless test; it is a test people stop running. The buffer
 is decoded once now.
 
+### Orientation: four attempts, and the answer was never in my code
+
+Worth writing up in full, because **every wrong turn here was mine and every one
+of them looked reasonable.** Landscape photographs saved as portrait ones. The
+symptom never changed across four fixes, which is what finally made it obvious
+that the diagnosis — not the arithmetic — was the problem.
+
+| # | What I did | Why it was wrong |
+| --- | --- | --- |
+| 1 | Added a hand-written table from held orientation to rotation angle, unit-tested | **No table knows how a phone's sensor is mounted.** That is per-model hardware |
+| 2 | Derived the front camera's angle from the mounting relationship | It was already right. Broke a working camera, and the test passed because the arithmetic was right |
+| 3 | Read `UIDevice.orientation` instead of a hardcoded `.portrait` | **It returns `.portrait` forever when rotation lock is on.** A setting, so no test could ever reproduce it |
+| 4 | Guarded the coordinator's construction on `state == .running` | It is built *before* `startRunning()`, so it was **never built**, and every photo got a default quarter turn |
+
+**The coordinator** — `AVCaptureDevice.RotationCoordinator`, which *"monitors the
+physical orientation of a capture device and provides adjustment angles to keep
+images level, relative to gravity"* — was in attempt 4. The bug was not the
+coordinator. It was one guard clause in the same commit.
+
+### Why a wrong rotation looks like a mapping bug
+
+A sensor is natively **landscape**. Rotating its buffer a quarter turn produces a
+**portrait** image — which is precisely what a portrait-held photograph needs. So a
+permanent 90° makes:
+
+- **portrait shots correct**, by accident
+- **landscape shots wrong**, since those need no rotation
+
+"Portrait works, landscape doesn't" reads like a bad angle for one case. It is a
+default applied to all cases. **And it is why three fixes to the mapping changed
+nothing: the mapping was never reached.**
+
+### The rule this cost four attempts to learn
+
+**Asserting a rotation nobody asked for is worse than applying none.** With no
+rotation the photograph keeps the sensor's native orientation — a real,
+self-consistent image, and the right answer for one of the four ways a phone can
+be held. With a wrong rotation it displays as something the user never
+photographed, and nothing anywhere reports an error.
+
+This codebase made that mistake **three times in three commits**: `startup`
+defaulted to 90°, `lastReportedOrientation` defaulted to `.portrait`, and
+`configureOrientation` fell back to a quarter turn. Each was invisible, each was
+locally reasonable, and together they held the bug in place. There is now a test
+asserting the start-up rotation is `nil`.
+
+### Verified on a phone
+
+Landscape photographs now save landscape. Portrait, landscape, front and rear
+all correct.
+
 ### Still unverified: landscape layout, on every screen
 
 **The Simulator GUI is not installed on this machine**, so the simulator cannot
