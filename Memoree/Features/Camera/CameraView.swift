@@ -185,6 +185,57 @@ struct CameraView: View {
         .clipped()
     }
 
+    /// The 0.5× / 1× / 2× row, under the shutter.
+    ///
+    /// ## Why under the shutter and not above it
+    ///
+    /// A row of buttons competes with the shutter for attention, and the shutter
+    /// is the only action that matters. Underneath, the zoom is the second thing
+    /// you reach for and the first thing you stop thinking about.
+    ///
+    /// ## Why it shows all three even on the front camera
+    ///
+    /// **0.5× is disabled on the front, not hidden.** The front has one lens, so
+    /// there is nothing to reach — but a row whose *count* changes when you swap
+    /// cameras makes the control look broken rather than constrained, and the
+    /// reason is right there in grey next to it. The row keeps its shape and the
+    /// camera swap does not move anything on screen.
+    private func zoomRow(_ model: CameraViewModel) -> some View {
+        HStack(spacing: Theme.Spacing.s) {
+            ForEach(CameraZoom.allCases, id: \.self) { zoom in
+                zoomButton(zoom, model)
+            }
+        }
+    }
+
+    private func zoomButton(_ zoom: CameraZoom, _ model: CameraViewModel) -> some View {
+        let isSelected = model.zoom == zoom
+        let isAvailable = zoom.isAvailable(on: model.livePosition)
+
+        return Button {
+            Task { await model.chooseZoom(zoom) }
+        } label: {
+            Text(zoom.label)
+                .font(Theme.Typography.button)
+                .foregroundStyle(isSelected ? Theme.Color.onAccent : Theme.Color.textPrimary)
+                .frame(maxWidth: .infinity)
+                .frame(minHeight: Theme.Size.tapTarget)
+                .background(isSelected ? Theme.Color.textPrimary : Color.clear)
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                }
+                .opacity(isAvailable ? 1 : 0.35)
+        }
+        .buttonStyle(.plain)
+        .disabled(!isAvailable)
+        // **Selected is on the button, not on the row.** VoiceOver otherwise
+        // announces three identical "2×" buttons with no way to tell which one is
+        // in force.
+        .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
+        .accessibilityHint(isAvailable ? "" : "Not available on the front camera")
+    }
+
     private func shutterRow(_ model: CameraViewModel) -> some View {
         VStack(spacing: Theme.Spacing.s) {
             HStack {
@@ -194,6 +245,8 @@ struct CameraView: View {
 
                 Spacer()
             }
+
+            zoomRow(model)
 
             // Which camera they are composing with. Stated as a fact, because
             // the order is random per moment (ADR-021) and there is no other

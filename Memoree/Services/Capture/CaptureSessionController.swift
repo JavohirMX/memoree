@@ -750,9 +750,56 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         session.addOutput(output)
     }
 
+    /// The device to open for `position`.
+    ///
+    /// **Rear: the virtual dual-wide device, falling back to the wide lens.**
+    /// Front: the wide lens.
+    ///
+    /// The fallback is checked rather than assumed because it is the same
+    /// three-by-four question `applyFormat` is about to ask anyway, and answering
+    /// it here means a phone without the virtual device opens a camera rather than
+    /// reporting `noInputAvailable` — which is the error that once sent the
+    /// diagnosis towards permissions and hardware instead of towards the ratio.
+    static func captureDevice(for position: CameraPosition) -> AVCaptureDevice? {
+        guard position == .back else {
+            return CaptureFormatSelector.wideAngleDevice(for: position)
+        }
+
+        let dualWide = AVCaptureDevice.default(
+            .builtInDualWideCamera,
+            for: .video,
+            position: .back
+        )
+        if let dualWide,
+           CaptureFormatSelector.selectFormat(for: dualWide) != nil {
+            return dualWide
+        }
+        return CaptureFormatSelector.wideAngleDevice(for: position)
+    }
+
     /// Opens and attaches the input for `position`. Must run on `queue`.
+    ///
+    /// ## The rear attaches a **virtual dual-wide device**, not a lens
+    ///
+    /// A device survey measured the two facts the zoom control rests on: every
+    /// lens offers 3:4, and `.builtInDualWideCamera` reports a **switch-over
+    /// factor at 2.00** — the zoom at which AVFoundation hands off from the
+    /// ultra-wide to the wide camera on its own.
+    ///
+    /// So all three zoom buttons are one `videoZoomFactor` write and **no session
+    /// restart at all**. That is the entire reason for a virtual device rather than
+    /// three physical lenses: switching lenses the obvious way is
+    /// `removeInput`/`addInput` on a running session, which is exactly the
+    /// operation ADR-003 measured four times to be the thing that leaves the frame
+    /// output dead. Zoom must not add another instance of it mid-moment.
+    ///
+    /// **The front keeps a single physical lens**, because there is only one, and
+    /// a virtual device there would add cost and a failure surface for no reach.
+    ///
+    /// Falls back to the wide lens if the virtual device reports no 3:4 format,
+    /// so a phone without one still captures rather than failing.
     private func attachInput(at position: CameraPosition) throws {
-        guard let device = CaptureFormatSelector.wideAngleDevice(for: position) else {
+        guard let device = Self.captureDevice(for: position) else {
             throw CaptureError.noInputAvailable(position)
         }
         let input = try AVCaptureDeviceInput(device: device)
@@ -821,6 +868,74 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
         configureMirroring(for: position)
         configureRotationCoordinator()
+        // **Zoom is reapplied here, not just on a button press.** The input has
+        // just been rebuilt and comes back at 1.0, so a user who chose 0.5× would
+        // otherwise get a wide photograph for one half of their moment.
+        try? applyZoomOnDevice(currentZoom)
+    }
+
+    // MARK: - Zoom
+
+    /// The zoom the user chose, kept across the front↔rear swap.
+    ///
+    /// **Remembered rather than reapplied, because the swap is invisible to it.**
+    /// ADR-021 tears the input down and rebuilds it between the two shutter
+    /// presses, and a device comes back at 1.0. Without this, a user who picked
+    /// 0.5× gets two photographs of one moment at two different framings, and the
+    /// composite puts them side by side — which reads as a rendering bug rather
+    /// than as zoom resetting.
+    private var currentZoom: CameraZoom = .wide
+
+    /// Applies a zoom, and remembers it.
+    ///
+    /// **Refuses rather than clamps.** `CameraZoom.isAvailable(on:)` is false for
+    /// `ultraWide` on the front, and pressing a disabled button should do nothing
+    /// — not silently become 1×, which is how a control becomes a liar.
+    func applyZoom(_ zoom: CameraZoom) async throws {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            queue.async { [self] in
+                guard zoom.isAvailable(on: activePosition) else {
+                    c.resume(throwing: CaptureError.zoomUnavailable(zoom, activePosition))
+                    return
+                }
+                currentZoom = zoom
+                do {
+                    try applyZoomOnDevice(zoom)
+                    c.resume()
+                } catch {
+                    c.resume(throwing: Self.map(error, at: self.activePosition))
+                }
+            }
+        }
+    }
+
+    /// Writes `videoZoomFactor` under `lockForConfiguration`.
+    ///
+    /// **The one place zoom touches the device**, and it is deliberately not
+    /// `session.beginConfiguration()`: a zoom change is a device property, not a
+    /// session graph change, and reconfiguring a *running* session is what
+    /// ADR-003 measured to be fatal to the frame output.
+    private func applyZoomOnDevice(_ zoom: CameraZoom) throws {
+        guard let device = activeInput?.device else { return }
+
+        try device.lockForConfiguration()
+        defer { device.unlockForConfiguration() }
+
+        // **Clamped to the format's own ceiling**, which is per-format rather than
+        // per-device and therefore has to be read *after* `activeFormat` is set.
+        // The device survey measured a ceiling of 189× on the rear, so an
+        // unclamped write would be accepted by AVFoundation and produce a
+        // rectangle of pixels.
+        let ceiling = device.activeFormat.videoMaxZoomFactor
+        let requested = zoom.virtualDeviceZoomFactor
+        device.videoZoomFactor = min(max(requested, device.minAvailableVideoZoomFactor), ceiling)
+    }
+
+    /// The zoom in force, for the buttons and for tests.
+    func currentCameraZoom() async -> CameraZoom {
+        await withCheckedContinuation { (c: CheckedContinuation<CameraZoom, Never>) in
+            queue.async { [self] in c.resume(returning: currentZoom) }
+        }
     }
 
     // MARK: - Orientation

@@ -99,6 +99,20 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// that case, and every sideways photograph saved as a portrait one.
     func currentRotation() async -> CaptureOrientation?
 
+    /// Applies a zoom, and remembers it across the camera swap.
+    ///
+    /// **The user chooses the button; AVFoundation supplies the number.** Rotation
+    /// is the other way round and deliberately has no such method — that
+    /// inversion is what made the orientation feature wrong three times.
+    ///
+    /// Idempotent, and a no-op before the session exists: the choice is recorded
+    /// and applied when the camera opens, so both halves of a moment are taken at
+    /// the same framing.
+    func applyZoom(_ zoom: CameraZoom) async throws
+
+    /// The zoom currently in force, for the buttons.
+    func currentZoom() async -> CameraZoom
+
     /// Rebuilds the session from scratch.
     ///
     /// Exists for `mediaServicesWereReset`, which raises no error, fires no
@@ -245,6 +259,13 @@ enum CaptureError: Error, LocalizedError, Equatable {
     /// The photo delegate returned without data.
     case photoDataUnavailable(CameraPosition)
 
+    /// The zoom asked for is not available on this camera.
+    ///
+    /// The front camera has one lens, so 0.5× does not exist there. Refused rather
+    /// than clamped: silently giving the user something other than what they
+    /// pressed is how a control becomes a liar.
+    case zoomUnavailable(CameraZoom, CameraPosition)
+
     /// A configuration attempt failed. Carries the reason for the log.
     case configurationFailed(String)
 
@@ -271,6 +292,8 @@ enum CaptureError: Error, LocalizedError, Equatable {
             "The camera did not start. Try again."
         case .photoDataUnavailable:
             "The photo could not be read."
+        case .zoomUnavailable:
+            "That zoom is not available on this camera."
         case .configurationFailed(let reason):
             "The camera could not be configured: \(reason)"
         case .sessionReset:
@@ -287,7 +310,7 @@ enum CaptureError: Error, LocalizedError, Equatable {
         switch self {
         case .interrupted, .inUseByAnotherApp, .thermalStateCritical,
              .noDeliveredFrame, .photoDataUnavailable, .sessionReset,
-             .configurationFailed:
+             .configurationFailed, .zoomUnavailable:
             return true
         case .permissionDenied, .restricted, .noInputAvailable, .noThreeByFourFormat:
             return false

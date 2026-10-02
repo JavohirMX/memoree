@@ -29,6 +29,12 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         /// hardware, so a double has to be told rather than derive it — the same
         /// way it is told about authorization.
         var orientation: CaptureOrientation?
+        /// The zoom in force, and every zoom asked for.
+        ///
+        /// Both recorded so a test can assert the choice is **remembered across a
+        /// swap** — the failure mode that gives a moment two different framings.
+        var zoom: CameraZoom = .wide
+        var zoomRequests: [CameraZoom] = []
         /// Cameras captured, in the order the user shot them.
         var capturedPositions: [CameraPosition] = []
         /// Cameras switched to, in order. Should mirror `capturedPositions`
@@ -149,6 +155,21 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
 
     func currentRotation() async -> CaptureOrientation? {
         lock.withLock { state.orientation }
+    }
+
+    func applyZoom(_ zoom: CameraZoom) async throws {
+        try lock.withLock {
+            try Self.throwIfNeeded(&state)
+            guard zoom.isAvailable(on: state.livePosition) else {
+                throw CaptureError.zoomUnavailable(zoom, state.livePosition)
+            }
+            state.zoom = zoom
+            state.zoomRequests.append(zoom)
+        }
+    }
+
+    func currentZoom() async -> CameraZoom {
+        lock.withLock { state.zoom }
     }
 
     func rebuildSession() async throws {

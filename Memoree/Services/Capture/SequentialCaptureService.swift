@@ -87,6 +87,14 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
         await controller.currentOrientation()
     }
 
+    func applyZoom(_ zoom: CameraZoom) async throws {
+        try await controller.applyZoom(zoom)
+    }
+
+    func currentZoom() async -> CameraZoom {
+        await controller.currentCameraZoom()
+    }
+
     // MARK: - Diagnostics
 
     /// The last few frame waits, for a device diagnostic to read.

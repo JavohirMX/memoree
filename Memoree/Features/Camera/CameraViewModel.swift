@@ -215,6 +215,33 @@ final class CameraViewModel {
         await runSession(openingOn: opening)
     }
 
+    // MARK: - Zoom
+
+    /// The zoom in force, mirrored into the view model so the buttons can show it.
+    ///
+    /// **Starts at 1x** because that is what the device reports before anyone
+    /// chooses, and because it is the framing the app was designed at (ADR-019).
+    private(set) var zoom: CameraZoom = .wide
+
+    /// Applies a zoom the user chose.
+    ///
+    /// **A refusal leaves the choice alone rather than falling back to 1x.** If the
+    /// front camera refuses 0.5x, silently switching to 1x would leave the button
+    /// showing 0.5x selected while the camera is at 1x, which is a control lying
+    /// about the state of the world.
+    ///
+    /// - Returns: whether the choice was accepted.
+    @discardableResult
+    func chooseZoom(_ zoom: CameraZoom) async -> Bool {
+        do {
+            try await service.applyZoom(zoom)
+            self.zoom = zoom
+            return true
+        } catch {
+            return false
+        }
+    }
+
     func stop() async {
         await service.stopSession()
         phase = .idle
