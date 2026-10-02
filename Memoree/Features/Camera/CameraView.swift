@@ -83,6 +83,19 @@ struct CameraView: View {
     private func live(_ model: CameraViewModel) -> some View {
         VStack(spacing: 0) {
             previewWithInset(model)
+                // **The way out, which used to be the swipe gesture.**
+                //
+                // The camera was a full-screen cover with a shutter at the bottom
+                // and nothing else, so the only route back was an edge swipe the
+                // app never claimed and iOS only honours from the very edge. There
+                // was no visible control, and a review state that *did* have a
+                // visible "Cancel" — so the exit appeared only once you had
+                // already committed to taking a photograph, which is the worst
+                // moment to discover whether you can leave.
+                .overlay(alignment: .topTrailing) {
+                    cancelButton
+                        .padding(Theme.Spacing.m)
+                }
 
             Spacer(minLength: 0)
 
@@ -95,6 +108,41 @@ struct CameraView: View {
 
             shutterRow(model)
         }
+    }
+
+    /// The camera's way out.
+    ///
+    /// **A labelled capsule, not a bare glyph.** A lone `chevron.down` in the
+    /// top corner is the platform idiom and it is also easy to miss — especially
+    /// here, where the preview behind it can be any colour and a white glyph on
+    /// white is invisible. The black fill solves that: the control has the same
+    /// appearance over a bright sky and over a dark room.
+    ///
+    /// It borrows `PrimaryButton(.outlined)`'s shape on purpose — 1pt white
+    /// border, black interior — so it reads as part of the app rather than as
+    /// iOS chrome that happened to be on top. It is smaller than a primary
+    /// control and never filled, because the shutter is the thing this screen
+    /// wants.
+    ///
+    /// **It discards whatever has been shot.** One photograph in the inset and
+    /// nothing recorded yet means cancelling loses it, which is the intended
+    /// reading: `onDismiss` writes no moment, so a half-finished capture leaves
+    /// no trace rather than a moment with one photograph in it.
+    private var cancelButton: some View {
+        Button(action: onDismiss) {
+            Label("Cancel", systemImage: "chevron.down")
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textPrimary)
+                .padding(.horizontal, Theme.Spacing.m)
+                .frame(minHeight: Theme.Size.tapTarget)
+                .background(Theme.Color.canvas)
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Closes the camera. Anything you have shot is discarded")
     }
 
     /// The live camera, with the photograph already taken in the top-left

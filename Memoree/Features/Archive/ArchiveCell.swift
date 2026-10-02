@@ -44,12 +44,45 @@ struct ArchiveCell: View {
             RoundedRectangle(cornerRadius: Theme.Radius.thumbnail)
                 .strokeBorder(Theme.Color.divider, lineWidth: 1)
         }
+        .overlay(alignment: .topLeading) { dayBadge }
         // One label per cell, composed rather than read image by image. A grid
         // of 500 unlabelled images is 500 VoiceOver stops that all say
         // "image", which is the same dead end as a button that does nothing.
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(Self.label(for: moment, isMissing: isMissing))
         .accessibilityAddTraits(.isButton)
+    }
+
+    /// The day of the month, top-left, over the photograph.
+    ///
+    /// **Hidden from VoiceOver**, because the cell's own label already says the
+    /// full date in words and two VoiceOver stops per cell is worse than one.
+    ///
+    /// ## Why a badge and not a caption underneath
+    ///
+    /// The month header above says *which month*. It cannot say which day —
+    /// thirty squares in a row all read "October" and the user's actual question
+    /// is usually "which one was last Tuesday". So each cell carries its own day
+    /// number, and the two together answer "when was this" without the grid ever
+    /// leaving the picture.
+    ///
+    /// ## Why the scrim
+    ///
+    /// A number over a photograph is unreadable half the time. Photographs are
+    /// the one thing in this app whose colours are not under the app's control,
+    /// so the badge carries a black pill at 60% — enough to hold white text at
+    /// every size, and it borrows the same `textTertiary` grey as the missing-
+    /// photograph label for its own edge.
+    private var dayBadge: some View {
+        Text(moment.capturedAt.formatted(.dateTime.day()))
+            .font(Theme.Typography.retakePill)
+            .foregroundStyle(Theme.Color.textPrimary)
+            .padding(.horizontal, Theme.Spacing.xs)
+            .padding(.vertical, 2)
+            .background(Theme.Color.canvas.opacity(0.6))
+            .clipShape(Capsule())
+            .padding(Theme.Spacing.xs)
+            .accessibilityHidden(true)
     }
 
     /// "Photograph from 30 September, 4:12 in the afternoon."
@@ -69,7 +102,8 @@ struct ArchiveCell: View {
 
 /// The grid.
 ///
-/// Three columns, 3:4 cells, newest first.
+/// Three columns, 3:4 cells, newest first, **grouped by month under a pinned
+/// header**.
 ///
 /// `LazyVGrid` rather than a `List`, and that is not a style preference: a
 /// `List` on iOS is a table view, and table views size their rows to content
@@ -77,6 +111,22 @@ struct ArchiveCell: View {
 /// fighting the container. `LazyVGrid` also does the only thing that matters
 /// here — it does not build a cell that is not near the screen, which for 500
 /// moments is the difference between instant and several hundred milliseconds.
+///
+/// ## Why the months were missing and why this is the shape of the fix
+///
+/// The grid showed 500 photographs in an unbroken block of squares with no
+/// dates anywhere. Scrolling it told you how many moments you had and nothing
+/// about *when* — a user could not find last Tuesday, could not tell six weeks
+/// ago from yesterday, and had no way to know whether the archive had stopped
+/// filling. An archive you cannot locate things in is a contact sheet.
+///
+/// A `ScrollView` of sections rather than one grid of everything: each section
+/// carries its own `LazyVGrid` so that a month is the unit, and `pinnedViews`
+/// keeps the header of the month you are looking at under the navigation bar
+/// while its photographs scroll beneath it. The alternative — a plain vertical
+/// `LazyVStack` of header-then-cells — cannot know how many cells to put after a
+/// header without doing the column arithmetic itself, which is the thing a grid
+/// already knows how to do.
 struct ArchiveGrid: View {
 
     let moments: [MomentFacts]
@@ -93,35 +143,76 @@ struct ArchiveGrid: View {
     /// matters — it is the moment a thumbnail is about to be needed, which is
     /// exactly what prefetching is for.
     ///
-    /// Per-cell rather than per-grid because a `LazyVGrid` only ever knows which
-    /// cells exist, not which are on screen, and a single callback at the top
-    /// would fire once and never again.
+    /// Per-cell rather than per-grid because a lazy container only ever knows
+    /// which cells exist, not which are on screen, and a single callback at the
+    /// top would fire once and never again.
     let onDayVisible: (DayIdentifier) -> Void
+
+    private static let columns = [
+        GridItem(.flexible(), spacing: Theme.Spacing.s),
+        GridItem(.flexible(), spacing: Theme.Spacing.s),
+        GridItem(.flexible(), spacing: Theme.Spacing.s)
+    ]
+
+    /// Grouped once, not per body evaluation.
+    ///
+    /// `body` re-runs on every state change, and grouping is a sort plus a walk
+    /// over the whole archive — 500 moments, on every thumbnail that arrives.
+    var sections: [ArchiveSection] { ArchiveSection.grouping(moments) }
 
     var body: some View {
         ScrollView {
-            LazyVGrid(
-                columns: [GridItem(.flexible(), spacing: Theme.Spacing.s),
-                          GridItem(.flexible(), spacing: Theme.Spacing.s),
-                          GridItem(.flexible(), spacing: Theme.Spacing.s)],
-                spacing: Theme.Spacing.s
-            ) {
-                ForEach(moments) { moment in
-                    Button {
-                        onOpen(moment)
-                    } label: {
-                        ArchiveCell(
-                            moment: moment,
-                            image: images[moment.id],
-                            isMissing: missing.contains(moment.id)
-                        )
+            LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
+                ForEach(sections) { section in
+                    Section {
+                        LazyVGrid(columns: Self.columns, spacing: Theme.Spacing.s) {
+                            ForEach(section.moments) { moment in
+                                cell(moment)
+                            }
+                        }
+                        .padding(.horizontal, Theme.Spacing.m)
+                        .padding(.bottom, Theme.Spacing.xl)
+                    } header: {
+                        header(for: section)
                     }
-                    .buttonStyle(.plain)
-                    .onAppear { onDayVisible(moment.day) }
                 }
             }
-            .padding(.horizontal, Theme.Spacing.m)
-            .padding(.vertical, Theme.Spacing.m)
+            .padding(.top, Theme.Spacing.s)
         }
+    }
+
+    private func cell(_ moment: MomentFacts) -> some View {
+        Button {
+            onOpen(moment)
+        } label: {
+            ArchiveCell(
+                moment: moment,
+                image: images[moment.id],
+                isMissing: missing.contains(moment.id)
+            )
+        }
+        .buttonStyle(.plain)
+        .onAppear { onDayVisible(moment.day) }
+    }
+
+    /// The pinned month header.
+    ///
+    /// **Opaque canvas, and it has to be.** A pinned header with a transparent
+    /// background shows the photographs scrolling *through* the text, and since
+    /// these cells are full-bleed photographs rather than rows, there is always
+    /// something behind it to see. `.background(Theme.Color.canvas)` is the fix
+    /// and it is the reason the header is not a bare `Text`.
+    ///
+    /// `metadata` rather than `body`: it is a label for what is below it, not
+    /// content, and it must not out-shout the photographs it introduces.
+    private func header(for section: ArchiveSection) -> some View {
+        Text(section.title)
+            .font(Theme.Typography.metadata)
+            .foregroundStyle(Theme.Color.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Theme.Spacing.m)
+            .padding(.vertical, Theme.Spacing.s)
+            .background(Theme.Color.canvas)
+            .accessibilityAddTraits(.isHeader)
     }
 }

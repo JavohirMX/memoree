@@ -1070,6 +1070,68 @@ there to prevent.
 
 ---
 
+## ADR-026 — Legibility outranks the third text tier, and white fill outranks convenience
+
+**Status:** Accepted · **Date:** 2026-10-02
+**Consequence of:** ADR-025, and the `AGENTS.md` §11 rule that white is the verb
+
+**Context.** A design pass found six defects, and two of them turned out to be about *how much*
+something was allowed rather than *whether it existed*.
+
+**1. `textTertiary` was `#636366` — 3.51:1 on the canvas, 2.84:1 on a card, against WCAG AA's
+4.5:1 — and it carried real words.** "best 500", the retake counts, "Wider is more random". Not
+decoration that could be argued about; content.
+
+**2. Settings' export row was a solid white capsule.** On a black canvas there is no other
+emphasis available, so a filled white control is the loudest thing a screen can say — and it was
+saying it for the feature nobody opens twice, two sections above the amber "Open Settings" button
+that ADR-025 gave exactly one job.
+
+**Decision.**
+
+**`textTertiary` becomes `#848486`, and the ramp is two tiers.** `#848486` is 5.63:1 on black and
+4.56:1 on a card: the faintest grey that passes on the harder of the two backgrounds it is used
+on.
+
+**The cost, stated rather than buried.** Secondary is 6.44:1 and tertiary is now 5.63:1 — a 13%
+step, down from 46%. Thirteen percent does not read as a tier. This decision gives up a tier.
+
+**That is not a compromise between two goods.** On a pure black canvas a third *distinct* tier that
+passes AA does not exist. Three passing tiers do exist — `#848486` / `#B0B0B8` / `#FFFFFF`, with a
+73% step — but they require brightening every piece of secondary text in the app, which changes
+what the thing feels like. **Legibility is not negotiable and a third shade of grey is.** Tone
+kept, tier given up.
+
+**A filled white control is now reserved for `PrimaryButton`, and an invariant enforces it.** The
+export row is outlined. This is the `AGENTS.md` §11 rule promoted from a sentence in a design
+system section to a mechanical constraint, because the rule had already been broken once and the
+breakage compiled, linted, and passed every test.
+
+**Both are now measured, not asserted.** An invariant computes the WCAG ratio from the hexes in
+`Theme.swift` rather than from a copy in the test — the first version of it carried its own list
+and therefore asserted about the values the app used *before* the fix. A second invariant fails
+on any `background(Theme.Color.textPrimary)` outside `Components.swift`; it was checked against
+the reverted row and reports zero offences now, one with the pill back.
+
+**Why the two are in one ADR.** Neither is architectural, and AGENTS.md §12 only requires
+architectural decisions to be written down. They are together because they are the same claim
+twice: *a reserved token is a promise, and the design system's promises should fail a build when
+they are broken.* `#848486` had been carrying text it could not read; white fill had been spent
+on the wrong row. Both were found by audit rather than by test, which is the part worth recording.
+
+**Alternatives rejected.** *Brighten `textSecondary` to `#B0B0B8` and keep three tiers* — produces
+three passing tiers with a real 73% step, and changes the tone of the whole app. The user chose
+the tone. *Delete `textTertiary` and promote its users* — simplest, and it makes "best 500"
+compete with copy that matters. *Keep the white export pill and rely on position* — it is the
+last thing on the screen and position is a weaker signal than weight on this canvas.
+
+**Reversal trigger.** If a future screen needs a genuine third text level, that screen's need is
+the argument — and it arrives by brightening `textSecondary`, not by dimming something else back
+below 4.5:1. If the app ever gains a second white-filled control, it is either `PrimaryButton` or
+the invariant is wrong; a screenshot will not decide it.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

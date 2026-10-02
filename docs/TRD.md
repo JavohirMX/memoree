@@ -545,8 +545,38 @@ Grid thumbnails use `PHCachingImageManager` with a request per visible cell, key
 into a small in-memory `NSCache<NSString, UIImage>`. Do not use `PHCachingImageManager`'s
 `startCachingImages` for this size of data set — the bookkeeping costs more than it saves.
 
-If an asset identifier no longer resolves, tombstone the moment and render a
-"missing from Photos" cell. The user may have deleted it from Photos deliberately.
+**The cache lives on the manager, so there is one manager per service.** Constructing one per
+call caches nothing, which is invisible behind a single composite on the Today screen and only
+appears once a 500-cell grid re-requests every image on every scroll.
+
+**The target size is part of the cache key, not just a parameter.** Photos returns a different
+decode for a thumbnail and for a full-screen image, so a key that omitted the size would hand
+the detail view a 96pt thumbnail — a bug that renders as a blurry photograph and reads as a
+Photos problem rather than a cache one.
+
+If an asset identifier no longer resolves, **render a "missing from Photos" cell and leave the
+moment in the archive.** The user may have deleted it from Photos deliberately, and tombstoning
+during a grid read would delete an archive entry because of a *read* — irreversible from the
+user's side, and triggered by nothing they did in this app. `MomentStore.delete()` is the only
+tombstone path.
+
+**The grid is grouped into months, and the grouping is a pure function.** `ArchiveSection` lives
+in `Models`, takes `[MomentFacts]` and a `Calendar`, and returns sections keyed by a
+`MonthKey` of year and month. Grouping by the *user's* calendar rather than UTC is not a detail:
+a moment captured at 01:00 on 1 September in Auckland is 13:00 on 31 August in UTC, so a UTC
+grouping files it under the wrong header on the screen whose only job is saying when a
+photograph was taken.
+
+The key is an integer pair rather than a `"YYYY-MM"` string or a start-of-month `Date`. A string
+is not an instant, so it sorts lexicographically; a `Date` has to be manufactured from
+`dateComponents` that silently fill in day and hour from the calendar's defaults. Both fail later
+than they fail here.
+
+The grid itself is a `ScrollView` of `Section`s in a `LazyVStack(pinnedViews: .sectionHeaders)`,
+each section holding its own `LazyVGrid`. **Pinned headers must have an opaque background** —
+these cells are full-bleed photographs, so a transparent header always has something showing
+through the text. Each cell also carries a day-of-month badge, because the month header cannot
+answer "which one was last Tuesday".
 
 ## 7. Streaks
 
@@ -626,6 +656,17 @@ The shutter renders in **every** state. The early-post refusal (`FR-5`) was stru
 the affordance was absent rather than disabled — and it contradicted the app's own
 onboarding copy, which promised you could photograph whenever you liked.
 
+**The shutter is above the countdown, which is the visual-hierarchy half of ADR-023.** A countdown
+to the *reminder* is shown only when notifications are off (ADR-024: it is then the only way the
+user could learn when the moment was). It was rendered above the shutter at 64pt against a 52pt
+button, so the largest element on the screen reported a fact and the smallest offered the only
+action — the screen said *watch the clock* when it meant *you can capture now*.
+
+It also contradicted the decision itself. No moment is late (ADR-023), so a prominent ticking
+number above the shutter reads as pressure to act immediately, which is the one behaviour the
+product explicitly does not want. Nothing is hidden; the emphasis moved. Below the shutter it is
+still a fact on screen, stated once, in the right voice.
+
 ## 9. Notification handling
 
 `MemoreeApp` registers `UNUserNotificationCenterDelegate` via
@@ -697,14 +738,16 @@ Dark only. No `colorScheme` branch anywhere — the theme is a constant.
 | --- | --- | --- |
 | `canvas` | `#000000` | Every screen background |
 | `surface` | `#1C1C1E` | Cards, sheets, rows |
-| `surfaceElevated` | `#2C2C2E` | Pressed states, chips |
-| `divider` | `#2C2C2E` | Hairlines |
+| `divider` | `#2C2C2E` | Hairlines, pressed states, chips. Absorbed `surfaceElevated`, which was the same value under a second name |
 | `textPrimary` | `#FFFFFF` | Titles, primary actions |
 | `textSecondary` | `#8E8E93` | Timestamps, metadata |
-| `textTertiary` | `#636366` | Disabled |
+| `textTertiary` | `#848486` | The faintest passing grey. Icons, dividers, decorative marks |
 | `onAccent` | `#000000` | Label on a white fill |
 | `accent` | `#FFD60A` | **The only** amber, and the app's single accent. One use: a permission the user declined and can only restore in system Settings (ADR-025) |
-| `destructive` | `#FF453A` | Delete confirmation only |
+
+`destructive` was `#FF453A` for delete confirmations and **has been removed.** It had no call
+site: SwiftUI's `role: .destructive` supplies the system red for every destructive control in
+the app, so the token was a second red that only existed in the theme file.
 
 The amber token was named `late` and reserved for late badges and a sub-30s countdown. ADR-023
 and ADR-024 removed both, and an off-window moment is now deliberately indistinguishable from an
@@ -712,14 +755,53 @@ on-time one — so there was nothing left for the colour to *mean*. It is not ca
 anymore, because a token whose name contradicts its only use is the same mistake the badge was.
 See **ADR-025**.
 
+**`textTertiary` is `#848486`, and the ramp is two tiers.** It was `#636366`, which measures 3.51:1
+on the canvas and 2.84:1 on a card against WCAG AA's 4.5:1 — and it carried real words, not
+decoration. `#848486` is 5.63:1 on black and 4.56:1 on a card: the faintest grey that passes on the
+harder of the two backgrounds it is used on.
+
+**The cost is a tier, and it is stated here rather than discovered later.** Secondary is 6.44:1
+and tertiary is 5.63:1 — a 13% step, down from 46%. Thirteen percent does not read as a tier. The
+alternative does produce three distinct passing tiers on black (`#848486` / `#B0B0B8` / `#FFFFFF`,
+a 73% step) but only by brightening every piece of secondary text in the app. Tone kept, tier
+given up. **Legibility is not negotiable; a third shade of grey is.**
+
+An invariant computes the ratio from the hexes in `Theme.swift` — not from a copy of them in the
+test, which is how the first version of it asserted about the values the app used *before* the fix
+and failed after it.
+
 Type ramp (SF Pro, system): display 64/700 **tabular**; screen title 22/700; card username
-17/600; body 15/400; metadata 13/400; button 17/600.
+17/600; body 15/400; metadata 13/400; button 17/600. Every one is a **text style**
+(`Font.system(.headline)`), not a point size — a fixed size does not scale, and this app had no
+Dynamic Type at all until Phase 8. The two display numerals have no text style and use
+`@ScaledMetric`, capped at 2.5×.
+
+**A control's height must never be pinned to a literal.** `PrimaryButton` was
+`.frame(height: 52)` against a scaling label, and at `accessibility-extra-extra-large` the "p" of
+"Capture" was clipped by the capsule's bottom edge. `minHeight` instead: the 52pt target holds at
+every size the design was drawn at and grows with the label beyond it. An invariant fails on any
+`.frame(height: n)` above a hairline.
+
+**A solid white control is reserved for `PrimaryButton`.** On black there is no other emphasis
+available — no hue, no shadow that reads — so white fill is the loudest thing a screen can say and
+it says it in exactly one way. Settings' export row was a solid white pill competing with the
+amber "Open Settings" button two sections below it. An invariant fails on any
+`background(Theme.Color.textPrimary)` outside `Components.swift`.
+
+**Times are rendered by the device, never by format string.** `"HH:mm"` and
+`String(format: "%02d:%02d")` were both in the app, on the screen that tells the user when to be
+ready and on the screen where they set their window. A user in the United States read a 24-hour
+clock while eight other screens said "11:00 AM". Both now use `.formatted(time: .shortened)`.
+**`24:00` is the one exception and stays** — it means end-of-day, a boundary rather than an
+instant, so there is no honest `Date` for it and rendering it as `00:00` would put the end of a
+window before its start.
 
 Radii: button `Capsule`; card 18; BTS inset 14; thumbnail 6; avatar `Circle`.
 Spacing base 4pt.
 
-Shadows on a black canvas do not read as darkening — they read as opacity. Use
-`Color.black.opacity(0.6)` with a 24pt blur, or skip them entirely.
+Shadows on a black canvas do not read as darkening — they read as opacity. **Use them never.**
+`Elevation` existed with one member and a comment directly above it saying to prefer omitting
+them; both are gone.
 
 ## 11. Concurrency
 
@@ -767,6 +849,72 @@ upload.
 | Capture | `LiveCaptureTests` on device, including a 20-run reliability check. **Cannot be tested in the simulator** — `AVCaptureDevice.default` returns nil there and the camera does not exist. `LiveCaptureRunGuardTests` fails a simulator run so the skip cannot pass silently |
 | PhotoKit | Simulator for permission flows; real device for actual writes and EXIF verification |
 | Network-free | Airplane-mode test on device; `nm -u` binary audit; a unit test asserting no `URLSession` is constructed by any production type |
+| Archive grouping | Pure-function tests on `ArchiveSection.grouping(_:calendar:)` against a **pinned** calendar. The boundary cases are the tests that matter: a moment on the far side of the month boundary from UTC in both directions, a DST transition inside a month, interleaved input, and "every moment appears exactly once" |
+| Design system | Source-scan invariants: no hardcoded colour, no hardcoded dimension, no `accessibility` symbol escaping the design system, and — see below — what a test asserting about design *cannot* catch |
 
 That last one is unusual and deliberately so: given that "no server" is the product's central
 claim, it should be mechanically enforced, not merely intended.
+
+### What the source scans can and cannot do
+
+Four design invariants are enforced by scanning source rather than by rendering. **A source scan
+cannot tell you whether a screen looks right**, and the project has been bitten by assuming it can:
+a test once asserted that the header icons were *pinned* to a fixed 20pt, faithfully protecting
+the defect that Dynamic Type could not reach them.
+
+| Invariant | Catches | Cannot catch |
+| --- | --- | --- |
+| No hardcoded colour in a view | A new `#RRGGBB` bypassing `Theme.Color` | Whether the token's contrast passes — that is a separate computation |
+| No hardcoded dimension in a view | A literal `52` or `96` reintroduced | Whether the value is right |
+| No `.frame(height: n)` above a hairline | A pinned control height clipping a scaling label | *Which* accessibility size clips, and by how much |
+| Only `PrimaryButton` paints a white control background | A secondary control spending the app's one emphatic gesture | Whether the hierarchy reads correctly to a person |
+
+The contrast invariant is the exception: it **computes the WCAG ratio from the hexes in
+`Theme.swift`**, because the whole point is the ratio and someone brightening a token by eye cannot
+tell whether they have passed. Its first version listed the hexes inside the test instead, which
+meant it asserted about the values the app used *before* the fix and failed after it — a test
+carrying its own copy of the thing it is testing is a test of the copy.
+
+**Every claim about a size, a colour or a layout was checked by screenshotting a build at each
+relevant setting, and two claims written down beforehand were wrong when measured.** The clipped
+descender was estimated as eleven points of lost title from a smaller accessibility size than
+actually clips. These are recorded in the code comments at the fixes, because a comment that
+asserts a measurement nobody took is worse than no comment.
+
+### Scans with recorded exceptions
+
+A scan with no exceptions is a scan that gets switched off, so each exclusion states its reason:
+
+- **`0` and `1` are not scanned for dimensions.** `VStack(spacing: 0)` means "no gap" and a 1pt
+  divider is a hairline — both literal by nature, and a token for each would claim to be part of
+  the system when it is not.
+- **Comments are stripped before scanning.** The first fixed-glyph test matched `.system(size:`
+  inside a comment *explaining why icons used to be fixed* — a test that fails on its own
+  documentation.
+- **The shutter's white fill is exempt** from the filled-control rule. It is `.fill` rather than
+  `.background`, and it is the inside of a ring the user is looking straight at.
+
+### The clock rule, and the two tests that had an expiry date
+
+**A test that pins a date *and* derives "today" from the real clock has written a test with an
+expiry date.** Two of ~350 did, and the suite went red at 00:00 on 2026-10-02 with no code change.
+
+`StreakCalculator.currentStreak` and `AppEnvironment.updateWindow` both take their boundary from
+the real clock — correctly, because in the app they must. The mistake was in the tests, which
+pinned the *other* end: `makeModel` injects a `StepClock`, but `MomentStore.summary()` reads the
+system clock, so a capture on a hardcoded day only lands inside the walk while that day is today
+or yesterday. Those tests had a two-day expiry, and they expired at midnight.
+
+The fix is to derive the day. `summary(today:)` takes an explicit argument precisely so this is
+possible, and the pure-function suites (`StreakCalculatorTests`, `StreakSummaryTests`) already pass
+it — which is why they were the only streak tests that survived the rollover.
+
+**One test had gone green for the wrong reason**, which is the more dangerous half. The
+late-capture test asserted `currentStreak == 0`; a stale day also yields 0, because of the gap
+rather than the lateness. It was passing and proving nothing. **An assertion satisfied for the
+wrong reason is worse than one that fails**, because the first advertises coverage.
+
+Where a test genuinely needs a fixed instant — export file contents, persistence round-trips — a
+literal is correct, and those pass `Date(timeIntervalSince1970:)` or compare against a fixed
+string. The rule is not "never pin a date". It is **never pin a date for a value measured against
+today**.

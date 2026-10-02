@@ -112,7 +112,16 @@ struct MomentWindowChangeTests {
 
     @Test("A window change re-derives tomorrow onward")
     func changeReDerivesTheFuture() async throws {
-        let now = try #require(DayIdentifier(string: "2026-10-01", calendar: calendar)).date
+        // **The day is derived, not pinned.** This hardcoded
+        // `DayIdentifier(string: "2026-10-01")` and started failing at midnight on
+        // 2026-10-02. `AppEnvironment.updateWindow` discards and re-derives from
+        // **`DayIdentifier(date: Date()) + 1`** — the real clock — while the test's
+        // `tomorrow` came from its own literal. Once the real date passed the
+        // literal, the pinned row stopped being in the re-derivation range at all
+        // and the assertion had nothing left to be about. Same two-day expiry as
+        // the commit suite's streak test, same cause, same fix: the claim is "a
+        // window change re-derives *tomorrow*", so tomorrow has to be tomorrow.
+        let now = calendar.startOfDay(for: Date())
         let harness = try makeHarness(now: now)
         let today = DayIdentifier(date: now, calendar: calendar)
         let tomorrow = today.offset(by: 1, calendar: calendar)

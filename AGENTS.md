@@ -184,6 +184,19 @@ deliberately indistinguishable from an on-time one, so there is nothing for it t
 (ADR-023, ADR-025). If you want amber to mean lateness again, that is a new ADR with a written
 reserved job, not a reuse of this one.
 
+**A solid white control belongs to `PrimaryButton` and nothing else.** On black there is no other
+emphasis available, so white fill is the loudest thing a screen can say, and it says it once. An
+invariant fails the build on any `background(Theme.Color.textPrimary)` outside `Components.swift`.
+The Settings export row was one, for a feature nobody opens twice, sitting two sections above the
+amber button above. Use the outline (ADR-026).
+
+**`textTertiary` is `#848486` and the ramp is two tiers, not three.** It was `#636366`, which
+measured 3.51:1 on the canvas against AA's 4.5:1 while carrying real words. The fix costs the ramp
+a visible step, and that was the cheaper trade: a third *distinct* tier that passes on pure black
+does not exist without brightening every piece of secondary text in the app. Legibility is not
+negotiable; a third shade of grey is. Reach for `textTertiary` when a symbol, divider or
+decorative mark carries the meaning, and `textSecondary` whenever a *word* does (ADR-026).
+
 ## 12. Before you commit
 
 - [ ] Builds clean, zero warnings

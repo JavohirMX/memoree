@@ -34,17 +34,16 @@ struct CameraHostView: View {
                 // toggle applies to a moment captured before it was flipped as
                 // well as one captured after.
                 //
-                // **`MainActor.run` rather than a bare `await`.** `MomentStore` is
-                // `@MainActor` and returns a SwiftData model, which is not
-                // `Sendable` — so `await environment.momentStore.settings()` hops
-                // to the main actor and then tries to hand an `AppSettings` back
-                // across, which Swift 6 refuses. Reading the `Bool` *inside* the hop
-                // means only a `Bool` crosses, which is the whole reason this is a
-                // `Bool` and not a settings object.
+                // **No `MainActor.run` hop.** There used to be one, and its comment
+                // explained at length that `MomentStore` is `@MainActor` and its
+                // SwiftData models are not `Sendable`. True — and irrelevant,
+                // because the hop was only ever needed to satisfy the `@Sendable`
+                // that was wrongly written on this closure type. `CameraViewModel`
+                // is `@MainActor` and calls this from the main actor, so the read
+                // is already isolated and there is nothing crossing anything.
+                // The hop now only obscured that.
                 shouldFileIntoAlbum: {
-                    await MainActor.run {
-                        environment.momentStore.settings().saveToAlbum
-                    }
+                    environment.momentStore.settings().saveToAlbum
                 },
                 // Reported to the environment rather than only to the camera
                 // screen, because that screen is gone by the time anyone could

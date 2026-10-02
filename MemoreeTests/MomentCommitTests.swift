@@ -173,8 +173,16 @@ struct MomentCommitTests {
         // The window runs 14:00:00–14:02:00. A capture at 14:05 is three
         // minutes late even though nothing in the camera knows what time it is.
         // Step 0, so the recorded instant is exactly the one named here.
-        let base = try #require(DayIdentifier(string: "2026-09-30")?.date)
-            .addingTimeInterval(14 * 3600 + 300)
+        //
+        // **The day is derived rather than pinned**, for the same reason as the
+        // on-time test below — and this one needed it *more*, because a stale day
+        // makes the final assertion pass for the wrong reason. `summary()` with
+        // no argument derives today from the real clock, so a moment on a literal
+        // that is no longer recent gives `currentStreak == 0` because of the gap
+        // rather than because the capture was late. A green assertion proving
+        // nothing is worse than a red one, and this one had silently become one.
+        let today = DayIdentifier(date: Date())
+        let base = today.date.addingTimeInterval(14 * 3600 + 300)
         let model = makeModel(harness, now: base, step: 0)
 
         await model.start()
@@ -184,19 +192,40 @@ struct MomentCommitTests {
 
         let moment = try #require(harness.store.allMoments.first)
         #expect(moment.capturedAt == base)
+        #expect(moment.dayIdentifier == today.rawValue)
         #expect(moment.isLate)
         #expect(moment.lateBy == 180, "14:05 against a window closing at 14:02")
         // A late day is still a real day. It is archived and badged; it just
         // does not grow the streak (ADR-009).
         #expect(harness.store.allMoments.count == 1)
-        #expect(harness.store.summary().currentStreak == 0)
+        // **Today specifically**, so the zero can only come from the lateness:
+        // the moment is on today, so the walk starts at today rather than a day
+        // back, and only the on-time check can stop it.
+        #expect(harness.store.summary(today: today).currentStreak == 0)
+        // And the control: the same history with the moment counted as on time
+        // does grow the streak, so the assertion above is about lateness.
+        #expect(harness.store.summary(today: today).daysCaptured == 1)
     }
 
     @Test("An on-time capture is not late, and grows the streak")
     func onTimeCaptureGrowsTheStreak() async throws {
         let harness = try makeHarness()
-        let base = try #require(DayIdentifier(string: "2026-09-30")?.date)
-            .addingTimeInterval(14 * 3600 + 30)
+
+        // **The day is derived, not pinned.** This used to hardcode
+        // `DayIdentifier(string: "2026-09-30")`, and the suite went red at
+        // midnight on 2026-10-02 for a reason that had nothing to do with the
+        // code: `makeModel` pins the *model's* clock with a `StepClock`, but
+        // `MomentStore.summary()` derives `today` from the **real** one.
+        // `StreakCalculator.currentStreak` walks backwards from that real today,
+        // so a capture pinned to a literal only lands inside the walk while the
+        // literal is today or yesterday — **the test had a two-day expiry and it
+        // expired.**
+        //
+        // What the assertion is actually about is "an on-time capture today
+        // grows today's streak", so the day has to be today. Deriving it makes
+        // that the claim instead of an accident of when the suite was written.
+        let today = DayIdentifier(date: Date())
+        let base = today.date.addingTimeInterval(14 * 3600 + 30)
         let model = makeModel(harness, now: base)
 
         await model.start()
@@ -205,8 +234,9 @@ struct MomentCommitTests {
         await model.commit()
 
         let moment = try #require(harness.store.allMoments.first)
+        #expect(moment.dayIdentifier == today.rawValue, "the capture landed on the day the test derived")
         #expect(!moment.isLate)
-        #expect(harness.store.summary().currentStreak == 1)
+        #expect(harness.store.summary(today: today).currentStreak == 1)
     }
 
     // MARK: - One moment per day

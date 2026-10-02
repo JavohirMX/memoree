@@ -221,23 +221,31 @@ struct TodayView: View {
 
             Spacer(minLength: Theme.Spacing.xl)
 
-            // The countdown is gone, and not merely hidden (ADR-024). It is not
-            // rendered for the open window either: a number ticking like a
-            // deadline above a window that no longer closes is worse than no
-            // number, and after ADR-023 missing the window costs the streak,
-            // which made it not a cosmetic loss.
+            // **The shutter comes before the countdown.**
             //
-            // What remains is a countdown to the *reminder*, shown only when
-            // notifications are off — because then the clock is the only way the
-            // user could ever learn when the moment was (ADR-024).
+            // It was the other way round, and it was backwards. The countdown
+            // read `05:18` at 64pt — the largest thing on the screen after the
+            // streak — directly above a 52pt button. The largest element was
+            // reporting a fact and the smallest was offering the only action, so
+            // the screen's visual hierarchy said "watch the clock" when what it
+            // meant was "you can capture now".
+            //
+            // That inverts ADR-023 as well. The whole point of the change was
+            // that no moment is late, so a big ticking number above the shutter
+            // reads as pressure to act *now* — which the product explicitly does
+            // not want, since capturing whenever you like is the supported
+            // behaviour. The countdown is still here (ADR-024: when
+            // notifications are off it is the only way the user learns when the
+            // moment was), but it is a footnote under the button rather than a
+            // countdown above it. Nothing is hidden; the emphasis is what moved.
+            action(model)
+
             if model.showsMomentTime,
                let remaining = model.timeUntilMoment,
                remaining > 0 {
                 CountdownDisplay(text: CountdownFormatter.string(fromSeconds: remaining))
-                    .padding(.bottom, Theme.Spacing.xl)
+                    .padding(.top, Theme.Spacing.xl)
             }
-
-            action(model)
 
             Spacer(minLength: Theme.Spacing.l)
 

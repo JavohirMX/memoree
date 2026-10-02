@@ -253,13 +253,28 @@ struct SettingsView: View {
                     ),
                     preview: SharePreview("Memoree archive")
                 ) {
+                    // **Outlined, not filled.** This was a solid white capsule, which is
+                    // the same treatment `PrimaryButton(.filled)` gives and the
+                    // app reserves for the one thing a screen wants you to do.
+                    // Settings has three sections and this row is not the
+                    // important one — the window and the album are. A white pill
+                    // at the bottom of the screen is a button that says "this is
+                    // the main event" in the only voice the design language has,
+                    // and it was spending that on an export nobody opens twice.
+                    //
+                    // The border keeps it discoverable, which is what the weight
+                    // change is at risk of: a row that recedes too far is a
+                    // feature that does not exist. `Theme.Radius` already has
+                    // what this needs; the outline is `textPrimary`, same as
+                    // `PrimaryButton(.outlined)`.
                     Label("Export as JSON", systemImage: "square.and.arrow.up")
                         .font(Theme.Typography.button)
-                        .foregroundStyle(Theme.Color.onAccent)
+                        .foregroundStyle(Theme.Color.textPrimary)
                         .frame(maxWidth: .infinity)
                         .frame(minHeight: Theme.Size.tapTargetComfortable)
-                        .background(Theme.Color.textPrimary)
-                        .clipShape(Capsule())
+                        .overlay {
+                            Capsule().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                        }
                 }
                 .buttonStyle(.plain)
                 .accessibilityHint("Opens the share sheet with one JSON file of every moment")

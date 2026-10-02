@@ -85,10 +85,21 @@ final class CameraViewModel {
     /// after it was turned on should be filed, and the reverse should not. Held
     /// as `nil` when the screen was built without one, which is what the camera
     /// tests do and what makes "no album preference" expressible at all.
-    private let shouldFileIntoAlbum: (@Sendable () async -> Bool)?
+    /// **Not `@Sendable`.** This class is `@MainActor` and these closures are
+    /// only ever invoked from it, so there is nothing to send them to — and
+    /// writing `@Sendable` on them was actively wrong in the other direction:
+    /// a `@Sendable` closure is non-isolated, so `CameraHostView` could not
+    /// build one that touched the `@MainActor` `AppEnvironment`, and the only
+    /// way past the warning was a `MainActor.run` hop for a value that was
+    /// already on the main actor. It cost a warning on every build and made the
+    /// code read as though it were crossing an isolation boundary when it never
+    /// crossed one.
+    private let shouldFileIntoAlbum: (() async -> Bool)?
 
     /// Where an album failure goes.
-    private let reportAlbumFailure: (@Sendable (String) -> Void)?
+    ///
+    /// Not `@Sendable` for the same reason as above.
+    private let reportAlbumFailure: ((String) -> Void)?
 
     /// Set when the photographs were saved but the album add did not happen.
     ///
@@ -152,11 +163,11 @@ final class CameraViewModel {
         photoLibrary: PhotoLibraryService,
         haptics: HapticFeedback = InMemoryHapticFeedback(),
         record: MomentRecorder? = nil,
-        shouldFileIntoAlbum: (@Sendable () async -> Bool)? = nil,
+        shouldFileIntoAlbum: (() async -> Bool)? = nil,
         /// Where to report a failed album add. Separate from
         /// `shouldFileIntoAlbum` so a test can assert the album behaviour without
         /// also needing somewhere to put the failure.
-        reportAlbumFailure: (@Sendable (String) -> Void)? = nil,
+        reportAlbumFailure: ((String) -> Void)? = nil,
         chooseFirstCamera: (() -> CameraPosition)? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {

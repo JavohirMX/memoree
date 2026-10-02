@@ -335,6 +335,45 @@ struct DesignSystemInvariantTests {
         )
     }
 
+    @Test("Only the primary button is a filled white control")
+    func filledWhiteIsReservedForThePrimaryButton() throws {
+        // **AGENTS.md §11: "White is the verb."** On a black canvas there is no
+        // other emphasis available — no hue, no shadow that reads, nothing — so a
+        // solid white control is the loudest thing a screen can say, and it says
+        // it in exactly one way.
+        //
+        // Settings' export row was one. It is a `ShareLink` styled as a solid
+        // white capsule, on a screen whose actual choices are the window and the
+        // album, at the bottom where it was the last thing the eye landed on. It
+        // was spending the app's only emphatic gesture on the feature nobody
+        // opens twice. Outlined now, and the border keeps it findable — which is
+        // what the weight change is at risk of, and why the rule is "not filled"
+        // rather than "not visible".
+        //
+        // **Scoped to `Components.swift`**, which is where `PrimaryButton` lives.
+        // The shutter's inner dot also paints white, and it is not a control
+        // background — `.fill` rather than `.background`, and it is the inside of
+        // a ring the user is looking straight at.
+        let offenders = try SourceScan.swiftFiles()
+            .filter { $0.lastPathComponent != "Components.swift" }
+            .flatMap { file in
+                try SourceScan.codeLines(of: file)
+                    .filter { $0.code.contains("background(Theme.Color.textPrimary)") }
+                    .map { "\($0.number) \($0.code.trimmingCharacters(in: .whitespaces))" }
+                    .map { "\(file.lastPathComponent):\($0)" }
+            }
+
+        #expect(
+            offenders.isEmpty,
+            """
+            a filled white control outside PrimaryButton. White is the verb \
+            (AGENTS.md §11) and there is one verb: \
+            \(offenders.joined(separator: ", "))
+            Use a stroked outline if the control is secondary.
+            """
+        )
+    }
+
     /// WCAG 2.x relative-luminance contrast ratio.
     private static func contrast(_ foreground: UInt32, against background: UInt32) -> Double {
         func luminance(_ hex: UInt32) -> Double {

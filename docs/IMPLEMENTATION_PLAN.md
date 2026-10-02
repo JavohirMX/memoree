@@ -927,6 +927,49 @@ minutes** with no device, no signing, and no twenty-minute wait. This is the str
 the project for keeping a way to see a screen — and the strongest argument against treating the
 device run as the only instrument that counts.
 
+### Progress as of 2026-10-01 (later still) — the archive could not be searched
+
+An accessibility and design pass found the grid's real gap, and it was not a contrast ratio or a
+tap target. **The archive had no dates anywhere.** 500 photographs in an unbroken block of squares
+with no month and no day. You could count them; you could not find last Tuesday in them, you could
+not tell six weeks ago from yesterday, and you had no way to tell whether the archive had quietly
+stopped filling. An archive you cannot locate things in is a contact sheet.
+
+**Month headers, pinned.** `ArchiveGrid` is now a `ScrollView` of `Section`s in a
+`LazyVStack(pinnedViews: .sectionHeaders)`, each section carrying its own `LazyVGrid`. The header
+is opaque against `canvas` — a pinned header with a transparent background shows photographs
+scrolling *through* the text, and these cells are full-bleed photographs, so there is always
+something behind it to see.
+
+**A day badge on every cell**, because the month header cannot answer "which one was last Tuesday"
+— thirty squares under "October" all read October. A black pill at 60% carries a white day number
+top-left; the scrim is not decoration, since photographs are the one thing in the app whose colours
+are not under its control. It is `accessibilityHidden` because the cell's own VoiceOver label
+already reads the full date in words.
+
+**`ArchiveSection` is a value type in `Models`, and that is the point.** The grouping is the whole
+of the feature's logic and every one of its failure modes is invisible: a duplicate header, a
+section out of order, a moment under the wrong month. Thirteen tests, and the ones that earned their
+keep are the boundaries —
+
+| Case | What it pins |
+| --- | --- |
+| `13:00Z` on 31 Aug, in Auckland | Groups to **September** locally. The same instant is 31 August in UTC, which is how a photograph lands under the wrong header. |
+| `06:30Z` on 1 Sep, in Los Angeles | Groups to **August**. The mirror image, so the rule is not "always prefer the later month". |
+| 28–31 March, Europe/London | DST inside the month does not split it. |
+| Sept, Oct, Sept, Oct | **One** section per month. The case a dictionary-shaped grouping gets wrong, and it shows as two "September 2026" headers. |
+| Any input | Every moment appears exactly once. A photograph silently absent from the user's own archive is the worst bug this app could have. |
+
+The section key is a **year/month pair, not a `"2026-09"` string and not a `Date`.** Both
+alternatives fail later: a string is not an instant so it sorts lexicographically, and a `Date`
+start-of-month has to be manufactured from `dateComponents` that quietly fill in day and hour from
+the calendar's defaults.
+
+**The first Auckland test asserted September and failed, and the fixture was wrong.** Auckland is
+UTC+12 in August, not +13 — NZDT does not start until 27 September — so 11:30 UTC is 23:30 on
+31 August locally, and correctly August. A test that pins a timezone has to pin the offset too:
+"Auckland in January" and "Auckland in August" are two different timezones.
+
 ---
 
 ## Phase 7 — Behind the Scenes · **last, and possibly cut**
@@ -1140,6 +1183,116 @@ announces once. Also: two of the three composites announce as buttons and one sh
 AVFoundation and Photos since Phase 0 and called `AVCaptureDevice.requestAccess(for: .video)`
 directly, breaking `AGENTS.md` §3; `Photos` was never used at all. The request now goes through
 `captureService`, which has had `requestAuthorization()` since Phase 1.
+
+### Progress as of 2026-10-01 (later) — a second pass, and it found a different class of defect
+
+The first pass took the plan's word "verify" at face value and found missing type. This one was
+given a brief of defects only — contrast, tap targets, glyph scaling, locale, dead code — and the
+defects it found were mostly *real but wrong in magnitude*, plus two that had nothing to do with
+accessibility at all.
+
+**Two of the numbers I wrote down were wrong, and only a screenshot settled them.**
+
+- I claimed the 52pt primary button lost ~11pt of its title from `accessibility-x-large` up. Screenshots
+  at **every** accessibility category in turn show nothing wrong through `accessibility-extra-large`,
+  and at `accessibility-extra-extra-large` the "p" of "Capture" is clipped by the capsule's bottom
+  edge — descender on the boundary, zero padding. Not eleven points of title: a descender. The
+  measurement cost four screenshots and saved a comment that would have been confidently false.
+- `textTertiary` is 3.51:1 on the canvas and 2.84:1 on a card, against AA's 4.5:1. Raising it to
+  `#848486` — 5.63:1 and 4.56:1, the faintest grey that passes on the harder background — **costs the
+  ramp a tier.** Secondary is 6.44:1, so the step between them is 13%, down from 46%. Thirteen percent
+  does not read as a tier.
+
+  That is the price of the other option. Three distinct tiers that all pass AA on black *do* exist —
+  `#848486` / `#B0B0B8` / `#FFFFFF`, with a 73% step — but they require brightening every piece of
+  secondary text in the app. Tone kept, tier given up: **legibility is not negotiable and a third
+  shade of grey is.** On a pure black canvas a third distinct passing tier does not exist without
+  changing what the app feels like.
+
+**Three tests were actively protecting bugs.** `displayBounds == "11:00 – 23:00"`,
+`== "00:00 – 09:00"` and `momentClockTime == "14:00"` all enforced a 24-hour clock on every user
+regardless of Settings, while reading as though they were testing *that the time is 14:00*. All
+three now compare against what the device itself renders, which is what surfaced two facts worth
+pinning: **en_GB midnight is `0:00`, not `00:00`** (CLDR's h23 pattern), so a British user sees `0:00`
+and `24:00` in one window; and **`en_US` puts U+202F before the meridiem**, so `"12:00 AM"` in a test
+is not the string the device produces.
+
+`StatsViewModel` had already been through the 24-hour bug. The fix was never carried across to the
+other two files that had it — the same shape as the twenty-moment capture fix: a correct change made
+where the symptom appeared and nowhere else.
+
+**Six design tokens were deleted, and one of them contradicted its own comment.** `surfaceElevated`
+and `divider` were the same `#2C2C2E` under two names, so someone would eventually pick the other and
+wonder why the app has two greys. `Elevation.card` shipped a shadow two lines under a comment
+reading *"on a black canvas a shadow does not read as darkening — it reads as opacity. Prefer
+omitting shadows entirely."* `Typography.caption` had no call site and a doc comment describing a
+role no view was doing; deleting it orphaned the comment, which claimed a 16pt level the app does
+not have, so that went too. Six tokens each named a capability the app does not have.
+
+**`Theme.Size` now exists** because twelve numeric dimensions were literals in view files. The
+invariant that enforces it excludes `0` and `1` deliberately — a `VStack(spacing: 0)` and a 1pt
+divider are literals by nature, and a scan with no exceptions is a scan that gets switched off.
+
+**And two concurrency warnings that had been there the whole time.** `CameraViewModel` is
+`@MainActor` and stores its album callbacks as `@Sendable`, which makes them *non-isolated* — so
+`CameraHostView` could not build one touching the `@MainActor` `AppEnvironment`, and the only way past
+the warning was a `MainActor.run` hop for a value already on the main actor. Dropping `@Sendable`
+fixed both warnings and deleted the hop. Earlier builds here grepped for `error:` only, so they were
+never seen; **`AGENTS.md` §12 asks for zero warnings and the grep was not asking that.**
+
+### Four design calls, none of them defects
+
+| Call | Change | Argument |
+| --- | --- | --- |
+| Archive had no dates | Month headers, pinned; day badge per cell | You could count your archive but not search it |
+| Escalation inverted | **Shutter above the countdown** | The countdown was 64pt and the button 52pt, so the screen said *watch the clock* when it meant *you can capture now*. It also contradicted ADR-023: no moment is late, so a big ticking number above the shutter reads as pressure to act now |
+| Camera had no exit | Labelled outlined "Cancel", top-trailing | The only route back was an edge swipe the app never claimed — and the review state *did* have a visible Cancel, so the exit appeared only after you had committed to a photograph |
+| Export outranked the window | Solid white pill → outline | `AGENTS.md` §11: "White is the verb." On black, a solid white control is the loudest thing available and it was spending that on the feature nobody opens twice. The screenshot settled it: the amber "Open Settings" button — ADR-025's one reserved use — sits two sections below, and the two were competing |
+
+The last one is now an invariant: **no view outside `Components.swift` may paint a control
+`Theme.Color.textPrimary`.** Verified by replaying the scan against the reverted row (0 offences
+now, 1 with the pill back).
+
+**Deliberately not done.** `btsAssetIdentifier` is written and never read. Removing it is a
+SwiftData schema change against a store holding real captures, so it is recorded rather than done
+quietly. And the review screen's "Post" became "Save" — that is copy, which is the user's call.
+
+### Midnight found two tests with an expiry date
+
+The suite went red at 00:00 on 2026-10-02 with **no code change**, and both failures were real.
+Worth writing down because nothing about them looks like a date bug from the failure message:
+
+- `MomentCommitTests` — *"An on-time capture is not late, and grows the streak"* expected
+  `currentStreak == 1` and got 0.
+- `MomentWindowChangeTests` — *"A window change re-derives tomorrow onward"* expected the new
+  window's hour and got the old one.
+
+**The cause is a split clock.** `makeModel` pins the *model's* clock with a `StepClock`, but
+`MomentStore.summary()` derives `today` from the **real** one. Both tests captured on a hardcoded
+day — `2026-09-30` and `2026-10-01` — and `StreakCalculator.currentStreak` walks backwards from
+the real today. A capture on a literal therefore lands inside the walk only while that literal is
+today or yesterday. **The tests had a two-day expiry, and it expired at midnight.**
+
+`AppEnvironment.updateWindow` has the identical shape: it discards and re-derives from
+`DayIdentifier(date: Date()) + 1` — the real clock — while the test's `tomorrow` came from its own
+literal. Once the real date passed it, the pinned row stopped being in range and the assertion had
+nothing left to be about.
+
+**One of them had gone green for the wrong reason, which is worse.** The late-capture test also
+asserted `summary().currentStreak == 0`, and a stale day produces 0 *because of the gap* rather
+than because the capture was late. The assertion was passing and proving nothing. It now passes
+`today:` explicitly and asserts `daysCaptured == 1` alongside, so the zero can only come from the
+lateness.
+
+The fix is to derive the day rather than pin it — the claims are "an on-time capture **today**
+grows the streak" and "a window change re-derives **tomorrow**", so today and tomorrow have to be
+today and tomorrow. `StreakCalculatorTests` and `StreakSummaryTests` already do this correctly by
+passing `today:` as an argument, which is what made them the only two streak tests that survived
+the rollover.
+
+**The generalisable rule: a test that pins a date *and* derives "today" from the real clock has
+written a test with an expiry date.** Any such test is green until the day it was authored. Two in
+~350, found by waiting, not by reading.
 
 ### The BTS toggle: cut, and why that is a decision rather than an omission
 
