@@ -107,12 +107,56 @@ enum CameraZoom: String, Sendable, Equatable, CaseIterable {
 
     /// Whether this zoom can be offered on `position`.
     ///
-    /// **The front camera is one lens**, so `ultraWide` is not available there and
-    /// the third button is disabled rather than hidden — a row of buttons whose
-    /// count changes with the camera is more confusing than one that shows you
-    /// why it cannot.
+    /// ## The front has no telephoto, so 2× is not there
+    ///
+    /// **The front camera has one lens**, so 2× on it is a digital crop of your
+    /// face — the magnification that makes a selfie a close-up of one cheek. iOS
+    /// Camera omits it for the same reason. The rear's 2× is real: the virtual
+    /// dual-wide device hands off to a genuinely longer lens at that point.
+    ///
+    /// So the front row is 0.5× and 1×, and the rear row is all three.
+    ///
+    /// ## And 0.5× *is* available on the front
+    ///
+    /// **This needs a different physical camera**, not a zoom factor. A device
+    /// survey on this hardware found `.builtInUltraWideCamera` at the **front**
+    /// position with 56 three-by-four formats, so the reach exists — which the
+    /// first version of this assumed it did not, and greyed the button out.
+    /// `requiresItsOwnDevice(on:)` is what makes that difference explicit, because
+    /// it changes what applying the zoom costs.
     func isAvailable(on position: CameraPosition) -> Bool {
-        if position == .front, self == .ultraWide { return false }
+        if position == .front, self == .doubleWide { return false }
         return true
+    }
+
+    /// The zooms offered on `position`, in order.
+    ///
+    /// **The row changes length when the camera changes**, which is a decision
+    /// rather than an oversight: the alternative is showing a permanently disabled
+    /// 2× on the front, and a control that is never pressable on one camera is
+    /// clutter that changes nothing.
+    static func offered(on position: CameraPosition) -> [CameraZoom] {
+        allCases.filter { $0.isAvailable(on: position) }
+    }
+
+    /// Whether this zoom needs a **different physical camera** rather than a
+    /// different zoom factor.
+    ///
+    /// ## Only the front's 0.5× does
+    ///
+    /// The rear's whole range is one virtual dual-wide device, so every rear zoom
+    /// is a `videoZoomFactor` write. **The front has no virtual device** — the
+    /// survey found `.builtInDualWideCamera` only at the back — so front 0.5× has
+    /// to attach the front's ultra-wide lens, which is `removeInput`/`addInput` on
+    /// the session: the stop-reconfigure-start cycle ADR-003 measured.
+    ///
+    /// ## Why this is worth stating rather than hiding in the controller
+    ///
+    /// Because the cost differs by a factor of two. A caller that assumes every
+    /// zoom is a property write will build the rear's cheap path for the front's
+    /// expensive one, and the symptom — a frame output that dies mid-moment — is
+    /// the single hardest failure in this app to diagnose.
+    func requiresItsOwnDevice(on position: CameraPosition) -> Bool {
+        position == .front && self == .ultraWide
     }
 }

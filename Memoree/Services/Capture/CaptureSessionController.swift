@@ -750,18 +750,41 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         session.addOutput(output)
     }
 
-    /// The device to open for `position`.
+    /// The device to open for `position` at `zoom`.
     ///
-    /// **Rear: the virtual dual-wide device, falling back to the wide lens.**
-    /// Front: the wide lens.
+    /// ## Rear: one virtual device for the whole range
     ///
-    /// The fallback is checked rather than assumed because it is the same
-    /// three-by-four question `applyFormat` is about to ask anyway, and answering
-    /// it here means a phone without the virtual device opens a camera rather than
-    /// reporting `noInputAvailable` — which is the error that once sent the
-    /// diagnosis towards permissions and hardware instead of towards the ratio.
-    static func captureDevice(for position: CameraPosition) -> AVCaptureDevice? {
-        guard position == .back else {
+    /// **The rear's 0.5×, 1× and 2× are all the same physical input** — the
+    /// virtual dual-wide device, with `videoZoomFactor` selecting among them. So
+    /// changing the rear's zoom never touches the session graph.
+    ///
+    /// ## Front: 0.5× is a different lens
+    ///
+    /// **There is no virtual device at the front** — the device survey found
+    /// `.builtInDualWideCamera` only at the back — so front 0.5× attaches the
+    /// front's ultra-wide lens, and 1× attaches the front's wide one. That is a
+    /// `removeInput`/`addInput` pair, which is the stop-reconfigure-start cycle
+    /// ADR-003 measured. `CameraZoom.requiresItsOwnDevice(on:)` is what tells the
+    /// caller this is not a cheap write.
+    ///
+    /// ## Every fallback is checked for 3:4 rather than assumed
+    ///
+    /// It is the same question `applyFormat` is about to ask anyway, and answering
+    /// it here means a phone without one of these devices opens *something* rather
+    /// than reporting `noInputAvailable` — the error that once sent the diagnosis
+    /// towards permissions and hardware instead of towards the ratio.
+    static func captureDevice(
+        for position: CameraPosition,
+        zoom: CameraZoom
+    ) -> AVCaptureDevice? {
+        if position == .front {
+            let type: AVCaptureDevice.DeviceType = zoom.requiresItsOwnDevice(on: position)
+                ? .builtInUltraWideCamera
+                : .builtInWideAngleCamera
+            let device = AVCaptureDevice.default(type, for: .video, position: .front)
+            if let device, CaptureFormatSelector.selectFormat(for: device) != nil {
+                return device
+            }
             return CaptureFormatSelector.wideAngleDevice(for: position)
         }
 
@@ -770,8 +793,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             for: .video,
             position: .back
         )
-        if let dualWide,
-           CaptureFormatSelector.selectFormat(for: dualWide) != nil {
+        if let dualWide, CaptureFormatSelector.selectFormat(for: dualWide) != nil {
             return dualWide
         }
         return CaptureFormatSelector.wideAngleDevice(for: position)
@@ -799,7 +821,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// Falls back to the wide lens if the virtual device reports no 3:4 format,
     /// so a phone without one still captures rather than failing.
     private func attachInput(at position: CameraPosition) throws {
-        guard let device = Self.captureDevice(for: position) else {
+        guard let device = Self.captureDevice(for: position, zoom: currentZoom) else {
             throw CaptureError.noInputAvailable(position)
         }
         let input = try AVCaptureDeviceInput(device: device)
@@ -837,6 +859,12 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
         activeInput = input
         activePosition = position
+        // **What was actually attached**, not what was asked for — the fallback
+        // above may have substituted the wide lens for an absent ultra-wide, and
+        // a later zoom must compare against reality rather than intent.
+        attachedLens = (position == .front && device.deviceType == .builtInUltraWideCamera)
+            ? .ultraWide
+            : nil
     }
 
     /// Applies the 3:4 format to the active input. Runs on `queue`.
@@ -946,11 +974,35 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// than as zoom resetting.
     private var currentZoom: CameraZoom = .wide
 
+    /// Which lens is physically attached right now, or `nil` for the rear.
+    ///
+    /// **Only the front ever has a value**, because only the front changes lens
+    /// with zoom — the rear is one virtual device for its whole range. It is set
+    /// in `attachInput`, which is the only place that knows which device it
+    /// actually attached rather than which one it asked for.
+    ///
+    /// Queue-confined, like everything else here.
+    private var attachedLens: CameraZoom?
+
     /// Applies a zoom, and remembers it.
     ///
-    /// **Refuses rather than clamps.** `CameraZoom.isAvailable(on:)` is false for
-    /// `ultraWide` on the front, and pressing a disabled button should do nothing
-    /// — not silently become 1×, which is how a control becomes a liar.
+    /// ## Two costs, and which one you pay depends on the camera
+    ///
+    /// **The rear is a property write.** Every rear zoom is the same virtual
+    /// dual-wide input with a different `videoZoomFactor`, so this is one line
+    /// under `lockForConfiguration` and the frame output is never touched.
+    ///
+    /// **The front's 0.5× is a lens change.** There is no virtual device at the
+    /// front, so this is `stopRunning` → `removeInput` → `addInput` →
+    /// `startRunning` → wait for a delivered frame — the same cycle as the
+    /// front↔rear swap, which is the *known-good* shape. **Reconfiguring while
+    /// running is the one that kills the frame output**, so this deliberately
+    /// stops first.
+    ///
+    /// ## Refuses rather than clamps
+    ///
+    /// 2× does not exist on the front, and pressing a button that cannot work
+    /// should do nothing rather than quietly become 1×.
     func applyZoom(_ zoom: CameraZoom) async throws {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             queue.async { [self] in
@@ -958,11 +1010,30 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     c.resume(throwing: CaptureError.zoomUnavailable(zoom, activePosition))
                     return
                 }
+
+                // The rear is never here: it is one virtual device for its whole
+                // range, so every rear zoom is a property write.
+                let needsNewLens = zoom.requiresItsOwnDevice(on: activePosition)
+                    && attachedLens != zoom
+                    && activeInput != nil
                 currentZoom = zoom
+
                 do {
-                    try applyZoomOnDevice(zoom)
+                    if needsNewLens {
+                        // **Stopped first**, like every other reconfiguration
+                        // here. The frame output dies if this runs while running.
+                        session.stopRunning()
+                        try attachInput(at: activePosition)
+                        try applyFormat(for: activePosition)
+                        session.startRunning()
+                    } else {
+                        try applyZoomOnDevice(zoom)
+                    }
                     c.resume()
                 } catch {
+                    // Leave the session running whatever happened, so a refused
+                    // zoom cannot present a frozen preview with no error.
+                    if state == .running { session.startRunning() }
                     c.resume(throwing: Self.map(error, at: self.activePosition))
                 }
             }

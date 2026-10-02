@@ -46,20 +46,50 @@ struct CameraZoomTests {
         #expect(CameraZoom.doubleWide.virtualDeviceZoomFactor == 4.0)
     }
 
-    @Test("The front camera refuses 0.5x rather than pretending")
-    func frontRefusesUltraWide() {
-        // **The front of a phone has one lens.** Clamping to 1x instead would
-        // leave a button showing 0.5x selected while the camera sits at 1x — a
-        // control lying about the state of the world, which is the failure mode
-        // AGENTS.md §6 calls a dead end.
-        #expect(!CameraZoom.ultraWide.isAvailable(on: .front))
+    @Test("The front has 0.5x and 1x, and no 2x")
+    func frontHasNoTelephoto() {
+        // **The front of a phone has one lens**, so 2x on it is a digital crop of
+        // one cheek — and it is the magnification that turns a selfie into a
+        // close-up. iOS Camera omits it for the same reason. The rear's 2x is
+        // different: the virtual dual-wide device hands off to a genuinely longer
+        // lens at that point.
+        #expect(CameraZoom.ultraWide.isAvailable(on: .front), "0.5x exists on the front")
         #expect(CameraZoom.wide.isAvailable(on: .front))
-        #expect(CameraZoom.doubleWide.isAvailable(on: .front))
+        #expect(!CameraZoom.doubleWide.isAvailable(on: .front),
+                "the front has no telephoto, so 2x is a crop")
 
-        // And nothing about the rear is restricted — every case is available there,
-        // which is the reason the rear uses a virtual device.
+        // The row's contents, which is what the buttons are actually built from.
+        #expect(CameraZoom.offered(on: .front) == [.ultraWide, .wide])
+        #expect(CameraZoom.offered(on: .back) == CameraZoom.allCases)
+
+        // And the rear is unrestricted — which is the reason it uses one virtual
+        // device rather than three lenses.
         for zoom in CameraZoom.allCases {
             #expect(zoom.isAvailable(on: .back), "\(zoom)")
+        }
+    }
+
+    @Test("Only the front's 0.5x costs a lens change")
+    func onlyFrontUltraWideNeedsItsOwnDevice() {
+        // ## Why this is worth stating rather than hiding in the controller
+        //
+        // **Because the cost differs by an order of magnitude.** The rear's whole
+        // range is one virtual dual-wide input, so every rear zoom is a
+        // `videoZoomFactor` write under `lockForConfiguration`. The front has no
+        // virtual device — the device survey found `.builtInDualWideCamera` only
+        // at the back — so front 0.5x has to `removeInput`/`addInput`.
+        //
+        // A caller that assumed every zoom was a property write would build the
+        // rear's cheap path for the front's expensive one, and the symptom is the
+        // frame output dying mid-moment, which is the hardest failure in this app
+        // to diagnose.
+        #expect(CameraZoom.ultraWide.requiresItsOwnDevice(on: .front))
+        #expect(!CameraZoom.ultraWide.requiresItsOwnDevice(on: .back),
+                "the rear reaches 0.5x on the virtual device")
+
+        for zoom in [CameraZoom.wide, .doubleWide] {
+            #expect(!zoom.requiresItsOwnDevice(on: .front), "\(zoom)")
+            #expect(!zoom.requiresItsOwnDevice(on: .back), "\(zoom)")
         }
     }
 
@@ -199,12 +229,20 @@ struct CameraZoomPersistenceTests {
         )
 
         await model.start()
-        #expect(await model.chooseZoom(.doubleWide))
+        #expect(await model.chooseZoom(.wide))
 
-        let refused = await model.chooseZoom(.ultraWide)
-        #expect(!refused, "the front has no 0.5x and must say so")
-        #expect(model.zoom == .doubleWide,
-                "a refused zoom must not silently become 1x — the button would lie")
+        // **2x on the front is a digital crop of one cheek**, so it is refused
+        // rather than clamped. Clamping would leave a button showing 2x selected
+        // while the camera sat at 1x — a control lying about the state of the
+        // world, which is the failure mode AGENTS.md §6 calls a dead end.
+        let refused = await model.chooseZoom(.doubleWide)
+        #expect(!refused, "the front has no telephoto and must say so")
+        #expect(model.zoom == .wide,
+                "a refused zoom must not silently become something else")
+
+        // 0.5x on the front *is* real — it is a different lens, not a zoom factor.
+        #expect(await model.chooseZoom(.ultraWide),
+                "the front has an ultra-wide device and must offer it")
 
         await model.stop()
     }

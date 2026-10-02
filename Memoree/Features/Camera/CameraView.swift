@@ -280,8 +280,16 @@ struct CameraView: View {
     /// reason is right there in grey next to it. The row keeps its shape and the
     /// camera swap does not move anything on screen.
     private func zoomRow(_ model: CameraViewModel) -> some View {
-        HStack(spacing: Theme.Spacing.s) {
-            ForEach(CameraZoom.allCases, id: \.self) { zoom in
+        // **Filtered, not disabled.** The front has no telephoto, so 2x there is
+        // a digital crop of one cheek and the stock camera omits it too. Showing a
+        // permanently disabled button is clutter that changes nothing, and the row
+        // simply reads "0.5x 1x" on the front.
+        //
+        // The row does change length when the camera changes, which is the honest
+        // consequence and not an oversight.
+        let offered = CameraZoom.offered(on: model.livePosition)
+        return HStack(spacing: Theme.Spacing.s) {
+            ForEach(offered, id: \.self) { zoom in
                 zoomButton(zoom, model)
             }
         }
