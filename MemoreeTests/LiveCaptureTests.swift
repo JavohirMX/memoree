@@ -437,68 +437,67 @@ struct LiveCaptureTests {
 
     // MARK: - Orientation, verified against a real file
 
-    /// **The test that would have caught the original defect.**
+    /// **The test that asks the saved file what it thinks its orientation is.**
     ///
-    /// Neither the preview connection nor the photo connection ever had its
-    /// orientation set, on either API, so everything sat at the AVFoundation
-    /// default — which assumes a landscape-held device. No simulator test could
-    /// have found that, and no amount of reading the code would have told you
-    /// what it *looks* like.
+    /// Rather than asking the code what it asked for. Every earlier version of
+    /// this test asserted against a hand-written table, so it could only ever
+    /// confirm the table — and the table was wrong, twice.
     ///
-    /// So this asks the file. It captures a photograph and reads the EXIF
-    /// orientation tag back out of the bytes: **asking the saved image what it
-    /// thinks its orientation is, rather than asking the code what it asked for.**
+    /// ## What it can and cannot check
     ///
-    /// ## Run it while holding the phone upright in portrait
+    /// The rotation now comes from `AVCaptureDevice.RotationCoordinator`, which
+    /// reads the device's **physical** orientation. So the test does not know, and
+    /// cannot know, how the phone is being held — and no longer needs to. What it
+    /// checks is the part that is ours:
     ///
-    /// The test cannot enforce how it is being held, and the reporting below
-    /// makes that a non-issue for the file itself — it tells the service
-    /// `.portrait` explicitly, so the assertion is about `CaptureOrientation`'s
-    /// table rather than about the desk. **What it cannot control is the preview**,
-    /// which reflects the real device. So:
+    /// 1. **A tag exists at all.** A photograph with no orientation tag leaves
+    ///    every consumer to guess, which is the original bug in another hat.
+    /// 2. **The tag is a quarter turn exactly when a quarter turn was applied.**
+    ///    That is the actual failure — a quarter turn applied to a photograph
+    ///    taken the other way up — and it is deliberately **direction-agnostic**:
+    ///    asserting the *sign* would be this file encoding a guess about EXIF's
+    ///    numbering, which is the mistake that produced the table in the first
+    ///    place.
+    /// 3. **Rotation did not disturb the 3:4 geometry** it was meant to protect.
     ///
-    /// - **This fails** → the table in `CaptureOrientation` is wrong. That row was
-    ///   written from the sensor mounting relationship rather than measured.
-    /// - **This passes but the preview is sideways** → the photo connection is
-    ///   right and the preview connection is not, which is a different fix in a
-    ///   different place.
-    ///
-    /// Both were possible before this existed and neither could be told apart.
-    @Test("DEVICE ONLY — a captured photograph is tagged upright when held upright")
-    func capturedPhotographIsTaggedUpright() async throws {
+    /// If it fails, the printed line carries both the angle applied and the tag
+    /// that came out, which is the whole diagnosis.
+    @Test("DEVICE ONLY — a captured photograph is tagged to match the rotation applied")
+    func capturedPhotographIsTaggedToMatchTheAppliedRotation() async throws {
         guard requireCamera() else { return }
 
         let service = SequentialCaptureService()
         try await service.startSession(on: .back)
-        await service.applyRotation(.portrait)
 
-        let applied = await service.currentRotation()
-        #expect(applied?.captureAngle == 90,
-                "rotation in force: \(String(describing: applied))")
-
+        // Read what the app applied, then photograph. The order matters: the angle
+        // that produces the file is the one in force when the shutter fires.
+        let applied = try #require(
+            await service.currentRotation(),
+            "no rotation in force; nothing was derived and nothing was applied"
+        )
         let photo = try await service.captureCurrentPhoto()
         await service.stopSession()
 
-        // **A missing tag is its own failure**, not a nil to skip past. If the
-        // photo output never received an angle, the file carries no orientation
-        // and every consumer has to guess — which is the original bug wearing a
-        // different hat.
         let tag = try #require(
             Self.exifOrientation(of: photo.data),
             "the captured file carries no EXIF orientation tag at all"
         )
 
+        let appliedIsQuarterTurn = applied.captureAngle == 90 || applied.captureAngle == 270
+        let tagIsQuarterTurn = tag == .right || tag == .left
+
+        print("CAPTURE applied \(Int(applied.captureAngle))deg -> EXIF \(tag.rawValue) (\(tag))")
+
         #expect(
-            tag == .right || tag == .left,
+            appliedIsQuarterTurn == tagIsQuarterTurn,
             """
-            Held portrait, the tag must rotate a landscape sensor buffer by a \
-            quarter turn; got \(tag.rawValue) (\(tag)). If the saved file is upright \
-            and only the preview is sideways, the photo connection is correct and \
-            the preview connection is not — a different fix in a different place.
+            applied \(Int(applied.captureAngle))deg but the file is tagged \(tag.rawValue) \
+            (\(tag)). Either the angle never reached the photo connection, or the tag does \
+            not describe it. The angle comes from AVFoundation's rotation coordinator, so \
+            this is the app's plumbing rather than its arithmetic.
             """
         )
 
-        // Rotation must not disturb the geometry it was supposed to protect.
         #expect(photo.isThreeByFour, "rotation changed the 3:4 geometry")
     }
 

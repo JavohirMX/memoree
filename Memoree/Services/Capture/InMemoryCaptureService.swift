@@ -23,13 +23,12 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         var stopCount = 0
         var rebuildCount = 0
         var configuredFormats: [CameraPosition] = []
-        /// The rotation last reported and the one derived from it.
+        /// The rotation the double is pretending to have applied.
         ///
-        /// Recorded so a test can assert the rotation was reported **and** applied
-        /// without a camera — which is the only way to test it before a device is
-        /// involved, since the simulator has no capture hardware at all.
+        /// The real one comes from a rotation coordinator that watches real
+        /// hardware, so a double has to be told rather than derive it — the same
+        /// way it is told about authorization.
         var orientation: CaptureOrientation?
-        var reportedOrientation: DeviceOrientation?
         /// Cameras captured, in the order the user shot them.
         var capturedPositions: [CameraPosition] = []
         /// Cameras switched to, in order. Should mirror `capturedPositions`
@@ -100,7 +99,6 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
     var stopCount: Int { lock.withLock { state.stopCount } }
     var rebuildCount: Int { lock.withLock { state.rebuildCount } }
     var configuredFormats: [CameraPosition] { lock.withLock { state.configuredFormats } }
-    var reportedOrientation: DeviceOrientation? { lock.withLock { state.reportedOrientation } }
     var capturedPositions: [CameraPosition] { lock.withLock { state.capturedPositions } }
     var switchedTo: [CameraPosition] { lock.withLock { state.switchedTo } }
     var openedOn: [CameraPosition] { lock.withLock { state.openedOn } }
@@ -146,13 +144,6 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         try lock.withLock {
             try Self.throwIfNeeded(&state)
             state.configuredFormats.append(position)
-        }
-    }
-
-    func applyRotation(_ orientation: DeviceOrientation) async {
-        lock.withLock {
-            state.orientation = CaptureOrientation.rotation(for: orientation, position: .back)
-            state.reportedOrientation = orientation
         }
     }
 

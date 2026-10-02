@@ -1,7 +1,6 @@
 import Foundation
 import QuartzCore
 import SwiftUI
-import UIKit
 
 /// Drives the camera screen.
 ///
@@ -205,21 +204,15 @@ final class CameraViewModel {
         let opening = chooseFirstCamera()
         firstPosition = opening
         livePosition = opening
-        // The view reports the orientation on appear and on every size-class
-        // change; the service keeps the last one and re-applies it when the
-        // session opens. **Nothing here reads `UIDevice`** — see
-        // `CameraView.interfaceOrientation()` for why that returns `.unknown`
-        // more often than it is useful.
+        // Nothing about orientation happens here, and that is the point.
+        //
+        // Rotation used to be reported *into* the camera from this layer. It no
+        // longer is: `AVCaptureDevice`'s rotation coordinator watches the
+        // device's physical orientation and corrects for it, which is the only
+        // approach that survives the rotation lock — and asking the UI for a held
+        // orientation is why every sideways photograph used to save as a portrait
+        // one.
         await runSession(openingOn: opening)
-    }
-
-    /// Reports how the device is being held, so the capture connections rotate.
-    ///
-    /// **Idempotent, and safe before the session starts.** A report that arrives
-    /// with no camera open is recorded and applied when the session opens, so the
-    /// very first frame is already upright.
-    func reportOrientation(_ orientation: DeviceOrientation) async {
-        await service.applyRotation(orientation)
     }
 
     func stop() async {

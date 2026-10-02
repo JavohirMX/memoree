@@ -85,31 +85,18 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// and rear devices support different format lists (TRD §5.3).
     func configureFormat(for position: CameraPosition) async throws
 
-    /// Reports how the device is being held, so rotation can be applied.
-    ///
-    /// **On the protocol because nothing set orientation at all** until this
-    /// existed. Neither the preview connection nor the photo connection carried a
-    /// rotation, so both sat at the AVFoundation default — which assumes a
-    /// landscape-held device — for every capture the app ever took.
-    ///
-    /// Takes a domain enum rather than `UIDeviceOrientation` so `Services/` never
-    /// names a UIKit type to describe something it owns (`AGENTS.md` §3). The view
-    /// does the mapping, and it is the only layer that can.
-    ///
-    /// **Idempotent, and safe before the session starts.** A rotation reported
-    /// before there is a camera to rotate is recorded and applied at start, so
-    /// the first frame is already upright.
-    func applyRotation(_ orientation: DeviceOrientation) async
-
-    /// The rotation currently in force, or `nil` if no session has started.
+    /// The rotation currently applied to both connections, or `nil` if no
+    /// session is running.
     ///
     /// Exists so the live capture tests can assert what was applied rather than
-    /// inferring it from a photograph, and so the debug menu can show it.
+    /// inferring it from a photograph.
     ///
-    /// **Returning `nil` is a real answer, not an absence.** It means no
-    /// orientation has been reported yet, so the connections are still exactly as
-    /// AVFoundation set them — which is precisely the state that shipped for the
-    /// app's whole life and the reason landscape photographs saved sideways.
+    /// **Rotation needs no reporting from the view.** `AVCaptureDevice`'s
+    /// rotation coordinator watches the device's *physical* orientation — the
+    /// thing gravity knows about — and corrects for the rotation lock that makes
+    /// `UIDevice.orientation` report `.portrait` forever. The earlier design
+    /// asked the UI layer to report a held orientation, which could not survive
+    /// that case, and every sideways photograph saved as a portrait one.
     func currentRotation() async -> CaptureOrientation?
 
     /// Rebuilds the session from scratch.

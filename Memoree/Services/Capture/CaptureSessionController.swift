@@ -397,6 +397,13 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             queue.async { [self] in
                 session.stopRunning()
                 state = .idle
+                // **The coordinator and its observations are torn down with the
+                // session.** They hold the device, and the camera screen is a
+                // cover that opens and closes constantly — leaving a coordinator
+                // alive per opening is a leak per opening, and a live one that
+                // still rotates connections belonging to a stopped session.
+                self.removeRotationObservations()
+                self.rotationCoordinator = nil
                 c.resume()
             }
         }
@@ -813,73 +820,133 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         device.activeVideoMaxFrameDuration = duration
 
         configureMirroring(for: position)
-        configureOrientation(for: position)
+        configureRotationCoordinator()
     }
 
     // MARK: - Orientation
 
-    /// The rotation currently applied, kept so a `faceUp`/`faceDown` report can
-    /// be answered by *keeping* it rather than by guessing.
+    /// The rotation currently applied to both connections.
     ///
     /// Read and written only on `queue`.
     private var appliedOrientation: CaptureOrientation = .startup
 
-    /// The device orientation last reported by the view.
+    /// AVFoundation's own answer to "how far is the phone turned".
     ///
-    /// **Stored rather than resolved at apply time**, because a swap can land
-    /// between two orientation reports and the whole point is that the *new*
-    /// input comes up already correct. `startSession` re-resolves; `applyFormat`
-    /// reuses.
+    /// ## Why this and not a table
     ///
-    /// **Defaults to `.unknown`, not `.portrait`.** An unknown orientation makes
-    /// `rotation(for:)` return `nil`, which leaves the connections exactly as
-    /// AVFoundation set them — the state this app shipped in for its whole life,
-    /// and the one that is *correct for the front camera* (see
-    /// `CaptureOrientation.rotation`). Defaulting to `.portrait` would instead
-    /// assert a rotation nobody asked for, which is how the front camera came out
-    /// wrong once already.
+    /// The first version kept a hand-written table from `UIDevice.orientation` to
+    /// an angle. **It did not work**, and the reason is the kind that no amount of
+    /// careful table-writing can fix: `UIDevice.orientation` returns `.portrait`
+    /// *forever* when the user has rotation lock on. Every sideways photograph was
+    /// therefore given a quarter turn and saved as a portrait one — which is
+    /// exactly the bug this replaced.
     ///
-    /// The view reports on appear, so in practice this is replaced within a frame
-    /// of the session opening. It is the value *before* anyone has said anything,
-    /// and pretending to know better than that is the mistake.
-    private var lastReportedOrientation: DeviceOrientation = .unknown
+    /// `AVCaptureDevice.RotationCoordinator` reads the device's **physical**
+    /// orientation and returns an angle relative to gravity, so it is correct
+    /// regardless of the rotation lock, and it knows each model's sensor mounting
+    /// rather than assuming one.
+    ///
+    /// ## Why it is rebuilt on every input swap
+    ///
+    /// **A coordinator belongs to one `AVCaptureDevice`.** ADR-021 swaps the input
+    /// mid-moment, and a coordinator watching the old device keeps reporting the
+    /// old sensor's angles — so the front camera would be rotated by the rear's
+    /// mounting. It is torn down and rebuilt with the new one, and the observer is
+    /// moved with it.
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
 
-    /// Applies rotation to the preview and photo connections.
+    /// Key-value observations on the coordinator's two angles.
     ///
-    /// ## Both connections, every time
+    /// **Removed before a new coordinator is observed**, or every swap leaks a
+    /// pair of observations on a coordinator that is still alive somewhere. The
+    /// coordinator is not retained by the observation, so the leak is in the
+    /// observation itself and grows with every shutter press.
+    private var rotationObservations: [NSKeyValueObservation] = []
+
+    /// Rebuilds the rotation coordinator for the attached device and observes it.
     ///
-    /// **This is the fix.** Neither connection had its orientation set at all —
-    /// not the preview's, not the photo's — so both sat at the AVFoundation
-    /// default, which assumes a landscape-held device. The symptom is a preview
-    /// that is sideways while the saved photograph is not, or the reverse
-    /// depending on which API you reach for, and in neither case is there an
-    /// error to point at.
-    ///
-    /// It is applied in **three** places on purpose, because each covers a case
-    /// the others do not:
-    ///
-    /// - `startSession` — so the *first* frame is right. Applying it later shows
-    ///   a visibly rotating preview, which reads as a glitch.
-    /// - `applyFormat`, hence every input swap — the rear and front connections
-    ///   are different objects with independent rotation state, and the one just
-    ///   attached is back at the default. ADR-021 makes that swap happen mid
-    ///   moment, so this is not an edge case.
-    /// - `applyRotation`, on each rotation while live — the ordinary case.
+    /// Runs on `queue`. The coordinator is constructed here rather than reused,
+    /// because the device it watches is the one that just changed.
+    private func configureRotationCoordinator() {
+        removeRotationObservations()
+
+        guard let device = activeInput?.device, state == .running else {
+            rotationCoordinator = nil
+            return
+        }
+
+        let coordinator = AVCaptureDevice.RotationCoordinator(
+            device: device,
+            // The preview layer is passed so the coordinator can compute a
+            // *preview* angle, which is not the capture angle: the layer's own
+            // aspect and the sensor's differ.
+            previewLayer: previewSurface
+        )
+        rotationCoordinator = coordinator
+
+        // AVFoundation notifies on the main queue. This class is queue-confined
+        // and must never be touched from there, so every update hops. The hop is
+        // the whole reason the observation is not simply `configureOrientation`.
+        rotationObservations = [
+            coordinator.observe(\.videoRotationAngleForHorizonLevelPreview,
+                                options: [.new]) { [weak self] _, _ in
+                self?.rotationCoordinatorDidUpdate()
+            },
+            coordinator.observe(\.videoRotationAngleForHorizonLevelCapture,
+                                options: [.new]) { [weak self] _, _ in
+                self?.rotationCoordinatorDidUpdate()
+            }
+        ]
+
+        // Applied once immediately. The coordinator's first value can arrive a
+        // moment after construction, and a session that opened sideways would
+        // otherwise save its first photograph unrotated.
+        configureOrientation()
+    }
+
+    private func rotationCoordinatorDidUpdate() {
+        queue.async { [weak self] in self?.configureOrientation() }
+    }
+
+    private func removeRotationObservations() {
+        rotationObservations.forEach { $0.invalidate() }
+        rotationObservations.removeAll()
+    }
+
+    /// Applies the coordinator's current angles to both connections.
     ///
     /// Runs on `queue`, like every other configuration call (`AGENTS.md` §5).
-    private func configureOrientation(for position: CameraPosition) {
-        let orientation = CaptureOrientation.rotation(
-            for: lastReportedOrientation,
-            position: position
-        )
-        // `nil` means face-up, face-down or unknown. Keeping the last applied
-        // value is the correct answer and not a fallback: a phone lying on a
-        // table has no orientation to report, and snapping to a default there
-        // would rotate the preview under the user for no reason.
-        guard let orientation else { return }
+    ///
+    /// **Both connections, every time.** Neither had an orientation set at all
+    /// before this, so both sat at the AVFoundation default and every photograph
+    /// was saved in the sensor's native landscape regardless of how it was held.
+    ///
+    /// Called from three places, because each covers a case the others do not:
+    /// session start (so the *first* frame is right rather than visibly
+    /// rotating), every input swap (the connections are new objects back at the
+    /// default), and every coordinator update while live.
+    private func configureOrientation() {
+        guard let coordinator = rotationCoordinator else {
+            configureOrientation(.startup)
+            return
+        }
+        configureOrientation(CaptureOrientation(
+            previewAngle: coordinator.videoRotationAngleForHorizonLevelPreview,
+            captureAngle: coordinator.videoRotationAngleForHorizonLevelCapture
+        ))
+    }
 
-        // The preview connection lives on the preview layer, which is not the
-        // same object as the photo output's connection.
+    /// Applies specific angles, skipping any the connection will not accept.
+    ///
+    /// `isVideoRotationAngleSupported` is checked rather than assumed: setting an
+    /// unsupported angle throws `NSInvalidArgumentException`, which is a crash,
+    /// and only 0/90/180/270 are ever legal. A connection that refuses one is
+    /// left alone rather than taking the whole camera down over a preview.
+    private func configureOrientation(_ orientation: CaptureOrientation) {
+        guard CaptureOrientation.isSupported(orientation.previewAngle),
+              CaptureOrientation.isSupported(orientation.captureAngle)
+        else { return }
+
         if let previewConnection = previewSurface.connection,
            previewConnection.isVideoRotationAngleSupported(orientation.previewAngle) {
             previewConnection.videoRotationAngle = orientation.previewAngle
@@ -890,26 +957,6 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
 
         appliedOrientation = orientation
-    }
-
-    /// Records the device orientation and re-applies rotation.
-    ///
-    /// **Hops to `queue` like every other configuration entry point**, even though
-    /// it cannot fail. `lastReportedOrientation` is queue-confined state, and
-    /// reading or writing it from the caller would be a data race that usually
-    /// works — which is the worst kind.
-    func applyRotation(_ orientation: DeviceOrientation) async {
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            queue.async { [self] in
-                lastReportedOrientation = orientation
-                guard state == .running else {
-                    c.resume()
-                    return
-                }
-                configureOrientation(for: activePosition)
-                c.resume()
-            }
-        }
     }
 
     /// The rotation in force, for diagnostics and for the tests that assert on it.

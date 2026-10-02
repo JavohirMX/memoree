@@ -83,10 +83,6 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
         try await controller.configureFormat(for: position)
     }
 
-    func applyRotation(_ orientation: DeviceOrientation) async {
-        await controller.applyRotation(orientation)
-    }
-
     func currentRotation() async -> CaptureOrientation? {
         await controller.currentOrientation()
     }

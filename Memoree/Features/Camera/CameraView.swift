@@ -15,15 +15,6 @@ struct CameraView: View {
     /// initialiser cannot, which is why this is not created here.
     @Environment(CameraViewModel.self) private var model
 
-    /// Read for their *changes*, which is the trigger for re-reporting rotation.
-    ///
-    /// Every rotation between the four orientations on iPhone flips at least one
-    /// of these, and there is no SwiftUI environment key for interface
-    /// orientation — so this is the signal that says "go and read it again".
-    /// Neither is used for anything else.
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
-
     private let onDismiss: () -> Void
 
     init(onDismiss: @escaping () -> Void) {
@@ -48,71 +39,9 @@ struct CameraView: View {
         .onAppear {
             holdTheScreenAwake(true)
         }
-        // **Rotation is reported from the view, not the service.** `Services/`
-        // must not reach for a view layer to learn how the phone is being held
-        // (`AGENTS.md` §3), so the view observes, the view model reports, and the
-        // service only ever sees its own `DeviceOrientation`.
-        //
-        // Three reports rather than one `onChange`: on appear, and on either size
-        // class changing. An `onChange` on an orientation value only fires when
-        // the value *changes*, so a camera opened already sideways was never
-        // reported at all — which is the other half of why landscape did not save.
-        .onChange(of: verticalSizeClass) { _, _ in reportCurrentOrientation(model) }
-        .onChange(of: horizontalSizeClass) { _, _ in reportCurrentOrientation(model) }
     }
 
-    // MARK: - Rotation
-
-    /// Reports the current orientation to the camera, whenever it might have changed.
-    ///
-    /// ## Why this reads the window scene and not `UIDevice`
-    ///
-    /// **`UIDevice.current.orientation` is `.unknown` unless
-    /// `beginGeneratingDeviceOrientationNotifications()` has already been called**,
-    /// and even after it, the value arrives a runloop turn later. The first
-    /// version of this read it from `.task`, whose ordering against `.onAppear` is
-    /// not guaranteed — so the camera opened with `.unknown`, `rotation(for:)`
-    /// returned `nil`, and **no rotation was applied at all**. Landscape
-    /// photographs saved sideways, which is how it was found.
-    ///
-    /// `UIWindowScene.interfaceOrientation` has neither problem: it is available
-    /// immediately, it is never `.unknown`, and it is exactly the question being
-    /// asked — which way is the screen.
-    ///
-    /// It also gets **face-up and face-down right for free**: laying the phone on a
-    /// table does not change the interface orientation, so the last good rotation
-    /// simply stands, which is what `CaptureOrientation` wants for those cases.
-    ///
-    /// ## Why size classes
-    ///
-    /// There is no SwiftUI `EnvironmentKey` for interface orientation, so something
-    /// has to re-read it. A size-class change is the reliable trigger on iPhone:
-    /// every rotation between the four orientations flips `verticalSizeClass` or
-    /// `horizontalSizeClass`. Combined with an initial read on appear, that covers
-    /// "opened in landscape" as well as "rotated while open" — and the first
-    /// version covered neither.
-    private func reportCurrentOrientation(_ model: CameraViewModel) {
-        Task { await model.reportOrientation(Self.interfaceOrientation()) }
-    }
-
-    /// The window scene's interface orientation, as the app's own enum.
-    ///
-    /// **Falls back to portrait**, because every orientation that matters has a
-    /// defined rotation and a nil here would leave the camera on whatever it had.
-    /// `UIDevice` is not consulted at all — see the note above.
-    static func interfaceOrientation() -> DeviceOrientation {
-        let scene = UIApplication.shared.connectedScenes
-            .compactMap { $0 as? UIWindowScene }
-            .first { $0.activationState == .foregroundActive }
-        switch scene?.interfaceOrientation {
-        case .portrait: return .portrait
-        case .portraitUpsideDown: return .portraitUpsideDown
-        case .landscapeLeft: return .landscapeLeft
-        case .landscapeRight: return .landscapeRight
-        case .none: return .portrait
-        @unknown default: return .portrait
-        }
-    }
+    // MARK: - Keeping the screen awake
 
     /// Keeps the display on while the camera is up.
     ///
