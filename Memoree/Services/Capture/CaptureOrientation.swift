@@ -101,24 +101,42 @@ struct CaptureOrientation: Sendable, Equatable {
         case .faceUp, .faceDown, .unknown: return nil
         }
 
-        // **Quarter turns as `Int`, converted to degrees once at the end.** The obvious
-        // version does the arithmetic in `CGFloat` and wraps with `% 360` — and
-        // `%` is unavailable on `CGFloat`, so it does not compile. Working in
-        // turns is also just correct: every value in this table is an exact
-        // multiple of 90, and integer turns cannot drift or round.
-        let turns = position == .front ? (quarterTurns + 2) % 4 : quarterTurns
-        let degrees = CGFloat(turns * 90)
+        // **The front camera is not rotated at all, and that is a measurement
+        // rather than a decision.**
+        //
+        // The first version added a half turn for the front, derived from the
+        // sensor mounting relationship. It was wrong: the front camera preview
+        // came out rotated when it had been correct before, because **before
+        // this whole feature nothing set any orientation and the front camera was
+        // already right on the AVFoundation default.**
+        //
+        // So the front is left exactly as AVFoundation set it, and the rear gets
+        // the quarter turn it needs. Both facts now come from someone looking at
+        // a phone rather than from a mounting diagram, which is the only place
+        // either of them could have come from in the first place.
+        //
+        // Returning `nil` here means the same thing it means for a phone lying
+        // flat: **do not touch the connection.** Two different reasons, one
+        // action, and the wiring treats them identically — which is correct, since
+        // "leave the preview alone" is the right response to both.
+        guard position == .back else { return nil }
+
+        // Quarter turns as `Int`, converted to degrees once at the end. The
+        // obvious version does this in `CGFloat` and wraps with `% 360` — and `%`
+        // is unavailable on `CGFloat`, so it does not compile. Working in turns is
+        // also just correct: every value in the table is an exact multiple of 90,
+        // and integer turns cannot drift or round.
+        let degrees = CGFloat(quarterTurns * 90)
         guard isSupported(degrees) else { return nil }
 
         return CaptureOrientation(previewAngle: degrees, captureAngle: degrees)
     }
 
-    /// The rotation that leaves the image the right way up when the phone lies
-    /// flat, used as the starting point before any orientation is reported.
+    /// The rotation applied before any orientation has been reported, and for the
+    /// front camera at every point.
     ///
-    /// **A portrait default rather than landscape's zero**, because the app is
-    /// portrait-first (ADR-019) and a first frame that appears sideways is the
-    /// thing a user notices before anything else. Applied at session start so
-    /// the very first frame is already right.
+    /// **A portrait default for the rear, and "untouched" for the front** — which
+    /// is two answers in one constant, and the honest summary of what is known:
+    /// the rear needs a quarter turn and the front does not want one.
     static let startup = CaptureOrientation(previewAngle: 90, captureAngle: 90)
 }

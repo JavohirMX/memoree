@@ -51,6 +51,33 @@ struct CaptureOrientationTests {
         #expect(Set(rear.map(\.previewAngle)).count == 4, "two orientations collide")
     }
 
+    @Test("Each held orientation saves the photograph the way it was held")
+    func eachOrientationMapsToItsOwnAngle() throws {
+        // **The claim the feature exists to make**, stated as a table so the whole
+        // mapping is visible in one place: held portrait saves portrait, held
+        // landscape saves landscape.
+        //
+        // A rear sensor is natively landscape, so a portrait photo is a quarter
+        // turn and a landscape one is not. Everything else — the EXIF tag that
+        // ends up in the file, and whether the saved image is tall or wide — is
+        // downstream of this row.
+        let expected: [DeviceOrientation: Int] = [
+            .portrait: 90,
+            .landscapeLeft: 0,
+            .portraitUpsideDown: 270,
+            .landscapeRight: 180
+        ]
+
+        for (orientation, degrees) in expected {
+            let resolved = try #require(
+                CaptureOrientation.rotation(for: orientation, position: .back),
+                "\(orientation) did not resolve"
+            )
+            #expect(Int(resolved.captureAngle) == degrees, "\(orientation)")
+            #expect(Int(resolved.previewAngle) == degrees, "\(orientation) preview")
+        }
+    }
+
     @Test("A flat phone keeps the rotation it has")
     func faceUpKeepsWhatItHas() {
         // **The case that makes `rotation` return `nil`.** Face-up and face-down
@@ -66,33 +93,28 @@ struct CaptureOrientationTests {
         }
     }
 
-    @Test("The front camera is mounted a half turn from the rear")
-    func frontIsHalvedFromRear() throws {
-        // **This is the row written from the mounting relationship rather than
-        // measured**, and it is the one to distrust. The front sensor is mounted
-        // 180° from the rear, and the app also mirrors the front, so the two
-        // concerns interact and a wrong entry here shows up as a selfie that is
-        // upside down — after the whole feature has shipped.
+    @Test("The front camera is never rotated")
+    func frontIsLeftAlone() {
+        // **This test replaces one that asserted the opposite, and the replacement
+        // is the more important half of the story.**
         //
-        // Compared in integer degrees because `%` is unavailable on `CGFloat`,
-        // which is the same reason the implementation does its arithmetic in
-        // quarter turns.
-        let front = try #require(
-            CaptureOrientation.rotation(for: .portrait, position: .front)
-        )
-        let rear = try #require(
-            CaptureOrientation.rotation(for: .portrait, position: .back)
-        )
-        #expect((Int(front.previewAngle) + 180) % 360 == Int(rear.previewAngle))
-
-        // And it holds for every orientation, not just portrait.
+        // The first version derived a half turn for the front from the sensor
+        // mounting relationship and tested that it was consistent across all four
+        // orientations. It passed, it was internally coherent, and it was wrong:
+        // the front preview came out rotated when it had been correct before,
+        // because **nothing set any orientation until this feature, and the front
+        // camera was already right on the AVFoundation default.**
+        //
+        // So the front is now never touched. The assertion is deliberately about
+        // *absence*: every orientation resolves to `nil` for `.front`, meaning
+        // the connection keeps whatever AVFoundation gave it.
+        //
+        // A test that checked the front agreed with a mounting diagram could only
+        // have confirmed the diagram. This one pins what someone actually saw.
         for orientation in DeviceOrientation.allCases {
-            guard let frontAngle = CaptureOrientation.rotation(for: orientation, position: .front),
-                  let rearAngle = CaptureOrientation.rotation(for: orientation, position: .back)
-            else { continue }
             #expect(
-                (Int(frontAngle.previewAngle) + 180) % 360 == Int(rearAngle.previewAngle),
-                "\(orientation): front \(frontAngle.previewAngle) rear \(rearAngle.previewAngle)"
+                CaptureOrientation.rotation(for: orientation, position: .front) == nil,
+                "\(orientation): the front camera must be left as AVFoundation set it"
             )
         }
     }
@@ -103,6 +125,9 @@ struct CaptureOrientationTests {
         // `NSInvalidArgumentException` — a crash, not an error, and not one that
         // any test would otherwise reach. So the property is asserted over the
         // whole input space rather than over the four values in the table.
+        //
+        // The front camera contributes nothing here: it resolves to `nil` for
+        // every orientation, so no angle from it can ever reach a connection.
         for orientation in DeviceOrientation.allCases {
             for position in CameraPosition.allCases {
                 guard let resolved = CaptureOrientation.rotation(for: orientation, position: position)

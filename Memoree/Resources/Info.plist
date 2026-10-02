@@ -35,9 +35,22 @@
 	<!-- Universal links are deliberately absent: Memoree makes no network calls
 	     and registers no custom URL scheme (AGENTS.md §2.1). -->
 
+	<!-- Portrait AND landscape. Changed from portrait-only when the camera
+	     orientation work landed.
+
+	     A photograph should be saved the way it was taken, and that is only
+	     possible if the app is allowed to be held sideways at all — an
+	     orientation the plist refuses to declare cannot be captured, whatever
+	     the connections are told.
+
+	     Portrait upside down is deliberately excluded. It exists for
+	     two-handed-video callers and upside-down support in a camera app means
+	     saving photographs the user did not mean to take. -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 
 	<!-- ── Privacy usage strings ───────────────────────────────────────────
