@@ -54,12 +54,15 @@ struct CaptureOrientation: Sendable, Equatable {
         angle == 0 || angle == 90 || angle == 180 || angle == 270
     }
 
-    /// The rotation in force before AVFoundation has told us anything.
+    /// The rotation to apply when AVFoundation has not said anything yet.
     ///
-    /// **Portrait, because portrait is where the app is opened and where it
-    /// lives most of the time.** It is replaced within a frame of the session
-    /// opening by the coordinator's first answer, and it exists so the very
-    /// first preview frame is not the camera's landscape default — a first frame
-    /// that appears sideways is the first thing anyone notices.
-    static let startup = CaptureOrientation(previewAngle: 90, captureAngle: 90)
+    /// **`nil`, and that is the answer.** The first version of this was a portrait
+    /// quarter turn, applied whenever no orientation had been reported — and it
+    /// was applied to *every photograph*, because the coordinator that was meant
+    /// to replace it was never created. A default rotation is a claim about a
+    /// sensor nobody measured, and it is worse than none: with no rotation the
+    /// photograph keeps the sensor's native orientation, which is self-consistent
+    /// and correct for one of the four ways a phone can be held. With a wrong
+    /// rotation it displays as something the user never photographed.
+    static let startup: CaptureOrientation? = nil
 }

@@ -473,7 +473,12 @@ struct LiveCaptureTests {
         // that produces the file is the one in force when the shutter fires.
         let applied = try #require(
             await service.currentRotation(),
-            "no rotation in force; nothing was derived and nothing was applied"
+            """
+            no rotation was applied. The rotation coordinator is built inside \
+            configureSession, which runs before startRunning() — so anything \
+            guarding its construction on the session being .running silently \
+            skips it, and every photograph is saved with no correction at all.
+            """
         )
         let photo = try await service.captureCurrentPhoto()
         await service.stopSession()

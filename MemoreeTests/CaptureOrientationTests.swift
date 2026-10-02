@@ -49,15 +49,39 @@ struct CaptureOrientationTests {
     }
 
     @Test("The startup rotation is portrait and legal")
-    func startupIsUprightAndLegal() {
+    func startupIsUprightAndLegal() throws {
         // **It exists so the first preview frame is not sideways.** The
         // coordinator's first answer can arrive a moment after the session opens,
         // and a first frame that appears rotated is the first thing anyone
         // notices. Portrait, because that is where the app lives.
-        #expect(CaptureOrientation.startup.previewAngle == 90)
-        #expect(CaptureOrientation.startup.captureAngle == 90)
-        #expect(CaptureOrientation.isSupported(CaptureOrientation.startup.previewAngle))
-        #expect(CaptureOrientation.isSupported(CaptureOrientation.startup.captureAngle))
+        //
+        // **It was later removed** — see `thereIsNoDefaultRotation`, which is the
+        // test that matters. This one remains to pin what a *correct* applied
+        // rotation looks like, so the guard below is not just "nil is nil".
+        let portrait = CaptureOrientation(previewAngle: 90, captureAngle: 90)
+        #expect(CaptureOrientation.isSupported(portrait.previewAngle))
+        #expect(CaptureOrientation.isSupported(portrait.captureAngle))
+        #expect(portrait == CaptureOrientation(previewAngle: 90, captureAngle: 90))
+    }
+
+    @Test("There is no default rotation")
+    func thereIsNoDefaultRotation() {
+        // **The bug that shipped twice.**
+        //
+        // When no rotation had been derived, the app applied a portrait quarter
+        // turn anyway. Because a camera sensor is natively landscape, that made
+        // **portrait shots come out correct** — a landscape buffer rotated a
+        // quarter turn *is* a portrait image — and **landscape shots wrong**, since
+        // those need no rotation at all. So the symptom was "portrait works,
+        // landscape doesn't", which reads like a mapping error rather than like
+        // a default nobody asked for.
+        //
+        // It is `nil` now. With no rotation the photograph keeps the sensor's
+        // native orientation, which is self-consistent and right for one of the
+        // four ways a phone can be held. A wrong rotation is worse than a missing
+        // one: it displays as something the user never photographed.
+        #expect(CaptureOrientation.startup == nil,
+                "there is no rotation to apply before AVFoundation supplies one")
     }
 
     @Test("Nothing reports orientation into the camera any more")

@@ -825,10 +825,12 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
     // MARK: - Orientation
 
-    /// The rotation currently applied to both connections.
+    /// The rotation currently applied to both connections, or `nil` if none has been.
     ///
-    /// Read and written only on `queue`.
-    private var appliedOrientation: CaptureOrientation = .startup
+    /// Read and written only on `queue`. `nil` is a real answer meaning "the
+    /// connections are exactly as AVFoundation set them", and it is what
+    /// `currentRotation()` reports before a coordinator exists.
+    private var appliedOrientation: CaptureOrientation?
 
     /// AVFoundation's own answer to "how far is the phone turned".
     ///
@@ -870,7 +872,25 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     private func configureRotationCoordinator() {
         removeRotationObservations()
 
-        guard let device = activeInput?.device, state == .running else {
+        // ## **No `state` check here, and that was the bug.**
+        //
+        // This briefly guarded on `state == .running`, on the reasoning that a
+        // coordinator belongs to a live session. It does — but the only call site
+        // is inside `configureSession`, which runs **before** `startRunning()` and
+        // before `state` is set. So the guard failed every single time, no
+        // coordinator was ever created, and `configureOrientation` fell back to
+        // its start-up quarter turn.
+        //
+        // **A permanent quarter turn on every photograph.** Which makes a portrait
+        // shot come out right — a landscape sensor buffer rotated a quarter turn
+        // *is* a portrait image — and a landscape shot come out wrong, since it
+        // needs no rotation at all. That is precisely the symptom, and it
+        // survived two rounds of fixing the plumbing because the plumbing was
+        // never reached.
+        //
+        // A coordinator watching a device before `startRunning()` is harmless: it
+        // reads the device, not the session.
+        guard let device = activeInput?.device else {
             rotationCoordinator = nil
             return
         }
@@ -926,10 +946,20 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// rotating), every input swap (the connections are new objects back at the
     /// default), and every coordinator update while live.
     private func configureOrientation() {
-        guard let coordinator = rotationCoordinator else {
-            configureOrientation(.startup)
-            return
-        }
+        // **No coordinator means apply nothing — not a default.**
+        //
+        // The first version fell back to a portrait quarter turn, on the reasoning
+        // that a wrong rotation is worse than a missing one. It is the other way
+        // round: a *missing* rotation leaves the photograph in the sensor's native
+        // orientation, which is a real, self-consistent image, while a *wrong*
+        // rotation is a photograph that displays as something the user never
+        // photographed. And "apply nothing" is exactly the state the app shipped
+        // in for its whole life, which is a known quantity.
+        //
+        // This is the same mistake as defaulting `lastReportedOrientation` to
+        // `.portrait`: asserting a rotation nobody asked for, in a place where
+        // nothing can notice it being wrong.
+        guard let coordinator = rotationCoordinator else { return }
         configureOrientation(CaptureOrientation(
             previewAngle: coordinator.videoRotationAngleForHorizonLevelPreview,
             captureAngle: coordinator.videoRotationAngleForHorizonLevelCapture
@@ -966,8 +996,8 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// would be a race against a camera swap — the one thing in this class that
     /// is not allowed, and the reason the whole type is queue-confined rather
     /// than lock-guarded.
-    func currentOrientation() async -> CaptureOrientation {
-        await withCheckedContinuation { (c: CheckedContinuation<CaptureOrientation, Never>) in
+    func currentOrientation() async -> CaptureOrientation? {
+        await withCheckedContinuation { (c: CheckedContinuation<CaptureOrientation?, Never>) in
             queue.async { [self] in c.resume(returning: appliedOrientation) }
         }
     }
