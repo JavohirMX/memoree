@@ -132,11 +132,13 @@ struct CaptureOrientation: Sendable, Equatable {
         return CaptureOrientation(previewAngle: degrees, captureAngle: degrees)
     }
 
-    /// The rotation applied before any orientation has been reported, and for the
-    /// front camera at every point.
+    /// The rotation in force before anything has been reported, and for the front
+    /// camera at every point.
     ///
-    /// **A portrait default for the rear, and "untouched" for the front** — which
-    /// is two answers in one constant, and the honest summary of what is known:
-    /// the rear needs a quarter turn and the front does not want one.
+    /// **A portrait quarter turn for the rear.** It is only ever read before the
+    /// first report lands, which is a frame or two after the session opens, and
+    /// portrait is the orientation the app is opened in the overwhelming majority
+    /// of the time. `lastReportedOrientation` starts at `.unknown`, so this is
+    /// what the connections get in that window.
     static let startup = CaptureOrientation(previewAngle: 90, captureAngle: 90)
 }

@@ -205,41 +205,21 @@ final class CameraViewModel {
         let opening = chooseFirstCamera()
         firstPosition = opening
         livePosition = opening
-        // Before `runSession`, deliberately: `startSession` re-applies whatever
-        // was last reported, so reporting here means the very first frame is
-        // already upright rather than the preview visibly rotating a moment after
-        // it appears.
-        await reportOrientation(Self.currentDeviceOrientation())
+        // The view reports the orientation on appear and on every size-class
+        // change; the service keeps the last one and re-applies it when the
+        // session opens. **Nothing here reads `UIDevice`** — see
+        // `CameraView.interfaceOrientation()` for why that returns `.unknown`
+        // more often than it is useful.
         await runSession(openingOn: opening)
     }
 
     /// Reports how the device is being held, so the capture connections rotate.
     ///
-    /// **Also called on every orientation notification** while the camera is up.
-    /// Idempotent, so a redundant report on appear costs nothing.
+    /// **Idempotent, and safe before the session starts.** A report that arrives
+    /// with no camera open is recorded and applied when the session opens, so the
+    /// very first frame is already upright.
     func reportOrientation(_ orientation: DeviceOrientation) async {
         await service.applyRotation(orientation)
-    }
-
-    /// The device's orientation, in the app's own words.
-    ///
-    /// **Read from `UIDevice`, not from the interface orientation.** The two
-    /// differ for a face-up phone — `UIDevice` says `.faceUp` while the interface
-    /// has stayed `.portrait` — and `.faceUp` is the case that tells the camera to
-    /// *keep* its current rotation rather than pick one. Reading the interface
-    /// orientation here would silently snap the rotation while the phone lies on a
-    /// table, which is the one case where keeping it is the whole point.
-    static func currentDeviceOrientation() -> DeviceOrientation {
-        switch UIDevice.current.orientation {
-        case .portrait: return .portrait
-        case .portraitUpsideDown: return .portraitUpsideDown
-        case .landscapeLeft: return .landscapeLeft
-        case .landscapeRight: return .landscapeRight
-        case .faceUp: return .faceUp
-        case .faceDown: return .faceDown
-        case .unknown: return .unknown
-        @unknown default: return .unknown
-        }
     }
 
     func stop() async {

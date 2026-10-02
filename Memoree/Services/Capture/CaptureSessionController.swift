@@ -830,7 +830,19 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// between two orientation reports and the whole point is that the *new*
     /// input comes up already correct. `startSession` re-resolves; `applyFormat`
     /// reuses.
-    private var lastReportedOrientation: DeviceOrientation = .portrait
+    ///
+    /// **Defaults to `.unknown`, not `.portrait`.** An unknown orientation makes
+    /// `rotation(for:)` return `nil`, which leaves the connections exactly as
+    /// AVFoundation set them — the state this app shipped in for its whole life,
+    /// and the one that is *correct for the front camera* (see
+    /// `CaptureOrientation.rotation`). Defaulting to `.portrait` would instead
+    /// assert a rotation nobody asked for, which is how the front camera came out
+    /// wrong once already.
+    ///
+    /// The view reports on appear, so in practice this is replaced within a frame
+    /// of the session opening. It is the value *before* anyone has said anything,
+    /// and pretending to know better than that is the mistake.
+    private var lastReportedOrientation: DeviceOrientation = .unknown
 
     /// Applies rotation to the preview and photo connections.
     ///

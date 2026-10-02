@@ -105,6 +105,11 @@ protocol CapturePhotoService: AnyObject, Sendable {
     ///
     /// Exists so the live capture tests can assert what was applied rather than
     /// inferring it from a photograph, and so the debug menu can show it.
+    ///
+    /// **Returning `nil` is a real answer, not an absence.** It means no
+    /// orientation has been reported yet, so the connections are still exactly as
+    /// AVFoundation set them — which is precisely the state that shipped for the
+    /// app's whole life and the reason landscape photographs saved sideways.
     func currentRotation() async -> CaptureOrientation?
 
     /// Rebuilds the session from scratch.
