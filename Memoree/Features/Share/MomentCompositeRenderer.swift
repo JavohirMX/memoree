@@ -23,22 +23,30 @@ import UIKit
 ///
 /// ## The geometry is the app's, not a new design
 ///
-/// 3:4, inset top-left, 14pt radius, 1pt white border — identical to
-/// `MomentComposite`, and stated here rather than re-derived. Two copies of this
-/// geometry is how the archive ends up with a 96pt inset and the camera review
-/// screen with a 108pt one, which is what that type's own documentation says
-/// happened.
+/// Inset top-left, 14pt radius, 1pt white border — identical to `MomentComposite`,
+/// and stated here rather than re-derived. Two copies of this geometry is how the
+/// archive ends up with a 96pt inset and the camera review screen with a 108pt
+/// one, which is what that type's own documentation says happened.
+///
+/// **The canvas takes the photograph's own aspect, portrait or landscape.** It
+/// used to force 3:4 because that was the only orientation the app could shoot;
+/// the plist now allows landscape, so a forced portrait canvas stretched every
+/// sideways moment by a quarter in one axis.
 enum MomentCompositeRenderer {
 
     /// The geometry, named so the view and this cannot drift apart silently.
     enum Geometry {
-        static let aspectWidth: CGFloat = 3
-        static let aspectHeight: CGFloat = 4
         /// Matches `Theme.Radius.inset`.
         static let insetRadius: CGFloat = 14
         static let borderWidth: CGFloat = 1
-        /// Fraction of the composite's width, matching the view's 96pt on a
-        /// ~393pt screen and its 108pt on the larger camera review surface.
+        /// Fraction of the composite's **short** side, matching the view's 96pt on
+        /// a ~393pt portrait screen and its 108pt on the larger camera review
+        /// surface.
+        ///
+        /// **Short side, not width.** A landscape moment's width is its long edge,
+        /// so a square sized from the width would be visibly larger in landscape
+        /// than the same moment in portrait — the inset would change size with
+        /// the orientation rather than with the picture.
         static let insetScale: CGFloat = 0.245
     }
 
@@ -62,20 +70,35 @@ enum MomentCompositeRenderer {
         // rear, because a composite without its background is not a moment.
         guard backImage(for: back) != nil else { return nil }
 
-        let size = Self.canvasSize(for: back.size)
+        // **The canvas is the rear photograph's own size.**
+        //
+        // This used to be `width × 4/3` — an unconditional portrait 3:4 canvas,
+        // justified in a comment as "the source is already 3:4 (ADR-019)". That
+        // was true when the app could only photograph in portrait, and became
+        // false the moment the plist allowed landscape: a 4:3 photograph drawn
+        // into a 3:4 rect with `draw(in:)` is **stretched by a quarter in one
+        // axis**, which is the one thing AGENTS.md §2.8 forbids.
+        //
+        // Using the source's own size is not a compromise — it is what
+        // "full-bleed" means. For the ordinary portrait moment the two are
+        // identical, so nothing that used to be correct changes.
+        let size = back.size
         let format = UIGraphicsImageRendererFormat.default()
         format.scale = back.scale
         format.opaque = true
 
         let renderer = UIGraphicsImageRenderer(size: size, format: format)
         let composited = renderer.image { context in
-            // The rear photograph, drawn to fill. `draw(in:)` on the full rect is
-            // what "full-bleed" means here — no aspect-preserving letterboxing,
-            // because the source is already 3:4 (ADR-019).
             back.draw(in: CGRect(origin: .zero, size: size))
 
             guard let front else { return }
-            let insetSide = size.width * Geometry.insetScale
+
+            // **The inset is a fraction of the canvas's SHORT side**, not its
+            // width. A square sized from the width looks identical in portrait
+            // and noticeably larger in landscape, where the width is the long
+            // edge — so the inset would grow with the orientation rather than
+            // with the picture.
+            let insetSide = min(size.width, size.height) * Geometry.insetScale
             let insetRect = CGRect(
                 x: insetSide * Self.marginScale,
                 y: insetSide * Self.marginScale,
@@ -118,13 +141,6 @@ enum MomentCompositeRenderer {
     /// the inset's side. Matches the view's `Theme.Spacing.m` padding at the
     /// default inset size.
     private static let marginScale: CGFloat = 0.166
-
-    private static func canvasSize(for source: CGSize) -> CGSize {
-        CGSize(
-            width: source.width,
-            height: source.width * Geometry.aspectHeight / Geometry.aspectWidth
-        )
-    }
 
     /// Scales a design-time constant for the rendered resolution.
     ///

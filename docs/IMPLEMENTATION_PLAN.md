@@ -1257,6 +1257,93 @@ now, 1 with the pill back).
 SwiftData schema change against a store holding real captures, so it is recorded rather than done
 quietly. And the review screen's "Post" became "Save" — that is copy, which is the user's call.
 
+### Progress as of 2026-10-02 — a photograph should be saved the way it was taken
+
+Two defects, both invisible until you hold the phone sideways.
+
+**Nothing set an orientation.** Not the preview connection, not the photo
+connection, on either API. Everything sat at the AVFoundation default, which
+assumes a landscape-held device — so on a portrait phone the live preview was a
+sideways image and the framing composed was not the framing saved.
+
+`DeviceOrientation` (a domain enum, so `Services/` never names a UIKit type to
+describe something it owns) and `CaptureOrientation`, a pure table. Applied in
+**three** places, each covering a case the others miss: at session start, so the
+*first* frame is upright rather than visibly rotating; inside `applyFormat`,
+hence **on every input swap**, because front and rear are separate connections
+with independent state and ADR-021 swaps mid-moment; and on each rotation live.
+
+`videoRotationAngle` over `videoOrientation` — the latter has been deprecated
+since iOS 17, which is the floor. Preview and photo get **separate** fields,
+because AVFoundation applies them differently: a transform on the preview layer,
+an **EXIF tag** on the photo.
+
+`faceUp`/`faceDown` return `nil`, and that is the point: a phone on a table has
+no orientation to report, so the camera keeps what it has rather than rotating
+the preview under someone who has done nothing.
+
+### The front camera was right before, and I broke it
+
+I derived a half turn for the front sensor from its mounting relationship,
+tested that the derivation was internally consistent, and shipped it. The front
+preview came out rotated. **It had been correct before this feature, because
+nothing set any orientation and the AVFoundation default was already right for
+it.**
+
+So the front is now never touched, and the test that asserted the opposite has
+been replaced by one asserting *absence*. The old test passed because the
+arithmetic was correct — **it was checking that a diagram matched itself.** A
+test can pin what someone actually saw; it could only ever have confirmed the
+theory.
+
+The lesson is the one this file keeps recording: a derived invariant is not a
+measured one, and a device is available.
+
+### Landscape, which the plist had been forbidding the whole time
+
+`UISupportedInterfaceOrientations` declared portrait only. **A landscape
+photograph could not be taken no matter what the connections were told** — so
+"saved the way it was taken" was unreachable for half the claim. Portrait,
+landscape left and landscape right are now declared; portrait upside down is
+deliberately excluded, because it is a video affordance and in a camera app it
+means saving photographs the user did not mean to take.
+
+Allowing it exposed four things that were latent, and all four are fixed:
+
+| Place | Was | Now |
+| --- | --- | --- |
+| **Share renderer** | Canvas forced to `width × 4/3`, so a landscape photograph was **stretched a quarter in one axis** — the distortion AGENTS.md §2.8 forbids | Canvas is the photograph's own size. For a portrait moment the two are identical, so nothing that used to be right changed |
+| **Composite inset** | A square sized from the canvas **width**, so it grew about a third in landscape | Sized from the **short** side, so the inset does not change size because the picture turned |
+| **Archive cell** | `scaledToFill` into a fixed 3:4, **cropping 44% of every sideways moment** off the screen you use to find things | `scaledToFit` over `surface`. Portrait renders identically; landscape keeps all of it with two thin bars that read as a mat |
+| **Today column** | `VStack` that centres, with **no scroll unless the text size was huge** — so in landscape the shutter fell off the bottom | Scrolls when `isAccessibilitySize` **or** `verticalSizeClass == .compact` |
+
+The Today fix is the one that matters most and the least obvious: the
+`Spacer`-centred column **cannot fit a landscape phone**, and what leaves the
+screen is the app's only action. The trigger is a **size class rather than a
+measurement of the content**, for the same reason `MetadataRow` abandoned
+`ViewThatFits` — a branch driven by a measurement that does not hold is worse
+than no branch, because it looks like it is handling the problem. A size class
+is a system classification of the viewport, and it holds.
+
+**And a test that took ten minutes.** The inset test scans for the front
+colour's bounds rather than recomputing the code's own formula — but its first
+version called `colour(...)` inside a nested loop, re-fetching
+`CFDataGetBytePtr` 480,000 times, and took the suite from nine seconds to **604**.
+A slow test is not a harmless test; it is a test people stop running. The buffer
+is decoded once now.
+
+### Still unverified: landscape layout, on every screen
+
+**The Simulator GUI is not installed on this machine**, so the simulator cannot
+be rotated and no landscape screenshot was taken. The four fixes above are
+asserted in tests and reasoned about; the *layouts* of Today, the camera, Stats,
+Settings and the archive **have not been looked at sideways**.
+
+Camera, Stats, Settings and the archive all use `ScrollView` or size fluidly and
+should be fine. The camera review screen is the one to watch — it pairs a
+full-bleed composite with three controls — and the shutter row's fixed vertical
+padding in a 430pt-tall viewport.
+
 ### Midnight found two tests with an expiry date
 
 The suite went red at 00:00 on 2026-10-02 with **no code change**, and both failures were real.

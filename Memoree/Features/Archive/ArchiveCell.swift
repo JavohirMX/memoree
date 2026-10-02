@@ -20,22 +20,38 @@ struct ArchiveCell: View {
 
     var body: some View {
         ZStack {
+            // **`scaledToFit`, not `scaledToFill`.**
+            //
+            // The cell's frame is a fixed 3:4 so the grid stays a grid, and the
+            // three alternatives for a landscape photograph inside it are:
+            // crop it, letterbox it, or make every row's height depend on the
+            // tallest cell in it.
+            //
+            // - **Crop** loses 44% of the picture. On the screen you use to
+            //   *find* a moment, a sideways photo reduced to a letterbox is a
+            //   photo you cannot recognise.
+            // - **Variable cell heights** make the rows ragged, and a ragged grid
+            //   is what Phase 6's fixed geometry was chosen to avoid.
+            // - **Letterboxing** keeps all of it, costs two thin bars, and the
+            //   bars are `surface` on a near-black canvas so they read as a mat
+            //   rather than as an error.
+            //
+            // For a portrait moment `fit` and `fill` are identical — same aspect,
+            // same frame — so **every photograph this app took before landscape
+            // existed renders exactly as it did.**
+            Theme.Color.surface
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFill()
-            } else {
-                Theme.Color.surface
-                    .overlay {
-                        if isMissing {
-                            Text("Not in Photos")
-                                .font(Theme.Typography.metadata)
-                                .foregroundStyle(Theme.Color.textTertiary)
-                                .multilineTextAlignment(.center)
-                                .padding(Theme.Spacing.xs)
-                        }
-                    }
+                    .scaledToFit()
+            } else if isMissing {
+                Text("Not in Photos")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .multilineTextAlignment(.center)
+                    .padding(Theme.Spacing.xs)
             }
+            // Neither a spinner nor a black rectangle — see the type documentation.
         }
         .aspectRatio(3.0 / 4.0, contentMode: .fit)
         .clipped()

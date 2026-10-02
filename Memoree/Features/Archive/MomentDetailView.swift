@@ -161,11 +161,38 @@ struct MomentDetailView: View {
 
     // MARK: - Photograph
 
+    /// The photograph's own aspect, height over width.
+    ///
+    /// **3:4 as the fallback**, not as an answer: a zero-sized or unreadable
+    /// image is a loading state, and the frame still needs a shape while it
+    /// resolves. Portrait is what that shape should be, because portrait is what
+    /// almost every moment is.
+    private func aspect(of image: UIImage) -> CGFloat {
+        guard image.size.height > 0, image.size.width > 0 else { return 3.0 / 4.0 }
+        return image.size.height / image.size.width
+    }
+
     @ViewBuilder
     private var photograph: some View {
         if let large = images?.large, let inset = images?.inset {
-            MomentComposite(large: large, inset: inset, insetWidth: 96)
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            MomentComposite(
+                large: large,
+                inset: inset,
+                insetWidth: Theme.Size.insetStandard
+            )
+                // **The frame follows the photograph, not a 3:4 assumption.**
+                //
+                // `MomentComposite` fills its frame with `scaledToFill`, so a
+                // frame that disagrees with the photograph's aspect does not
+                // letterbox it — it **crops**, losing the left and right thirds of
+                // every sideways moment on the screen whose whole job is looking
+                // at one closely. This was a hardcoded 3:4 that was correct while
+                // the app could only shoot portrait.
+                //
+                // `UIImage.size` is already orientation-corrected, so a landscape
+                // photograph reports its width as the long edge and the aspect
+                // comes out at 0.75 with no EXIF handling here.
+                .aspectRatio(aspect(of: large), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(CompositeAccessibility.label)
