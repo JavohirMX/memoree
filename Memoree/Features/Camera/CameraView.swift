@@ -32,9 +32,56 @@ struct CameraView: View {
             content(model)
         }
         .task { await model.start() }
-        .onDisappear { Task { await model.stop() } }
-        .onAppear { holdTheScreenAwake(true) }
-        .onDisappear { holdTheScreenAwake(false) }
+        .onDisappear {
+            stopObservingOrientation()
+            holdTheScreenAwake(false)
+            Task { await model.stop() }
+        }
+        .onAppear {
+            holdTheScreenAwake(true)
+            startObservingOrientation()
+        }
+        .onReceive(NotificationCenter.default.publisher(
+            for: UIDevice.orientationDidChangeNotification
+        )) { _ in
+            // **Rotation is reported from the view, not the service.**
+            //
+            // `UIDevice.orientation` notifications are UIKit's, and `Services/`
+            // must not reach for a view layer to learn how the phone is being
+            // held (`AGENTS.md` §3). So the view observes, the view model reports,
+            // and the service only ever sees its own `DeviceOrientation`.
+            deviceOrientation = CameraViewModel.currentDeviceOrientation()
+        }
+        .onChange(of: deviceOrientation) { _, orientation in
+            guard let orientation else { return }
+            Task { await model.reportOrientation(orientation) }
+        }
+    }
+
+    // MARK: - Rotation
+
+    /// The device's orientation, mirrored into state so `onChange` has something
+    /// to observe.
+    ///
+    /// **`nil` until the first notification.** The initial value is reported by
+    /// `start()` before the camera opens, so the first frame is already upright.
+    /// Seeding this with the current orientation would duplicate that report and
+    /// fire `onChange` during the first body evaluation.
+    @State private var deviceOrientation: DeviceOrientation?
+
+    /// Tells `UIDevice` to start reporting orientation changes.
+    ///
+    /// **`beginGenerating…` is paired and must be ended** — leaving it generating
+    /// leaks the whole stream, and `UIDevice.orientation` simply reads `.unknown`
+    /// without it. This screen is a full-screen cover that appears and disappears
+    /// constantly, so the pair lives in `onAppear`/`onDisappear` beside the
+    /// idle-timer one, for the same reason.
+    private func startObservingOrientation() {
+        UIDevice.current.beginGeneratingDeviceOrientationNotifications()
+    }
+
+    private func stopObservingOrientation() {
+        UIDevice.current.endGeneratingDeviceOrientationNotifications()
     }
 
     /// Keeps the display on while the camera is up.

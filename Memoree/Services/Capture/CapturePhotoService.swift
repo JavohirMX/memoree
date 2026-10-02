@@ -85,6 +85,28 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// and rear devices support different format lists (TRD §5.3).
     func configureFormat(for position: CameraPosition) async throws
 
+    /// Reports how the device is being held, so rotation can be applied.
+    ///
+    /// **On the protocol because nothing set orientation at all** until this
+    /// existed. Neither the preview connection nor the photo connection carried a
+    /// rotation, so both sat at the AVFoundation default — which assumes a
+    /// landscape-held device — for every capture the app ever took.
+    ///
+    /// Takes a domain enum rather than `UIDeviceOrientation` so `Services/` never
+    /// names a UIKit type to describe something it owns (`AGENTS.md` §3). The view
+    /// does the mapping, and it is the only layer that can.
+    ///
+    /// **Idempotent, and safe before the session starts.** A rotation reported
+    /// before there is a camera to rotate is recorded and applied at start, so
+    /// the first frame is already upright.
+    func applyRotation(_ orientation: DeviceOrientation) async
+
+    /// The rotation currently in force, or `nil` if no session has started.
+    ///
+    /// Exists so the live capture tests can assert what was applied rather than
+    /// inferring it from a photograph, and so the debug menu can show it.
+    func currentRotation() async -> CaptureOrientation?
+
     /// Rebuilds the session from scratch.
     ///
     /// Exists for `mediaServicesWereReset`, which raises no error, fires no

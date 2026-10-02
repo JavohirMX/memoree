@@ -22,6 +22,7 @@
 		511E1387F92595CA9F14D137 /* LiveCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E98914ADFD0E6A30199AC5A4 /* LiveCaptureTests.swift */; };
 		554DDEF778A0042EB99D1C14 /* DesignSystemInvariantTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E83CF4F98316081C7CFDFE97 /* DesignSystemInvariantTests.swift */; };
 		5AC2B802CC989B4F59D69251 /* StreakCalculator.swift in Sources */ = {isa = PBXBuildFile; fileRef = E45BAB1D7A1EBB5F67634695 /* StreakCalculator.swift */; };
+		5E89B8285A784EE8956561B4 /* CaptureOrientation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14C5C0C79023595FEE102FB /* CaptureOrientation.swift */; };
 		60847A5074AC8E49E6B3BD5C /* WindowPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7AAFCC329A90340C4AD5F62 /* WindowPicker.swift */; };
 		60E908EABEC846182EF94391 /* HapticFeedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88BE88125F74F85570B014DF /* HapticFeedback.swift */; };
 		618027A8FB30C4300E912A90 /* CaptureSessionController.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2993F4EC3F7F7A178D8AFDC /* CaptureSessionController.swift */; };
@@ -48,6 +49,7 @@
 		85D47151EEEEB60E7851BEC3 /* MomentExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CBE2D0E42EDD569DE801F57E /* MomentExporter.swift */; };
 		8635C947B96A8DD93F67CEC0 /* CameraViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E9AD7FACEC7C44964337A0F /* CameraViewModel.swift */; };
 		8ADAA829C099B4B26F68E3E3 /* InstallSecret.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21BC6C3408F1736BBDA50E67 /* InstallSecret.swift */; };
+		8B1B33977D40CA5D4810ADFB /* CaptureOrientationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BDE43CA094FB40C7EB97C174 /* CaptureOrientationTests.swift */; };
 		8FD124C3C0DE26E1DDE7BA09 /* MomentState.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA6B76ACD80C3AC9C27826CD /* MomentState.swift */; };
 		8FF7EA9287B8FB42D82B5A81 /* TimeWindowTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8514C8D3577F9E36C200AC00 /* TimeWindowTests.swift */; };
 		9136E5D87ACF95E7D52568D1 /* CameraDiagnostics.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA7606B30E45598F86E240AF /* CameraDiagnostics.swift */; };
@@ -180,9 +182,11 @@
 		A9280538F4369959B511B4C1 /* MomentDerivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentDerivation.swift; sourceTree = "<group>"; };
 		ACADA2F6A8BD7944EEEC188B /* MomentExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentExporterTests.swift; sourceTree = "<group>"; };
 		AD917757A35E12DEED178444 /* InMemoryCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InMemoryCaptureService.swift; sourceTree = "<group>"; };
+		B14C5C0C79023595FEE102FB /* CaptureOrientation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureOrientation.swift; sourceTree = "<group>"; };
 		B22F42B6A1FFA91C8F16DB76 /* ArchiveViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveViewModelTests.swift; sourceTree = "<group>"; };
 		B9C1DE965579048DB04E0A1D /* CameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraView.swift; sourceTree = "<group>"; };
 		BBC29003316F3BF4C2C2C54E /* ScaledFont.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScaledFont.swift; sourceTree = "<group>"; };
+		BDE43CA094FB40C7EB97C174 /* CaptureOrientationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureOrientationTests.swift; sourceTree = "<group>"; };
 		C035884EA3B2B9DB84A89A50 /* PhotoMetadataInjectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoMetadataInjectorTests.swift; sourceTree = "<group>"; };
 		C08772852EC1C853B0D0F1D1 /* TodayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayView.swift; sourceTree = "<group>"; };
 		C40D78D181FFAE159925978D /* MomentScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentScheduler.swift; sourceTree = "<group>"; };
@@ -363,6 +367,7 @@
 				EA7606B30E45598F86E240AF /* CameraDiagnostics.swift */,
 				A1B5AFEE9F9B3EDB08A4A10E /* CaptureFlowTests.swift */,
 				FD0FDA697F178A25B29523B9 /* CaptureFormatSelectorTests.swift */,
+				BDE43CA094FB40C7EB97C174 /* CaptureOrientationTests.swift */,
 				C7693115792547B94510B657 /* DayIdentifierTests.swift */,
 				E83CF4F98316081C7CFDFE97 /* DesignSystemInvariantTests.swift */,
 				290D167C74BB7A31F7B312DD /* DynamicTypeTests.swift */,
@@ -442,6 +447,7 @@
 			isa = PBXGroup;
 			children = (
 				170065353CC5AF754FEB56D3 /* CaptureFormatSelector.swift */,
+				B14C5C0C79023595FEE102FB /* CaptureOrientation.swift */,
 				4BF9D9C60C5FCCD0956BAB5C /* CapturePhotoService.swift */,
 				A2993F4EC3F7F7A178D8AFDC /* CaptureSessionController.swift */,
 				FE3CD0C36F16B32709B4E22A /* CommittedCapture.swift */,
@@ -621,6 +627,7 @@
 				799AB6FB05FB35B01AB5604D /* CameraView.swift in Sources */,
 				8635C947B96A8DD93F67CEC0 /* CameraViewModel.swift in Sources */,
 				E9BD27C3C18A454BBF501ADF /* CaptureFormatSelector.swift in Sources */,
+				5E89B8285A784EE8956561B4 /* CaptureOrientation.swift in Sources */,
 				B2B95BE594046AAF52DE70FE /* CapturePhotoService.swift in Sources */,
 				618027A8FB30C4300E912A90 /* CaptureSessionController.swift in Sources */,
 				F7431E24CC7C2EFB5A2791C1 /* CommittedCapture.swift in Sources */,
@@ -681,6 +688,7 @@
 				9136E5D87ACF95E7D52568D1 /* CameraDiagnostics.swift in Sources */,
 				ABAA28677DF4A8D030EEEC92 /* CaptureFlowTests.swift in Sources */,
 				A16CEAF2FCF9464D075666B3 /* CaptureFormatSelectorTests.swift in Sources */,
+				8B1B33977D40CA5D4810ADFB /* CaptureOrientationTests.swift in Sources */,
 				7D2C64E697C7C5970CA89227 /* DayIdentifierTests.swift in Sources */,
 				554DDEF778A0042EB99D1C14 /* DesignSystemInvariantTests.swift in Sources */,
 				A7AE29B08C3B84BD814A12C3 /* DynamicTypeTests.swift in Sources */,

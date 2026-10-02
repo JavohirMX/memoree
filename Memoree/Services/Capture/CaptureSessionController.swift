@@ -813,6 +813,104 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         device.activeVideoMaxFrameDuration = duration
 
         configureMirroring(for: position)
+        configureOrientation(for: position)
+    }
+
+    // MARK: - Orientation
+
+    /// The rotation currently applied, kept so a `faceUp`/`faceDown` report can
+    /// be answered by *keeping* it rather than by guessing.
+    ///
+    /// Read and written only on `queue`.
+    private var appliedOrientation: CaptureOrientation = .startup
+
+    /// The device orientation last reported by the view.
+    ///
+    /// **Stored rather than resolved at apply time**, because a swap can land
+    /// between two orientation reports and the whole point is that the *new*
+    /// input comes up already correct. `startSession` re-resolves; `applyFormat`
+    /// reuses.
+    private var lastReportedOrientation: DeviceOrientation = .portrait
+
+    /// Applies rotation to the preview and photo connections.
+    ///
+    /// ## Both connections, every time
+    ///
+    /// **This is the fix.** Neither connection had its orientation set at all —
+    /// not the preview's, not the photo's — so both sat at the AVFoundation
+    /// default, which assumes a landscape-held device. The symptom is a preview
+    /// that is sideways while the saved photograph is not, or the reverse
+    /// depending on which API you reach for, and in neither case is there an
+    /// error to point at.
+    ///
+    /// It is applied in **three** places on purpose, because each covers a case
+    /// the others do not:
+    ///
+    /// - `startSession` — so the *first* frame is right. Applying it later shows
+    ///   a visibly rotating preview, which reads as a glitch.
+    /// - `applyFormat`, hence every input swap — the rear and front connections
+    ///   are different objects with independent rotation state, and the one just
+    ///   attached is back at the default. ADR-021 makes that swap happen mid
+    ///   moment, so this is not an edge case.
+    /// - `applyRotation`, on each rotation while live — the ordinary case.
+    ///
+    /// Runs on `queue`, like every other configuration call (`AGENTS.md` §5).
+    private func configureOrientation(for position: CameraPosition) {
+        let orientation = CaptureOrientation.rotation(
+            for: lastReportedOrientation,
+            position: position
+        )
+        // `nil` means face-up, face-down or unknown. Keeping the last applied
+        // value is the correct answer and not a fallback: a phone lying on a
+        // table has no orientation to report, and snapping to a default there
+        // would rotate the preview under the user for no reason.
+        guard let orientation else { return }
+
+        // The preview connection lives on the preview layer, which is not the
+        // same object as the photo output's connection.
+        if let previewConnection = previewSurface.connection,
+           previewConnection.isVideoRotationAngleSupported(orientation.previewAngle) {
+            previewConnection.videoRotationAngle = orientation.previewAngle
+        }
+        if let photoConnection = photoOutput.connection(with: .video),
+           photoConnection.isVideoRotationAngleSupported(orientation.captureAngle) {
+            photoConnection.videoRotationAngle = orientation.captureAngle
+        }
+
+        appliedOrientation = orientation
+    }
+
+    /// Records the device orientation and re-applies rotation.
+    ///
+    /// **Hops to `queue` like every other configuration entry point**, even though
+    /// it cannot fail. `lastReportedOrientation` is queue-confined state, and
+    /// reading or writing it from the caller would be a data race that usually
+    /// works — which is the worst kind.
+    func applyRotation(_ orientation: DeviceOrientation) async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            queue.async { [self] in
+                lastReportedOrientation = orientation
+                guard state == .running else {
+                    c.resume()
+                    return
+                }
+                configureOrientation(for: activePosition)
+                c.resume()
+            }
+        }
+    }
+
+    /// The rotation in force, for diagnostics and for the tests that assert on it.
+    ///
+    /// **Also hops.** `appliedOrientation` is written on `queue` by
+    /// `configureOrientation`, and a computed property reading it from the caller
+    /// would be a race against a camera swap — the one thing in this class that
+    /// is not allowed, and the reason the whole type is queue-confined rather
+    /// than lock-guarded.
+    func currentOrientation() async -> CaptureOrientation {
+        await withCheckedContinuation { (c: CheckedContinuation<CaptureOrientation, Never>) in
+            queue.async { [self] in c.resume(returning: appliedOrientation) }
+        }
     }
 
     /// Swaps the attached input to `position` and waits for it to deliver.
