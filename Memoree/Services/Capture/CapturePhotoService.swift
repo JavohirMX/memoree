@@ -99,6 +99,20 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// that case, and every sideways photograph saved as a portrait one.
     func currentRotation() async -> CaptureOrientation?
 
+    /// Moves focus and exposure to a point the user tapped.
+    ///
+    /// - Parameter point: **Normalised 0…1 in the preview's own coordinates**,
+    ///   not a layer or device point. The service owns the preview layer and is the
+    ///   only thing that knows how a view coordinate maps onto a sensor
+    ///   coordinate — a `Features/` caller cannot do that conversion without
+    ///   importing AVFoundation, which `AGENTS.md` §3 forbids.
+    ///
+    /// Best-effort and never throws: a device that does not support a focus point
+    /// simply keeps its autofocus, and failing a tap with an error is worse than
+    /// ignoring it. The user pressed somewhere sensible; there is nothing to tell
+    /// them.
+    func focus(atNormalizedPoint point: CGPoint) async
+
     /// Applies a zoom, and remembers it across the camera swap.
     ///
     /// **The user chooses the button; AVFoundation supplies the number.** Rotation

@@ -87,6 +87,10 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
         await controller.currentOrientation()
     }
 
+    func focus(atNormalizedPoint point: CGPoint) async {
+        await controller.focus(atNormalizedPoint: point)
+    }
+
     func applyZoom(_ zoom: CameraZoom) async throws {
         try await controller.applyZoom(zoom)
     }

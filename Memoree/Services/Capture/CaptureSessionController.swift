@@ -874,6 +874,66 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         try? applyZoomOnDevice(currentZoom)
     }
 
+    // MARK: - Focus
+
+    /// Moves focus and exposure to a tapped point.
+    ///
+    /// ## The conversion happens here and nowhere else
+    ///
+    /// The caller has a point in **view** coordinates, 0…1. Turning that into a
+    /// sensor point needs `captureDevicePointConverted(fromLayerPoint:)` on the
+    /// preview layer, and `Features/` cannot import AVFoundation (`AGENTS.md`
+    /// §3). So the service owns the whole conversion, which is why the protocol
+    /// takes a normalised point rather than a device point.
+    ///
+    /// **Focus and exposure are set together**, as the stock camera does, because
+    /// a tap that focuses but does not expose produces a correctly-focused photo
+    /// of the wrong brightness, which reads as a focus bug rather than as two
+    /// decisions.
+    func focus(atNormalizedPoint point: CGPoint) async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            queue.async { [self] in
+                defer { c.resume() }
+                guard let device = activeInput?.device else { return }
+
+                // A zero-sized preview would divide by zero and produce a NaN
+                // point, which AVFoundation rejects by throwing.
+                let size = previewSurface.bounds.size
+                guard size.width > 0, size.height > 0 else { return }
+
+                let layerPoint = CGPoint(x: point.x * size.width, y: point.y * size.height)
+                let devicePoint = previewSurface
+                    .captureDevicePointConverted(fromLayerPoint: layerPoint)
+
+                guard device.isFocusPointOfInterestSupported
+                        || device.isExposurePointOfInterestSupported
+                else { return }
+
+                do {
+                    try device.lockForConfiguration()
+                } catch {
+                    // **Never unlocked here.** A failed lock means we do not hold
+                    // it, and unlocking a device we never locked is how a
+                    // configuration deadlock starts.
+                    return
+                }
+                defer { device.unlockForConfiguration() }
+
+                if device.isFocusPointOfInterestSupported {
+                    device.focusPointOfInterest = devicePoint
+                    // `.autoFocus` rather than continuous: a tap is a request to
+                    // focus *there*, and a one-shot lock is what stops the camera
+                    // immediately drifting back off the subject.
+                    device.focusMode = .autoFocus
+                }
+                if device.isExposurePointOfInterestSupported {
+                    device.exposurePointOfInterest = devicePoint
+                    device.exposureMode = .continuousAutoExposure
+                }
+            }
+        }
+    }
+
     // MARK: - Zoom
 
     /// The zoom the user chose, kept across the front↔rear swap.

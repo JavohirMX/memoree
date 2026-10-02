@@ -113,6 +113,50 @@ struct CameraZoomPersistenceTests {
     /// user who picked 0.5× gets two photographs of one moment at two different
     /// framings — and the composite puts them side by side, which reads as a
     /// rendering bug rather than as zoom resetting.
+    /// Tap to focus passes a **normalised** point, and the conversion lives in the
+    /// service.
+    ///
+    /// Normalised because the alternative is a device point, which only the capture
+    /// layer can compute — `captureDevicePointConverted(fromLayerPoint:)` needs
+    /// AVFoundation, and `Features/` is not allowed to import it (`AGENTS.md` §3).
+    /// A test that asserted a view-sized point would pin the seam in the wrong
+    /// place, so this pins the contract instead.
+    @Test("A tap on the preview reaches the service as a normalised point")
+    func focusIsNormalised() async throws {
+        let service = InMemoryCaptureService()
+        let library = InMemoryPhotoLibraryService()
+        library.setAuthorization(.authorized)
+        let model = CameraViewModel(
+            service: service,
+            photoLibrary: library,
+            chooseFirstCamera: { .back }
+        )
+
+        await model.start()
+
+        // **Nothing happens before the preview has been laid out.** A tap cannot
+        // arrive before that, and dividing by a zero size would produce a NaN
+        // point, which AVFoundation throws on.
+        await model.focus(at: CGPoint(x: 100, y: 200))
+        #expect(service.focusRequests.isEmpty, "focused against an unlaid-out preview")
+
+        model.previewSize = CGSize(width: 400, height: 800)
+        await model.focus(at: CGPoint(x: 100, y: 200))
+        #expect(service.focusRequests.count == 1)
+        let point = try #require(service.focusRequests.first)
+        #expect(abs(point.x - 0.25) < 0.001, "got \(point.x)")
+        #expect(abs(point.y - 0.25) < 0.001, "got \(point.y)")
+
+        // **Clamped, not trusted.** A drag can produce a tap outside the preview,
+        // and an out-of-range point asks the sensor to focus where it cannot see.
+        await model.focus(at: CGPoint(x: -50, y: 9_000))
+        let clamped = try #require(service.focusRequests.last)
+        #expect(clamped.x == 0, "got \(clamped.x)")
+        #expect(clamped.y == 1, "got \(clamped.y)")
+
+        await model.stop()
+    }
+
     @Test("A zoom survives the swap to the other camera and back")
     func zoomSurvivesTheSwap() async throws {
         let service = InMemoryCaptureService()

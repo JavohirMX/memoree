@@ -128,6 +128,20 @@ enum Theme {
         /// The front-camera inset everywhere else.
         static let insetStandard: CGFloat = 96
 
+        /// A zoom button's visible circle.
+        ///
+        /// **Smaller than the tap target on purpose.** 34 is what the stock camera
+        /// draws and it keeps the row from competing with the 72pt shutter; the
+        /// 44pt target sits around it, so nothing is harder to press than it looks.
+        static let zoomButton: CGFloat = 34
+
+        /// The tap-to-focus ring on the camera preview.
+        ///
+        /// The stock camera draws a square of roughly this size, and matching it
+        /// matters more than it looks: a ring that is too small reads as a
+        /// crosshair and a ring that is too large covers the thing being focused.
+        static let focusRing: CGFloat = 76
+
         /// The Today header's icon buttons.
         static let headerIcon: CGFloat = 20
 

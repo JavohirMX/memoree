@@ -35,6 +35,9 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         /// swap** — the failure mode that gives a moment two different framings.
         var zoom: CameraZoom = .wide
         var zoomRequests: [CameraZoom] = []
+        /// Every point focus was asked for, in the normalised 0…1 form the
+        /// protocol takes, so a test can assert the view passes one.
+        var focusRequests: [CGPoint] = []
         /// Cameras captured, in the order the user shot them.
         var capturedPositions: [CameraPosition] = []
         /// Cameras switched to, in order. Should mirror `capturedPositions`
@@ -105,6 +108,7 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
     var stopCount: Int { lock.withLock { state.stopCount } }
     var rebuildCount: Int { lock.withLock { state.rebuildCount } }
     var configuredFormats: [CameraPosition] { lock.withLock { state.configuredFormats } }
+    var focusRequests: [CGPoint] { lock.withLock { state.focusRequests } }
     var capturedPositions: [CameraPosition] { lock.withLock { state.capturedPositions } }
     var switchedTo: [CameraPosition] { lock.withLock { state.switchedTo } }
     var openedOn: [CameraPosition] { lock.withLock { state.openedOn } }
@@ -155,6 +159,10 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
 
     func currentRotation() async -> CaptureOrientation? {
         lock.withLock { state.orientation }
+    }
+
+    func focus(atNormalizedPoint point: CGPoint) async {
+        lock.withLock { state.focusRequests.append(point) }
     }
 
     func applyZoom(_ zoom: CameraZoom) async throws {

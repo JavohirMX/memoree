@@ -215,6 +215,33 @@ final class CameraViewModel {
         await runSession(openingOn: opening)
     }
 
+    // MARK: - Focus
+
+    /// Moves focus and exposure to a point the user tapped on the preview.
+    ///
+    /// **The view's coordinates are converted by the service**, not here: turning a
+    /// view point into a sensor point needs the preview layer's own mapping, and
+    /// `Features/` cannot import AVFoundation to do it (`AGENTS.md` §3).
+    ///
+    /// Clamped rather than trusted: a tap landing outside the preview — which a
+    /// drag can produce — would otherwise ask the sensor to focus somewhere it
+    /// cannot see, and AVFoundation throws for that.
+    func focus(at point: CGPoint) async {
+        let size = previewSize
+        guard size.width > 0, size.height > 0 else { return }
+        await service.focus(atNormalizedPoint: CGPoint(
+            x: min(max(point.x / size.width, 0), 1),
+            y: min(max(point.y / size.height, 0), 1)
+        ))
+    }
+
+    /// The preview's size, so the view's points can be normalised.
+    ///
+    /// **Set by the view**, the only thing that knows it. Zero until the first
+    /// layout, and `focus(at:)` returns without doing anything then — a tap cannot
+    /// arrive before the preview has been laid out.
+    @MainActor var previewSize: CGSize = .zero
+
     // MARK: - Zoom
 
     /// The zoom in force, mirrored into the view model so the buttons can show it.

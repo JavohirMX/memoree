@@ -116,6 +116,8 @@ struct CameraView: View {
         }
     }
 
+    // MARK: - Leaving
+
     /// The camera's way out.
     ///
     /// **A labelled capsule, not a bare glyph.** A lone `chevron.down` in the
@@ -151,6 +153,68 @@ struct CameraView: View {
         .accessibilityHint("Closes the camera. Anything you have shot is discarded")
     }
 
+    // MARK: - Tap to focus
+
+    /// Where the last tap landed, in view coordinates, or `nil` when there is no
+    /// ring on screen.
+    @State private var focusPoint: CGPoint?
+
+    /// Whether the ring is still bright. It appears on the tap and fades a beat
+    /// later, which is the stock camera's confirmation that the tap was taken.
+    @State private var isFocusRingVisible = false
+
+    /// The task that fades the ring, cancelled by the next tap.
+    ///
+    /// Held so a second tap can cancel the first tap's fade. Without this, two
+    /// quick taps leave two tasks racing to hide the ring, and the ring vanishes
+    /// on whichever schedule finishes first rather than the second one.
+    @State private var focusFadeTask: Task<Void, Never>?
+
+    /// Handles a tap on the preview.
+    ///
+    /// **The ring is white, not yellow.** The stock camera draws its focus ring in
+    /// yellow, and ADR-025 gives this app's one amber a single reserved job: a
+    /// permission the user declined and can only fix in system Settings. A focus
+    /// ring on every tap would spend that colour on something decorative and make
+    /// it meaningless — which is precisely what ADR-025 exists to prevent. White
+    /// reads just as clearly over a camera preview and stays inside the design
+    /// system.
+    private func focus(_ model: CameraViewModel, at location: CGPoint) {
+        focusFadeTask?.cancel()
+        withAnimation(.none) {
+            focusPoint = location
+            isFocusRingVisible = true
+        }
+        Task { await model.focus(at: location) }
+
+        focusFadeTask = Task {
+            try? await Task.sleep(for: .seconds(1.2))
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                withAnimation(.easeOut(duration: 0.35)) { isFocusRingVisible = false }
+            }
+            // Kept on screen at low opacity rather than removed, because a ring
+            // that vanishes and reappears on each tap is jumpier than one that
+            // dims — and a second tap on the same spot shows the focus is still
+            // there.
+        }
+    }
+
+    /// The focus ring: a square, like the stock camera's, at the last tap.
+    @ViewBuilder
+    private var focusRing: some View {
+        if let focusPoint {
+            RoundedRectangle(cornerRadius: Theme.Spacing.xs)
+                .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                .frame(width: Theme.Size.focusRing, height: Theme.Size.focusRing)
+                .opacity(isFocusRingVisible ? 1 : 0.4)
+                .position(focusPoint)
+                // One element, one label: a ring is decoration that confirms an
+                // action, and VoiceOver announcing "image" six times is noise.
+                .accessibilityHidden(true)
+        }
+    }
+
     /// The live camera, with the photograph already taken in the top-left
     /// square when there is one.
     ///
@@ -162,9 +226,24 @@ struct CameraView: View {
         ZStack(alignment: .topLeading) {
             if let layer = model.previewLayer {
                 CameraPreview(layer: layer)
+                    // **Tap to focus, and it is a `.simultaneousGesture` rather than
+                    // the inset's own tap.** The inset is non-interactive here on
+                    // purpose (see the documentation below), so there is nothing to
+                    // conflict with — but `simultaneous` is what keeps a future
+                    // gesture on the preview from silently swallowing this one.
+                    .simultaneousGesture(
+                        SpatialTapGesture().onEnded { value in focus(model, at: value.location) }
+                    )
+                    // The view is the only thing that knows the preview's size,
+                    // and `focus(at:)` needs it to normalise a tap.
+                    .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                        model.previewSize = size
+                    }
             } else {
                 Theme.Color.canvas
             }
+
+            focusRing
 
             if let inset = model.insetPhoto,
                let image = UIImage(data: inset.data) {
@@ -208,6 +287,22 @@ struct CameraView: View {
         }
     }
 
+    /// A zoom button, styled as a **circle** rather than a full-width capsule.
+    ///
+    /// ## Why a circle, and why not full width
+    ///
+    /// The stock camera draws each magnification as a small circle and fills only
+    /// the selected one. Three equal capsules stretched across the width read as
+    /// three buttons competing with the shutter above them, and the selection is a
+    /// large filled slab rather than a small filled dot — which is the difference
+    /// between "a zoom control" and "three more things on this screen".
+    ///
+    /// ## The tap target is not the circle
+    ///
+    /// **A 34pt circle with a 44pt target around it.** The circle is what you see;
+    /// the frame is what you hit. Shrinking the visible dot to the minimum touch
+    /// size would make the row dominate the shutter, which is the one control this
+    /// screen exists to offer.
     private func zoomButton(_ zoom: CameraZoom, _ model: CameraViewModel) -> some View {
         let isSelected = model.zoom == zoom
         let isAvailable = zoom.isAvailable(on: model.livePosition)
@@ -218,20 +313,23 @@ struct CameraView: View {
             Text(zoom.label)
                 .font(Theme.Typography.button)
                 .foregroundStyle(isSelected ? Theme.Color.onAccent : Theme.Color.textPrimary)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: Theme.Size.tapTarget)
-                .background(isSelected ? Theme.Color.textPrimary : Color.clear)
-                .clipShape(Capsule())
-                .overlay {
-                    Capsule().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                .frame(width: Theme.Size.zoomButton, height: Theme.Size.zoomButton)
+                .background {
+                    if isSelected {
+                        Circle().fill(Theme.Color.textPrimary)
+                    } else {
+                        Circle().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                    }
                 }
                 .opacity(isAvailable ? 1 : 0.35)
         }
         .buttonStyle(.plain)
         .disabled(!isAvailable)
-        // **Selected is on the button, not on the row.** VoiceOver otherwise
-        // announces three identical "2×" buttons with no way to tell which one is
-        // in force.
+        // The visible circle inside a minimum target, not the other way round.
+        .frame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget)
+        .contentShape(.rect)
+        // **Selected is a trait on the button**, so VoiceOver says which of three
+        // identical labels is in force.
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
         .accessibilityHint(isAvailable ? "" : "Not available on the front camera")
     }
@@ -248,12 +346,23 @@ struct CameraView: View {
 
             zoomRow(model)
 
-            // Which camera they are composing with. Stated as a fact, because
-            // the order is random per moment (ADR-021) and there is no other
-            // way to know which is live.
-            Text(model.livePositionDescription)
-                .font(Theme.Typography.metadata)
+            // Which camera they are composing with.
+            //
+            // **A glyph, not the words.** "Front camera" under the shutter is a
+            // sentence on a screen whose job is to show a viewfinder, and the
+            // stock camera uses a glyph here for the same reason. The words are
+            // still there for VoiceOver, which is where "Front camera" is
+            // actually useful.
+            //
+            // **It is not a button.** ADR-021 makes the opening camera random per
+            // moment, and a manual switch would be `removeInput`/`addInput` on a
+            // running session — the operation ADR-003 measured four times to kill
+            // the frame output. A control that looks pressable and is not is
+            // worse than a label.
+            Image(systemName: "arrow.triangle.2.circlepath.camera")
+                .scaledDisplayFont(Theme.Size.headerIcon, weight: .regular)
                 .foregroundStyle(Theme.Color.textSecondary)
+                .accessibilityLabel(model.livePositionDescription)
         }
         .padding(.vertical, Theme.Spacing.xl)
     }
@@ -271,7 +380,11 @@ struct CameraView: View {
                         .padding(6)
                 }
         }
-        .buttonStyle(.plain)
+        // **The shutter dips on press** — see `PressDipStyle` for why this is the
+        // only feedback a press gets. `.plain` would not hold state through the
+        // press, and the previous attempt used an `@State` flag that nothing ever
+        // set, so it compiled and did nothing.
+        .buttonStyle(.pressDip)
         .disabled(!model.canCapture)
         .opacity(model.canCapture ? 1 : 0.4)
         .accessibilityLabel("Take a photo")
