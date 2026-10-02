@@ -249,23 +249,45 @@ struct LiveCaptureTests {
     func surveyEveryLens() throws {
         guard requireCamera() else { return }
 
+        // **This list was wrong once and is checked rather than trusted.**
+        //
+        // The first version listed five types and missed
+        // `.builtInDualWideCamera` — the virtual device that pairs wide with
+        // ultra-wide on a phone with no telephoto. That is precisely where
+        // `virtualDeviceSwitchOverVideoZoomFactors` lives, so the one row that
+        // could have answered "can AVFoundation hand off between lenses for us?"
+        // was the row that never printed. A hand-picked list of hardware types is
+        // exactly the thing that goes stale, so the sweep at the end of this test
+        // discovers **every** device type available and reports anything this
+        // list missed.
+        //
+        // The types are the SDK's built-in list minus the three that are not
+        // cameras you can shoot (`LiDARDepthCamera`, `Microphone`, `TrueDepth`)
+        // and minus `.builtInDuoCamera`, which is deprecated since iOS 10.2 in
+        // favour of `.builtInDualCamera` and warned on every build. Dropping it
+        // is only safe **because of the sweep below** — which is the point of
+        // having a sweep: a name the compiler complains about can be deleted
+        // without guessing what it was covering.
+        let lensTypes: [AVCaptureDevice.DeviceType] = [
+            .builtInWideAngleCamera,
+            .builtInUltraWideCamera,
+            .builtInTelephotoCamera,
+            .builtInDualWideCamera,
+            .builtInDualCamera,
+            .builtInTripleCamera
+        ]
+
         let discovery = AVCaptureDevice.DiscoverySession(
-            deviceTypes: [
-                .builtInWideAngleCamera,
-                .builtInTelephotoCamera,
-                .builtInUltraWideCamera,
-                .builtInDualCamera,
-                .builtInTripleCamera
-            ],
+            deviceTypes: lensTypes,
             mediaType: .video,
             position: .unspecified
         )
 
         var lines: [String] = []
         lines.append("")
-        lines.append("┌─ LENS SURVEY " + String(repeating: "─", count: 52))
-        lines.append("│ lens              position  3:4?  formats  zoom min…max")
-        lines.append("├" + String(repeating: "─", count: 64))
+        lines.append("┌─ LENS SURVEY " + String(repeating: "─", count: 56))
+        lines.append("│ lens              position  3:4?  formats  zoom min…max  upscale>")
+        lines.append("├" + String(repeating: "─", count: 72))
 
         for device in discovery.devices {
             let selected = CaptureFormatSelector.selectFormat(for: device)
@@ -288,7 +310,8 @@ struct LiveCaptureTests {
                 + pad(describe(device.position), 10)
                 + pad(selected == nil ? "NO" : "yes", 6)
                 + pad("\(device.formats.count)", 9)
-                + zoomRange(of: reference, device: device))
+                + pad(zoomRange(of: reference, device: device), 14)
+                + upscaleThreshold(reference))
 
             if selected == nil {
                 lines.append("│   ↳ no 3:4. Ratios on offer: \(ratioSpread(device))")
@@ -296,18 +319,39 @@ struct LiveCaptureTests {
 
             // **Switch-over factors only exist on virtual devices.** An empty
             // array is the documented answer for a real lens, and it is the
-            // answer that matters: on a `.builtInDualCamera` the app could let
-            // AVFoundation hand off between constituents by setting one zoom
-            // factor, which would be *seamless* zoom with no session restart at
-            // all — the thing ADR-003 listed as the cost of going sequential.
+            // answer that matters: on a virtual device the app could let
+            // AVFoundation hand off between constituent cameras by setting one
+            // zoom factor, which would be *seamless* zoom with no session
+            // restart at all — the thing ADR-003 listed as the cost of going
+            // sequential. So this line is the one worth reading twice.
             let switchOver = device.virtualDeviceSwitchOverVideoZoomFactors
-            if !switchOver.isEmpty {
-                lines.append("│   ↳ switch-over at: "
-                    + switchOver.map { String(format: "%.2f", $0.doubleValue) }
-                        .joined(separator: ", "))
-            }
+            lines.append("│   ↳ switch-over: "
+                + (switchOver.isEmpty
+                    ? "none (physical lens)"
+                    : switchOver.map { String(format: "%.2f", $0.doubleValue) }
+                        .joined(separator: ", ")))
         }
-        lines.append("└" + String(repeating: "─", count: 64))
+        lines.append("└" + String(repeating: "─", count: 72))
+
+        // **The self-check the first version needed.** An empty `deviceTypes`
+        // means "every type", so this sweep cannot miss anything — which is the
+        // only way to know the list above is complete.
+        let everything = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [],
+            mediaType: .video,
+            position: .unspecified
+        )
+        let listed = Set(lensTypes.map(\.rawValue))
+        let missed = Set(everything.devices.map(\.deviceType.rawValue)).subtracting(listed)
+        lines.append("")
+        if missed.isEmpty {
+            lines.append("  Device types not in this survey's list: none.")
+        } else {
+            lines.append("  ⚠︎ Device types this survey's list MISSED: "
+                + missed.sorted().joined(separator: ", "))
+            lines.append("    Add them above — a missing virtual device hides its")
+            lines.append("    switch-over factors, which is the whole point of asking.")
+        }
         lines.append("")
 
         print(lines.joined(separator: "\n"))
@@ -356,6 +400,22 @@ struct LiveCaptureTests {
             device.minAvailableVideoZoomFactor,
             format.videoMaxZoomFactor
         )
+    }
+
+    /// The zoom factor beyond which the sensor is being upscaled rather than
+    /// cropped, or `—`.
+    ///
+    /// **This is the honest quality boundary, and it is the number that should
+    /// decide how far a zoom control goes.** `videoMaxZoomFactor` came back at
+    /// **189** on the first device run, which is not a usable zoom range — it is
+    /// the point at which AVFoundation will still accept a number. A control that
+    /// offers 189× is offering a rectangle of pixels. `videoZoomFactorUpscaleThreshold`
+    /// is where real magnification stops and digital enlargement starts, so it
+    /// is the ceiling worth designing against.
+    private func upscaleThreshold(_ format: AVCaptureDevice.Format?) -> String {
+        guard let format else { return "—" }
+        let threshold = format.videoZoomFactorUpscaleThreshold
+        return threshold > 0 ? String(format: "%.1f×", threshold) : "—"
     }
 
     /// The distinct aspect ratios a device's formats offer, widest first.

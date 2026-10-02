@@ -101,12 +101,18 @@ fi
 echo "PASS — the survey ran."
 echo
 sed -n '/LENS SURVEY/,/^└/p' "$LOG"
+sed -n '/Device types not in this survey/,+1p' "$LOG"
 echo
 echo "Reading the table:"
-echo "  3:4?  NO on the ultra-wide means a 0.5x control cannot be built on it —"
-echo "         the selector would throw noThreeByFourFormat on every press."
-echo "  zoom  The ceiling is per-format, so 2x is only a button if every lens"
-echo "         you want to offer reaches at least 2.0."
+echo "  3:4?       NO means the selector would throw noThreeByFourFormat on"
+echo "             every press, so that lens cannot carry a control at all."
+echo "  zoom       The ceiling is per-format and will read absurdly high — it is"
+echo "             the point at which AVFoundation still accepts a number."
+echo "  upscale>   Where real magnification stops and digital enlargement"
+echo "             starts. This is the number to design a zoom control against."
+echo "  switch-over  Only virtual devices have these. Non-empty means AVFoundation"
+echo "             can hand off between lenses for us — seamless zoom with no"
+echo "             session restart, which is what would make Stage 4 cheap."
 echo
 echo "Full log: $LOG"
 exit 0
