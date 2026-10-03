@@ -343,7 +343,12 @@ struct MomentExporterTests {
             .unsupportedVersion(found: 9, supported: 1),
             .malformedDay("x"),
         ] {
-            let description = try? #require(error.errorDescription)
+            // Not `try? #require(error.errorDescription)`: every case returns a
+            // non-optional literal, so the compiler knows it cannot be nil and
+            // warns that the unwrap is redundant. The assertion that matters is
+            // that the string is *not empty* — a case that returned `""` would
+            // pass a `!= nil` check and render a blank error.
+            let description = error.errorDescription
             #expect(description?.isEmpty == false)
         }
 

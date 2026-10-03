@@ -332,7 +332,8 @@ treatment on a light canvas, and a light Memoree would not be Memoree.
 
 ## ADR-013 — Behind the Scenes: single continuous recording, trimmed
 
-**Status:** Accepted
+**Status:** Accepted · **Decided to build 2026-10-03**, after the implementation plan flagged
+this as the phase most likely to be cut
 
 **Context.** BTS records the few seconds before the shutter. BeReal uses a rolling buffer with a
 server-reported max of 6.42 seconds, and records **only the first camera selected**.
@@ -350,6 +351,26 @@ slowly.
 camera switch and nothing after. That is correct and expected, not a defect. Audio requires
 microphone permission, requested lazily; a denied permission yields a silent clip rather than a
 blocked moment.
+
+**2026-10-03 — the cut case was argued and rejected.** The implementation plan carried BTS as
+"last, and possibly cut", for reasons worth preserving rather than deleting: it is the most
+BeReal-residual feature in the document, and it is the only one that adds a second media type, a
+second permission, a playback surface, and a new failure mode — *a video that will not play* — to
+a product whose entire claim is one unretouched photograph a day. `AGENTS.md` §13 says to prefer
+removing code to adding it.
+
+The user chose to build it, so this ADR stands as written. **What that costs is stated here so
+nobody has to infer it later:** a new failure surface enters an app that has none, and every one
+of them must have a recoverable state (`AGENTS.md` §6) — no dead ends, no silent clips. The
+decision also stays subordinate to Phase 4's gate: BTS attaches an output to the same
+`AVCaptureSession` the twenty-moment reliability gate is still failing at 18/20, so the session
+work waits until that gate is understood.
+
+**Reversal trigger.** If playback cannot be made reliable on device — a clip that will not play
+after a restart, or a session that degrades the photo path — cut the phase and delete
+`btsEnabled`/`btsDuration`/`saveBTS` rather than leaving them inert. A toggle that describes a
+feature which does not work is worse than no toggle, which is why those fields have sat at
+`false` since Phase 2.
 
 ---
 

@@ -10,9 +10,13 @@ Nothing to sign up for. Nothing to share. Nothing that isn't yours.
 
 Memoree is a native iOS app that keeps one part of BeReal and deletes the rest.
 
-Every day, at a random moment inside a window you choose, your phone notifies you. You have two
-minutes. You photograph the scene with the rear camera and yourself with the front one. Both
-images are written to your Photos library as ordinary, full-quality photos. The streak goes up.
+Every day, at a random moment inside a window you choose, your phone notifies you. You photograph
+the scene with the rear camera and yourself with the front one. Both images are written to your
+Photos library as ordinary, full-quality photos. A photograph taken within two minutes of your
+moment moves the streak.
+
+Capture is never blocked. Photograph whenever you like — an off-window moment is saved exactly
+like an on-time one, and the streak simply does not move.
 
 There is no account. There is no server. There is no feed.
 
@@ -21,8 +25,11 @@ solved in the architecture.
 
 ## Why
 
-BeReal's mechanic is genuinely good. A random notification and a two-minute window destroy the
-two things that make social media compulsive: the ability to curate, and the ability to plan.
+BeReal's mechanic is genuinely good. A random notification you cannot plan around removes the two
+things that make social media compulsive: the ability to curate, and the ability to choose the
+moment. What keeps its teeth in Memoree is narrower than the original two-minute gate and is
+stated plainly rather than pretended: one unretouched photograph a day, and no library upload to
+fake one with (ADR-023).
 
 But adopting it means accepting the company behind it, which today runs in-feed ads, operates
 RealBrands and RealPeople programmes, and documents — in its own Privacy Policy — inferring your
@@ -89,15 +96,18 @@ instead, regenerate with `xcodegen generate`.
 
 ## How it works
 
-**The moment.** Each day, Memoree derives a random time inside your configured window (default
-11:00–23:00 local, so it never fires at 3am) from an HMAC over the day and a per-install secret
-held in the Keychain. The time is stable for the whole day and identical across every launch. It
+**The window.** A random time is derived inside your chosen window (default 11:00–23:00 local, so
+it never fires at 3am) from an HMAC over the day and a per-install secret held in the Keychain. It
 is scheduled as a local notification over a rolling 45-day horizon, comfortably inside iOS's
 64-request pending limit.
 
-**The window.** Two minutes, counted down on-device. You cannot capture before the moment
-arrives. Miss it and you can still shoot — the moment is saved and badged amber, but the streak
-does not grow.
+**The two minutes, and what they do.** Two minutes from your moment is how long a photograph counts
+toward the streak. It is **not** a deadline: the shutter is always available, an off-window
+photograph is indistinguishable from an on-time one on every screen, and only a day with no
+photograph at all breaks the streak (ADR-023). Nothing anywhere tells you when your moment was —
+the notification is the alert, and showing a clock beside it would spend the surprise twice. Turn
+notifications off and the time reappears, because it is then the only way you could ever know
+(ADR-024).
 
 **The capture.** Rear, then front, sequentially, in a single `AVCaptureSession`, roughly half a
 second apart. This is what production BeReal appears to do. It works on every supported iPhone,
@@ -105,24 +115,33 @@ and it avoids the thermal cost and debugging surface of `AVCaptureMultiCamSessio
 many times as you like — only the final pair is kept.
 
 **The save.** Both images are written to Photos as two separate assets in one atomic change,
-with EXIF intact and GPS attached only if you opted in for that moment. Coordinates are stored
-and never resolved to a place name. Memoree requests **add-only** photo permission: it never
-reads your library, and it never deletes from it.
+with the capture EXIF intact. Memoree requests **add-only** photo permission: it never deletes
+from your library, and it never reads it. A moment you delete from the archive leaves both
+photographs exactly where they are — they are yours (ADR-008).
 
-**The streak.** Consecutive days with an on-time moment. A late day or a missed day breaks it.
-A day that has not ended yet never breaks it — your streak does not reset every morning.
+**The streak.** Consecutive days with a moment. A photograph taken within two minutes of your
+moment counts; one taken later does not move the streak, and does not break it either. Only a
+day with no photograph at all ends the run, and a day that has not ended yet never does — your
+streak does not reset every morning. Nothing on screen says which kind of day you had; the
+Stats screen reports the split as a number.
 
 ## Privacy
 
-Memoree requests exactly five permissions, each for a specific stated purpose:
+Memoree requests at most three permissions, each for a specific stated purpose:
 
 | Permission | Why | Deniable? |
 | --- | --- | --- |
 | Camera | The only thing this app does | Yes — the app will not work |
 | Notifications | To tell you it is time | Yes — you can still capture from the app |
 | Photos (add-only) | To save your moments | Yes — moments stay in the app |
-| Microphone | Behind-the-Scenes audio, if enabled | Yes — BTS becomes silent |
-| Location | Optional, per-moment, if you attach it | Yes — no coordinates are recorded |
+
+Behind-the-Scenes video, when it exists, asks for the microphone on first use. A denial yields a
+silent clip rather than a blocked moment (ADR-013).
+
+There is no location permission and no location collection. `Moment` carries `latitude` and
+`longitude` fields and nothing ever writes them, because collecting location is a product decision
+that has not been made — an opt-in that prompts for something on every capture is not a small
+feature, and a permission the app asks for and never uses is worse than an absent one.
 
 There are no third-party dependencies. No analytics. No crash reporting. No advertising
 identifier. No `URLSession` is constructed anywhere in the codebase.
@@ -136,13 +155,18 @@ The app works in airplane mode. That is not a limitation — it is the product.
 | [`docs/PRD.md`](docs/PRD.md) | Product requirements, scope, flows, risks |
 | [`docs/TRD.md`](docs/TRD.md) | Technical design, module contracts, algorithms |
 | [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | Eleven phases, sequenced by risk |
-| [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) | Twenty-five ADRs with alternatives and reversal triggers |
+| [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) | Twenty-six ADRs with alternatives and reversal triggers |
 
 [`AGENTS.md`](AGENTS.md) covers the conventions any contributor or coding agent must follow.
 
 ## Status
 
-Pre-release. See `docs/IMPLEMENTATION_PLAN.md` for the current phase.
+Pre-release. 370 tests in 43 suites on the simulator; two of them fail there by design, because a
+skipped device test that reports as passed is worse than a red suite.
+
+One exit criterion is unmet: the twenty-capture reliability gate on hardware, parked at 18/20 with
+an uninvestigated capture-daemon death behind it. Release readiness is Phase 11 and has not been
+done. See `docs/IMPLEMENTATION_PLAN.md` for the current phase and its reasoning.
 
 ## Licence
 

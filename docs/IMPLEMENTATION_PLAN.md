@@ -972,9 +972,9 @@ UTC+12 in August, not +13 — NZDT does not start until 27 September — so 11:3
 
 ---
 
-## Phase 7 — Behind the Scenes · **last, and possibly cut**
+## Phase 7 — Behind the Scenes · **building it**
 
-> **Reordered 2026-10-01, and this is the phase most likely to be deleted rather than built.**
+> **Reordered 2026-10-01, and this was the phase most likely to be deleted rather than built.**
 > The rest of the roadmap moved ahead of it — Stats, then polish, then share — and the reason is
 > in ADR-023: the premise narrowed from *forced spontaneity* to *a daily photo journal with a
 > reminder*. BTS is the most BeReal-residual feature in this document, and it is the only one
@@ -983,10 +983,19 @@ UTC+12 in August, not +13 — NZDT does not start until 27 September — so 11:3
 > photograph a day.
 >
 > "Prefer removing code to adding it" (`AGENTS.md` §13) applies to phases, not only to lines.
-> **Decide at the end of polish, not now** — and the deciding question is whether anyone opens
-> the app wanting the clip, which is measurable from whether anyone ever scrolls past a moment
-> in the archive. `AppSettings` already carries `btsEnabled`/`btsDuration`/`saveBTS`, defaulted
-> **off**, specifically so no toggle in the app describes a feature that does not exist.
+> The decision was deferred to the end of polish for exactly that reason.
+>
+> **Decided 2026-10-03: build it.** The user chose to keep it, so the case for cutting it —
+> which this header still argued — is recorded here and not acted on. `AppSettings` has carried
+> `btsEnabled`/`btsDuration`/`saveBTS` defaulted **off** since Phase 2, specifically so no toggle
+> in the app described a feature that did not exist; that reasoning stands, and the fields stop
+> being inert with this phase.
+>
+> **Sequenced after Phase 4's gate on purpose.** BTS attaches an `AVCaptureMovieFileOutput` to
+> the same `AVCaptureSession` whose lifecycle the twenty-moment gate is stress-testing, and the
+> daemon death behind that gate is still uninvestigated. Perturbing the highest-risk code in the
+> project in order to add a feature to it, before the thing being perturbed is known-good,
+> inverts the order this document has argued for since Phase 0.
 
 | Task | Notes |
 | --- | --- |
@@ -1000,6 +1009,51 @@ UTC+12 in August, not +13 — NZDT does not start until 27 September — so 11:3
 
 **Exit:** a moment captured with BTS plays back correctly, including after an app restart.
 **Estimate:** 1.5 days.
+
+### Progress as of 2026-10-03 — the arithmetic, the seam, and the double
+
+The foundations of three tasks are in. **No capture session is touched yet**, for the reason in
+the note above.
+
+- **`BTSTrim`** — the whole decision of *which part of a continuous recording survives*, as a
+  pure function over `TimeInterval` with no `CMTime` in it. `AVAssetExportSession` speaks in
+  `CMTimeRange`, but every rule that can go wrong is arithmetic on seconds, and a plan in
+  seconds is testable on a simulator with no asset, no export session and no camera. The same
+  split `CaptureFormatSelector` makes between its arithmetic and its one-line wrapper.
+- **`BTSRecorder`** — a protocol, on the same terms as `CapturePhotoService`: microphone
+  authorisation is a *supported state* rather than an error, no `BTSRecorderError` case is
+  retryable (the opposite of `CaptureError.isRetryable`, and the difference is the point — the
+  user has already taken the photograph), and trimming returns `nil` rather than throwing when
+  there is nothing to keep.
+- **`InMemoryBTSRecorder`** — the test double, so the path is testable off-device. It records
+  what it was *asked* to do, which is how the assertions are written: a test checks the clip was
+  trimmed to the configured duration, not that nothing threw.
+
+**The guard is a floor as well as a clamp, and the floor was the interesting half.** "Clamp the
+trim range at zero" prevents an *inverted* range, which `AVAssetExportSession` rejects with no
+error a caller can act on. It cannot prevent a range that is merely tiny: open the camera, press
+twice inside half a second, and the recording is around 0.4s — exportable, storable, and a
+frozen frame behind a play button. Below `minimumRecordedDuration` there is no clip, and the
+moment is photographs only.
+
+**The write-up caught a bug in its own first draft, which is the reason to write them.** The
+first `validatedClipDuration` guarded on `isFinite`, which handles `NaN` at the cost of two
+wrong answers: an infinite setting became the *default* rather than the end of the range it
+names. `NaN` fails every comparison, so `min`/`max` pass it straight through — and that is the
+one input the clamp exists to catch. Guarding on `isNaN` instead makes both infinities clamp
+correctly through the same arithmetic that handles every other value, with no branch of its own.
+
+**Sixteen tests, table-driven.** The ones that earn their keep are the boundaries: the floor
+asserted from *both* sides (0.5s yields a clip, 0.4999s does not), a recording one millisecond
+either side of an exact length, and a floating-point sweep asserting the *relationship* —
+`duration <= recorded`, `end >= start` — rather than a literal, because a literal asserts the
+representation error instead of the behaviour. Two of them failed against the implementation as
+first written.
+
+**Not done, deliberately:** the `AVCaptureMovieFileOutput` attachment, the microphone prompt,
+playback, and the Settings toggle. The toggle especially — surfacing it before the recorder
+works is precisely the dead control `Models.swift` warns against, so it arrives with the
+feature or not at all.
 
 ---
 
