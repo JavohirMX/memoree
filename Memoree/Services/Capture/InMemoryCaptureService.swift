@@ -20,6 +20,10 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         var authorization: CameraAuthorizationStatus = .authorized
         var isRunning = false
         var startCount = 0
+        var movieOutputRequests = 0
+        /// Calls in the order they arrived, so a test can assert **ordering**
+        /// rather than merely that both things happened. See `eventLog`.
+        var events: [String] = []
         var stopCount = 0
         var rebuildCount = 0
         var configuredFormats: [CameraPosition] = []
@@ -133,6 +137,16 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
 
     var isRunning: Bool { lock.withLock { state.isRunning } }
     var startCount: Int { lock.withLock { state.startCount } }
+    /// How many times BTS asked for a movie output. See `enableMovieOutput`.
+    var movieOutputRequests: Int { lock.withLock { state.movieOutputRequests } }
+
+    /// Lifecycle calls in the order they arrived.
+    ///
+    /// Exists for **one** assertion — that `enableMovieOutput` precedes the first
+    /// `startSession` — and is deliberately a flat log of strings rather than a
+    /// more expressive type, because a richer one would be a second thing to keep
+    /// correct and only this ordering is in doubt.
+    var eventLog: [String] { lock.withLock { state.events } }
     var stopCount: Int { lock.withLock { state.stopCount } }
     var rebuildCount: Int { lock.withLock { state.rebuildCount } }
     var configuredFormats: [CameraPosition] { lock.withLock { state.configuredFormats } }
@@ -168,6 +182,7 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
             state.startCount += 1
             state.openedOn.append(position)
             state.livePosition = position
+            state.events.append("startSession")
         }
     }
 
@@ -175,6 +190,7 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         lock.withLock {
             state.isRunning = false
             state.stopCount += 1
+            state.events.append("stopSession")
         }
     }
 
@@ -208,10 +224,25 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         lock.withLock { state.zoom }
     }
 
+    /// Records the request, so a test can assert BTS asked for its output *before*
+    /// the session started rather than after — the ordering is the whole contract
+    /// (`CapturePhotoService.enableMovieOutput`), and nothing else in a double
+    /// could show it.
+    ///
+    /// **Appended to `events` as well as counted**, because "both happened" and
+    /// "in that order" are different claims and only the second one is the bug.
+    func enableMovieOutput() async {
+        lock.withLock {
+            state.movieOutputRequests += 1
+            state.events.append("enableMovieOutput")
+        }
+    }
+
     func rebuildSession() async throws {
         try lock.withLock {
             try Self.throwIfNeeded(&state)
             state.rebuildCount += 1
+            state.events.append("rebuildSession")
             state.isRunning = true
             // **The one thing that revives a dead subsystem.** Matches
             // `rebuildSession`'s real behaviour of constructing a new session,

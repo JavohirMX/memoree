@@ -156,12 +156,22 @@ final class AppSettings {
         windowStartMinutes: Int = TimeWindow.default.startMinutes,
         windowEndMinutes: Int = TimeWindow.default.endMinutes,
         windowDuration: Int = 120,
-        // Off, because there is no recorder. Both defaulted to on and true,
-        // which made the settings row describe a feature the app does not have
-        // until Phase 7 — a toggle that says "save your Behind the Scenes clip"
-        // and then silently does nothing. Both become meaningful the moment
-        // `BTSRecorder` exists, and neither costs anything to flip first.
+        // Off, because recording is opt-in and there is nothing to record
+        // until the user asks for it. Both defaulted to on and true at one
+        // point, which made the settings row describe a feature the app did not
+        // have — a toggle that says "save your Behind the Scenes clip" and then
+        // silently does nothing. `saveBTS` is **separately** off rather than
+        // following `btsEnabled`, because recording a clip and keeping it are
+        // two decisions; `CameraHostView` requires both before writing to Photos.
         btsEnabled: Bool = false,
+        // ADR-013's five seconds, written as a literal rather than as
+        // `BTSTrim.defaultClipDuration`: `Models` imports nothing internal
+        // (`AGENTS.md` §3) and `BTSTrim` lives in `Services`. The two are held
+        // together by a test that fails the build if they drift, which is the
+        // project's answer to a constant a layer may not name.
+        //
+        // Clamped on every read by `BTSTrim.validatedClipDuration`, because this is
+        // a persisted `Double` and a corrupt store should degrade rather than crash.
         btsDuration: Double = 5.0,
         saveBTS: Bool = false,
         saveToAlbum: Bool = false,

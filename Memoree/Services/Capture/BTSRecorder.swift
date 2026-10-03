@@ -57,19 +57,47 @@ protocol BTSRecorder: AnyObject, Sendable {
     /// - Throws: when no recording is open.
     func stopRecording() async throws -> BTSRecording
 
-    /// Trims a recording to its last `clipDuration` seconds.
+    /// Trims a recording to its last `clipDuration` seconds and hands back the bytes.
     ///
-    /// - Returns: the trimmed clip's file URL, or `nil` when there is nothing
-    ///   worth keeping — a recording shorter than
-    ///   `BTSTrim.minimumRecordedDuration`. `nil` is not a failure: the moment
-    ///   is photographs either way, and an error here would give the user a
-    ///   dialog about a clip they never asked for.
-    func trim(_ recording: BTSRecording, toSeconds clipDuration: TimeInterval) async throws -> URL?
+    /// ## Why `Data` and not a `URL`
+    ///
+    /// This returned a file URL once, and the only consumer read it immediately and
+    /// deleted it. That put a temporary-directory read **and** a `removeItem` in
+    /// `Features/`, which is not where file I/O belongs (`AGENTS.md` §3), and it
+    /// handed the caller a path into a directory the system purges whenever it
+    /// likes. The export session needs a URL — that is inside this type now — and
+    /// everything outside it wants the bytes.
+    ///
+    /// - Returns: the trimmed clip, or `nil` when there is nothing worth keeping —
+    ///   a recording shorter than `BTSTrim.minimumRecordedDuration`. `nil` is not a
+    ///   failure: the moment is photographs either way, and an error here would
+    ///   give the user a dialog about a clip they never asked for.
+    func trim(_ recording: BTSRecording, toSeconds clipDuration: TimeInterval) async throws -> Data?
 
     /// Releases a recording's bytes. Called on every path that does not keep the
     /// clip, including a re-take — see `CameraViewModel`'s commit for why that
     /// matters.
     func discard(_ recording: BTSRecording)
+
+    /// Closes whatever is open, throws away its bytes, and leaves no state behind.
+    ///
+    /// ## Why this exists rather than `try? stopRecording()` followed by `discard`
+    ///
+    /// That sequence is what the camera view model did first, and it leaves the
+    /// recorder **wedged** in exactly the case that matters. `stopRecording` throws
+    /// when the movie output has gone — which is what a session rebuild does, and
+    /// ADR-027's recovery rebuilds the session whenever the capture subsystem dies
+    /// — and the throw means the returned `BTSRecording`, and therefore the path to
+    /// the bytes, is never handed back. `isRecording` then stays `true` for the
+    /// life of the object, so every later `startRecording` throws
+    /// `alreadyRecording`, silently swallowed, and **every subsequent moment loses
+    /// its clip because of one dead session an hour earlier.**
+    ///
+    /// `abandon` does not need the file URL to succeed: it closes whatever is open,
+    /// clears the state, and removes what it can. **Never throws, and is safe with
+    /// nothing open**, so a caller on a failure path has one call to make and no
+    /// branch to get wrong.
+    func abandon()
 
     /// Removes the temporary directory BTS writes into.
     ///

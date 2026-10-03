@@ -29,6 +29,14 @@ struct CameraHostView: View {
                 service: environment.captureService,
                 photoLibrary: environment.photoLibrary,
                 haptics: environment.haptics,
+                // **`nil` when BTS is off or there is no real session**, and both
+                // are ordinary. See `AppEnvironment.btsRecorder`.
+                btsRecorder: environment.btsRecorder,
+                // A closure rather than a value, so a length changed in Settings
+                // while the camera is open applies to the moment being composed.
+                clipDuration: {
+                    environment.momentStore.settings().btsDuration
+                },
                 record: environment.makeMomentRecorder(),
                 // Read per commit rather than captured once, so the Settings
                 // toggle applies to a moment captured before it was flipped as
@@ -45,9 +53,20 @@ struct CameraHostView: View {
                 shouldFileIntoAlbum: {
                     environment.momentStore.settings().saveToAlbum
                 },
+                // **Two separate settings, and the difference is the point.**
+                // `btsEnabled` is whether to record at all — no microphone, no
+                // output, no temporary file. `saveBTS` is whether to write the
+                // finished clip to Photos. Someone who wants the clip trimmed but
+                // not in their library wants the first without the second, and one
+                // toggle cannot express that.
+                shouldSaveBTS: {
+                    let settings = environment.momentStore.settings()
+                    return settings.btsEnabled && settings.saveBTS
+                },
                 // Reported to the environment rather than only to the camera
                 // screen, because that screen is gone by the time anyone could
                 // act on it. Today reads it back once on its next reload.
+                reportBTSFailure: { environment.noteBTSFailure($0) },
                 reportAlbumFailure: { environment.noteAlbumFailure($0) }
             )
             self.model = created

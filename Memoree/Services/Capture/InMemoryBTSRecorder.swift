@@ -132,7 +132,7 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
         }
     }
 
-    func trim(_ recording: BTSRecording, toSeconds clipDuration: TimeInterval) async throws -> URL? {
+    func trim(_ recording: BTSRecording, toSeconds clipDuration: TimeInterval) async throws -> Data? {
         try lock.withLock {
             if let failure = state.trimFailure {
                 state.trimFailure = nil
@@ -143,18 +143,64 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
                 recordedDuration: recording.recordedDuration,
                 clipDuration: clipDuration
             ) else { return nil }
-            // A real trim writes a new file; the double writes none, because a
-            // test that only cares about the *decision* should not need a
-            // writable temporary directory to have it.
-            return URL(fileURLWithPath: "/tmp/memoree-bts-\(recording.fileURL.lastPathComponent)-trimmed.mov")
-                .appendingPathComponent("\(window.start)")
+
+            // **Bytes, and no file at all.**
+            //
+            // This wrote a real `.mov` into the temporary directory, on the
+            // reasoning that "a test that only cares about the decision should not
+            // need a writable directory". That was true until `CameraViewModel`
+            // started *reading the clip* at commit — and then every BTS test failed
+            // at once with `savedBTSCount == 0`, because the view model was handed
+            // a URL it could not open and correctly reported no clip. Writing an
+            // actual file fixed that failure and left a worse one behind: a suite
+            // that litters `/tmp` and a `clearTestFiles` helper that existed only to
+            // clean up after it.
+            //
+            // The protocol returns `Data` now, so the seam ends where the behaviour
+            // does. **A double that writes a file for a test to read is not a cheaper
+            // double — it is a second thing to go wrong**, and nothing in the view
+            // model cares what those bytes are.
+            counter += 1
+            return Data("trimmed-\(window.start)-\(window.duration)-\(counter)".utf8)
         }
     }
 
+    /// **Deletes nothing, because `trim` no longer writes anything.** The
+    /// recording's path is recorded so a test can assert the caller released it,
+    /// and that assertion is the whole point — whether the real implementation
+    /// manages to unlink the file is not this type's behaviour to verify.
     func discard(_ recording: BTSRecording) {
         lock.withLock { state.discarded.append(recording.fileURL) }
     }
 
+    /// Mirrors the real recorder: close, release the bytes, **and leave nothing
+    /// behind** — so `isRecording` is `false` afterwards even when a stop failure
+    /// meant the recording could not be closed properly.
+    ///
+    /// **The failure is swallowed rather than short-circuited.** A test that
+    /// injected `failNextStop` and then called `abandon` used to leave the double
+    /// reporting `isRecording == true`, which does not match the real
+    /// implementation and quietly made the camera view model's abandon path
+    /// untestable.
+    func abandon() {
+        let open = lock.withLock { () -> BTSRecording? in
+            state.stopFailure = nil
+            let open = state.open
+            if let open { state.stopped.append(open) }
+            state.isRecording = false
+            state.open = nil
+            return open
+        }
+        if let open { lock.withLock { state.discarded.append(open.fileURL) } }
+    }
+
+    /// Counts the launch-time sweep of the real recorder's temporary directory.
+    ///
+    /// **Nothing is swept here, and nothing needs to be.** `trim` hands back
+    /// `Data` and keeps its files to itself, so this double no longer writes any —
+    /// it has a `temporaryDirectory`, a `clearTestFiles`, and a suite-level
+    /// `defer` that cleaned up after itself, all three of which existed only
+    /// because `trim` used to return a URL a test had to be able to read.
     func clearTemporaryFiles() {
         lock.withLock { state.clearTemporaryFilesCount += 1 }
     }

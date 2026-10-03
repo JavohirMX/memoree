@@ -173,4 +173,14 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
     func rebuildSession() async throws {
         try await controller.rebuildSession()
     }
+
+    /// A straight delegation, and deliberately not `throws`.
+    ///
+    /// The controller's version configures *future* sessions, so there is nothing
+    /// here that can fail — and a throwing variant would invite a caller to wrap it
+    /// in a `try` for a failure that does not exist, which is the kind of noise
+    /// `LiveBTSRecorder`'s `startRecording` already had to be cleaned up for.
+    func enableMovieOutput() async {
+        await controller.enableMovieOutput()
+    }
 }

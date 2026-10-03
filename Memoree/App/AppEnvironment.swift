@@ -31,15 +31,71 @@ final class AppEnvironment {
 
     /// The capture service.
     ///
-    /// `lazy` because constructing a `CaptureSessionController` creates an
-    /// `AVCaptureSession`, and doing that on launch — before the user has
-    /// granted camera access or opened the camera screen — is work with no
-    /// purpose and a real cost in power on first run.
+    /// Built on first use rather than at init because constructing a
+    /// `CaptureSessionController` creates an `AVCaptureSession`, and doing that on
+    /// launch — before the user has granted camera access or opened the camera
+    /// screen — is work with no purpose and a real cost in power on first run.
+    ///
+    /// **A stored `Optional` and a nil check, not `lazy`.** `@Observable` rewrites
+    /// every stored property into a computed one behind `@ObservationTracked`, and
+    /// `lazy` is not allowed on those — the same reason `_captureService` below is
+    /// written this way.
     var captureService: CapturePhotoService {
         if let existing = _captureService { return existing }
-        let created = SequentialCaptureService()
+        let created = SequentialCaptureService(controller: sessionController())
         _captureService = created
         return created
+    }
+
+    /// The session both capture services share, created on first use.
+    ///
+    /// **One controller, two services, and the sharing is forced rather than
+    /// incidental.** `LiveBTSRecorder` drives the movie output on this session and
+    /// `SequentialCaptureService` owns the photo outputs on it; a session cannot
+    /// have two movie outputs, so a recorder built against its own controller
+    /// would record from a session nothing is writing to. That is not a subtle
+    /// failure — it is a recorder attached to a camera nobody turned on.
+    private func sessionController() -> CaptureSessionController {
+        if let existing = _sessionController { return existing }
+        let created = CaptureSessionController()
+        _sessionController = created
+        return created
+    }
+
+    private var _sessionController: CaptureSessionController?
+
+    /// Behind the Scenes, or `nil` when there is no real session to record from.
+    ///
+    /// ## Why `nil` is a real state here and not a fallback
+    ///
+    /// With BTS off, `nil` means "do not record". With a **test double** photo
+    /// service, it means "there is no session to attach to" — and handing back a
+    /// `LiveBTSRecorder` pointed at a controller no fake service uses would produce
+    /// a recorder whose `startRecording` throws `outputUnavailable` forever, which
+    /// ADR-013 correctly swallows and which would therefore make the double
+    /// untestable. So the answer follows the photo service: a real one gets a real
+    /// recorder, an injected one gets none unless the test injects a recorder too.
+    var btsRecorder: BTSRecorder? {
+        if let injected = injectedBTSRecorder { return injected }
+        guard _captureService == nil else { return nil }
+        if let existing = _btsRecorder { return existing }
+        let created = LiveBTSRecorder(controller: sessionController())
+        _btsRecorder = created
+        return created
+    }
+
+    private var _btsRecorder: LiveBTSRecorder?
+    private var injectedBTSRecorder: BTSRecorder?
+
+    /// Sweeps BTS temporary files left by a crash.
+    ///
+    /// **Goes through `LiveBTSRecorder`'s static sweep rather than the instance
+    /// method**, so reaching this does not construct a session. It is on the
+    /// environment as a named operation because the debug menu needs it as one —
+    /// "sweep the recorder's directory" is a thing a person does, and
+    /// `LiveBTSRecorder.purgeTemporaryFiles()` at a call site is a detail.
+    func clearBTSTemporaryFiles() {
+        LiveBTSRecorder.purgeTemporaryFiles()
     }
 
     /// Resolved lazily so the first launch does not block on Keychain I/O.
@@ -51,6 +107,7 @@ final class AppEnvironment {
         notificationService: NotificationService? = nil,
         photoLibrary: PhotoLibraryService? = nil,
         captureService: CapturePhotoService? = nil,
+        btsRecorder: BTSRecorder? = nil,
         haptics: HapticFeedback? = nil
     ) throws {
         let resolved = try container ?? Persistence.makeContainer()
@@ -69,7 +126,17 @@ final class AppEnvironment {
             ?? UserNotificationService(scheduler: self.momentScheduler)
         self.photoLibrary = photoLibrary ?? PhotoKitLibrary()
         self._captureService = captureService
+        self.injectedBTSRecorder = btsRecorder
         self.haptics = haptics ?? SystemHapticFeedback()
+
+        // **The crash sweep, once, here.** Everywhere else that would be is too
+        // late: a launch that dies before the camera opens still left bytes behind,
+        // and this launch is the only moment the app can know the previous one did
+        // not clean up. It is the static sweep for the same reason — an instance
+        // would mean constructing a session on first launch, before the user has
+        // granted camera access.
+        LiveBTSRecorder.purgeTemporaryFiles()
+        self.injectedBTSRecorder?.clearTemporaryFiles()
 
         // **Every DEBUG affordance is here, and the helpers they call are in a second
         // block that ends at the `#endif` below `seedSyntheticArchive`.** Both have
@@ -288,7 +355,16 @@ final class AppEnvironment {
                 capturedAt: capture.capturedAt,
                 retakeCount: capture.retakeCount,
                 backAssetIdentifier: capture.assets.back,
-                frontAssetIdentifier: capture.assets.front
+                frontAssetIdentifier: capture.assets.front,
+                // **Derived from the clip's presence, never from the setting.**
+                // `btsEnabled` says whether to record; only a clip that was
+                // actually written has an identifier, and that is the only thing
+                // `hasBTS` is allowed to mean. Reading the setting here would
+                // mark moments as having a clip whenever the user recorded nothing
+                // — the exact "missing from Photos" state the archive has to
+                // distinguish from a real orphan.
+                hasBTS: capture.bts != nil,
+                btsAssetIdentifier: capture.bts?.assetIdentifier
             )
         }
     }
@@ -329,6 +405,24 @@ final class AppEnvironment {
     func consumeAlbumFailure() -> String? {
         defer { pendingAlbumFailure = nil }
         return pendingAlbumFailure
+    }
+
+    /// A note about a Behind-the-Scenes clip that did not reach Photos.
+    ///
+    /// **A second field rather than a reuse of `pendingAlbumFailure`,** because the
+    /// two are different promises: the album note says your photographs are safe and
+    /// filed somewhere you did not ask for; this one says a bonus did not save. A
+    /// user who read both as one message would either distrust the photographs that
+    /// *are* safe, or ignore the clip that is genuinely missing.
+    private var pendingBTSFailure: String?
+
+    func noteBTSFailure(_ message: String) {
+        pendingBTSFailure = message
+    }
+
+    func consumeBTSFailure() -> String? {
+        defer { pendingBTSFailure = nil }
+        return pendingBTSFailure
     }
 
     func consumeCameraRequest() {

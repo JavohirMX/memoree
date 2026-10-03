@@ -135,6 +135,22 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// retry (TRD §5.5). Also reachable from the debug menu so the one silent
     /// failure mode in the camera stack can actually be tested.
     func rebuildSession() async throws
+
+    /// Asks for a Behind-the-Scenes output on sessions started **after** this call.
+    ///
+    /// ## Why this is on the photo protocol at all
+    ///
+    /// The movie output belongs to the same `AVCaptureSession` as the photo output,
+    /// a session cannot have two movie outputs, and attaching one to a *running*
+    /// session means another `beginConfiguration` cycle on the subsystem this
+    /// project has measured as fragile. So the request has to happen before
+    /// `startSession` — which puts it on the type that owns the session.
+    ///
+    /// **Non-throwing and not a parameter**, for the same reason `wantsMovieOutput`
+    /// is a flag rather than a threaded `Bool`: the session is configured in six
+    /// places, and threading a flag through all of them is how this file once
+    /// shipped a camera that worked exactly once per launch.
+    func enableMovieOutput() async
 }
 
 // MARK: - Value types

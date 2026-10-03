@@ -66,10 +66,27 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
     /// each other's bytes, and the whole thing is one removable directory rather
     /// than loose files. The system purges it — nothing here is app storage
     /// (`AGENTS.md` §2.4), and a BTS clip is as much a photograph as the pair is.
-    private let directory: URL = {
+    ///
+    /// **`static`, and that is the load-bearing part.** A post-crash sweep has to
+    /// run at launch, and it must not construct the recorder to do it — that would
+    /// create an `AVCaptureSession` on first launch, before the user has granted
+    /// camera access, which is precisely what `AppEnvironment` goes out of its way
+    /// to avoid. The path is a property of the type, so the sweep is too.
+    private static let directory: URL = {
         FileManager.default.temporaryDirectory
             .appendingPathComponent("memoree-bts", isDirectory: true)
     }()
+
+    /// Removes every BTS file, with no recorder and therefore no session.
+    ///
+    /// **This is what runs at launch.** A crash is the one situation in which
+    /// nothing else gets to clean up: every normal path here deletes on the way out
+    /// — trim, discard, abandon, `stop` — so the only way bytes survive is a
+    /// process that ended between two of those. The system would eventually purge
+    /// them, and "eventually" is not a cleanup story.
+    static func purgeTemporaryFiles() {
+        try? FileManager.default.removeItem(at: directory)
+    }
 
     init(controller: CaptureSessionController) {
         self.controller = controller
@@ -127,8 +144,8 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
         // recorder is started after the camera screen is already open, so the
         // honest sequence is that `CameraViewModel` calls `enableMovieOutput`
         // during `start()`, and this call only records into it.
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let fileURL = directory.appendingPathComponent("bts-\(UUID().uuidString).mov")
+        try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+        let fileURL = Self.directory.appendingPathComponent("bts-\(UUID().uuidString).mov")
 
         // **One delegate for the recording's whole life, retained here rather
         // than as a local.** `startRecording(to:recordingDelegate:)` does not
@@ -256,7 +273,7 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
         }
     }
 
-    func trim(_ recording: BTSRecording, toSeconds clipDuration: TimeInterval) async throws -> URL? {
+    func trim(_ recording: BTSRecording, toSeconds clipDuration: TimeInterval) async throws -> Data? {
         // The arithmetic is pure and lives in `BTSTrim`, so the `nil` case is
         // decided before an export session is ever created. A recording shorter
         // than the floor produces no clip and no error — the moment is photographs
@@ -271,13 +288,35 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
             throw BTSRecorderError.exportFailed("the recording is no longer on disk")
         }
 
-        let destination = directory.appendingPathComponent("clip-\(UUID().uuidString).mov")
+        let destination = Self.directory.appendingPathComponent("clip-\(UUID().uuidString).mov")
 
-        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<URL, Error>) in
+        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Data, Error>) in
             exportQueue.async {
                 do {
                     try Self.export(source: source, destination: destination, window: window)
-                    c.resume(returning: destination)
+                    // **Read and delete here, on the queue that produced the file.**
+                    // Handing the caller a URL meant it had to come back here to read
+                    // and unlink — and the one caller that did so put a temporary
+                    // directory read in `Features/`, which is where no file I/O
+                    // belongs (`AGENTS.md` §3).
+                    // **`FileManager.contents(atPath:)`, not `Data(contentsOf:)`.** The latter is
+                    // on `NoNetworkingTests`' forbidden list because it becomes an
+                    // HTTP fetch when handed an `http` URL; `contents(atPath:)` is a
+                    // path on this device or nothing, and there is no URL-shaped
+                    // way to reach the network through it.
+                    //
+                    // This is a file in a directory this type created a moment ago.
+                    // The distinction is not being pedantic about it — it is the
+                    // reason the symbol can stay banned outright rather than
+                    // carrying an exemption list, which is how a guard becomes a
+                    // list of things nobody reads again.
+                    guard let bytes = FileManager.default.contents(
+                        atPath: destination.path
+                    ) else {
+                        throw BTSRecorderError.exportFailed("the trimmed clip could not be read back")
+                    }
+                    try? FileManager.default.removeItem(at: destination)
+                    c.resume(returning: bytes)
                 } catch {
                     try? FileManager.default.removeItem(at: destination)
                     c.resume(throwing: BTSRecorderError.exportFailed(error.localizedDescription))
@@ -294,8 +333,54 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
         lock.withLock { if pending?.fileURL == recording.fileURL { pending = nil } }
     }
 
+    func abandon() {
+        // **Stop first, then forget, and never the other way round.**
+        //
+        // `AVCaptureMovieFileOutput` does **not** retain its recording delegate, so
+        // dropping `startDelegate` before the stop is issued leaves the output
+        // holding an unretained pointer it will call the moment `stopRecording`
+        // completes. The bytes are being deleted either way, but a callback into
+        // freed memory is a crash and this is the one path where the recording was
+        // never ours to want back.
+        //
+        // The delegate keeps *itself* alive until that callback lands
+        // (`MovieFileDelegate.holdsSelfUntilCallback`), so the ordering costs
+        // nothing and needs no synchronisation here.
+        let open = lock.withLock { pending }
+        guard let controller, controller.movieFileOutput != nil else {
+            // **No output: the state is still cleared.** This is the case that used
+            // to wedge the recorder — a rebuilt session leaves `pending` set, and
+            // `isRecording` true forever.
+            lock.withLock {
+                pending = nil
+                startDelegate = nil
+            }
+            deactivateAudioSession()
+            if let open { try? FileManager.default.removeItem(at: open.fileURL) }
+            return
+        }
+
+        lock.withLock {
+            pending = nil
+            startDelegate?.holdsSelfUntilCallback = true
+        }
+        deactivateAudioSession()
+        // **`controller` captured, not the output.** The output is not `Sendable`
+        // and the project's only sanctioned `@preconcurrency` import belongs to
+        // `CaptureSessionController` (`AGENTS.md` §3); capturing the controller
+        // instead reads the output on the queue that owns it, which is where it
+        // should have been read anyway.
+        controllerQueue.async { controller.movieFileOutput?.stopRecording() }
+
+        // **Removed after the stop is issued, not before.** The callback will read
+        // `holdsSelfUntilCallback` and then release, so the field is nil the moment
+        // a later `startRecording` replaces it — and a recorder that never records
+        // again holds one small object for its lifetime.
+        if let open { try? FileManager.default.removeItem(at: open.fileURL) }
+    }
+
     func clearTemporaryFiles() {
-        try? FileManager.default.removeItem(at: directory)
+        Self.purgeTemporaryFiles()
     }
 
     // MARK: - Export
@@ -404,6 +489,19 @@ private final class MovieFileDelegate: NSObject, AVCaptureFileOutputRecordingDel
     /// as a clip of the wrong length rather than as an error.
     var onFinished: ((TimeInterval?, Error?) -> Void)?
 
+    /// Keeps this delegate alive across a stop its caller does not wait for.
+    ///
+    /// **Set by `LiveBTSRecorder.abandon` and cleared by the callback it is
+    /// waiting for.** `AVCaptureMovieFileOutput` holds its recording delegate
+    /// *unretained* — the same fact that makes the `LiveBTSRecorder` field
+    /// load-bearing — so a recorder that stops an output and immediately forgets
+    /// the delegate leaves the output with a dangling pointer it will dereference
+    /// when `didFinishRecordingTo` arrives.
+    ///
+    /// The cycle is deliberate and self-breaking: `abandon` has already deleted the
+    /// bytes by then, so the callback has nothing left to do except let go.
+    var holdsSelfUntilCallback = false
+
     func fileOutput(
         _ output: AVCaptureFileOutput,
         didStartRecordingTo fileURL: URL,
@@ -426,9 +524,20 @@ private final class MovieFileDelegate: NSObject, AVCaptureFileOutputRecordingDel
         //
         // **`onFinished` is captured before the `await`,** so a second callback
         // cannot resume an already-settled continuation.
-        guard let onFinished else { return }
+        //
+        // **The self-retaining flag is cleared last, and nothing reads `self`
+        // after it.** The output holds this delegate *unretained*, so clearing the
+        // cycle here is what may deallocate this object — and a read of `self`
+        // after that store would be a use-after-free rather than a leak. The
+        // callback and the duration loader are therefore captured into locals
+        // first. An abandoned recording's callback has no `onFinished` at all, so
+        // this is the branch that has to reach the release, not just the one that
+        // reports a duration.
+        let callback = onFinished
+        holdsSelfUntilCallback = false
+        guard let callback else { return }
         Task {
-            onFinished(await Self.duration(of: outputFileURL), error)
+            callback(await Self.duration(of: outputFileURL), error)
         }
     }
 

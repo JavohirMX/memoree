@@ -76,6 +76,14 @@ final class CameraViewModel {
     // MARK: - Dependencies
 
     private let service: CapturePhotoService
+
+    /// Behind the Scenes, when the feature is on.
+    ///
+    /// **`nil` when BTS is off, and that is not a degraded mode** — it is the
+    /// default, and `AppSettings` has defaulted `btsEnabled` to false since Phase 2
+    /// specifically so no control in the app could describe a feature that did not
+    /// exist.
+    private let btsRecorder: BTSRecorder?
     private let haptics: HapticFeedback
 
     /// Whether the user wants each moment filed into the `Memoree` album.
@@ -162,8 +170,28 @@ final class CameraViewModel {
         service: CapturePhotoService,
         photoLibrary: PhotoLibraryService,
         haptics: HapticFeedback = InMemoryHapticFeedback(),
+        /// `nil` disables BTS entirely — no recording is opened, no microphone is
+        /// requested, and no temporary file is written. **Not a defaulted-to-present
+        /// dependency**, because a default would mean every existing call site
+        /// silently started writing video.
+        btsRecorder: BTSRecorder? = nil,
+        /// How long a clip to keep, **read at commit** rather than captured here.
+        ///
+        /// A closure for the same reason `shouldSaveBTS` is one: the length is a
+        /// setting the user can change while composing, and it used to be read once
+        /// at construction — so a moment captured after a change in Settings still
+        /// got the old length, while the album and save toggles immediately beside
+        /// it honoured the new value. Two settings that changed together and took
+        /// effect at different times is worse than either being wrong alone.
+        ///
+        /// **Clamped on every read**, because this returns a persisted `Double` and
+        /// a corrupt store should degrade rather than crash — the same reasoning as
+        /// `TimeWindow.validated`.
+        clipDuration: @escaping () -> TimeInterval = { BTSTrim.defaultClipDuration },
         record: MomentRecorder? = nil,
         shouldFileIntoAlbum: (() async -> Bool)? = nil,
+        shouldSaveBTS: (() -> Bool)? = nil,
+        reportBTSFailure: ((String) -> Void)? = nil,
         /// Where to report a failed album add. Separate from
         /// `shouldFileIntoAlbum` so a test can assert the album behaviour without
         /// also needing somewhere to put the failure.
@@ -174,9 +202,13 @@ final class CameraViewModel {
         self.service = service
         self.photoLibrary = photoLibrary
         self.haptics = haptics
+        self.btsRecorder = btsRecorder
+        self.clipDuration = clipDuration
         self.record = record
         self.shouldFileIntoAlbum = shouldFileIntoAlbum
+        self.shouldSaveBTS = shouldSaveBTS
         self.reportAlbumFailure = reportAlbumFailure
+        self.reportBTSFailure = reportBTSFailure
         self.previewLayer = service.previewLayer
         self.chooseFirstCamera = chooseFirstCamera ?? {
             CameraPosition.allCases.randomElement() ?? .back
@@ -212,7 +244,132 @@ final class CameraViewModel {
         // approach that survives the rotation lock — and asking the UI for a held
         // orientation is why every sideways photograph used to save as a portrait
         // one.
+        await requestMovieOutputIfBTSEnabled()
         await runSession(openingOn: opening)
+
+        // **The recording opens after the session is live, never before.** It
+        // writes into the movie output, which does not exist until the session has
+        // been configured.
+        await startBTSIfEnabled()
+    }
+
+    // MARK: - Behind the Scenes
+
+    /// Asks the session for a movie output, if BTS is on.
+    ///
+    /// ## This has to happen before `startSession`, and nothing on screen says so
+    ///
+    /// `CaptureSessionController` attaches a movie output only to sessions
+    /// configured *after* `wantsMovieOutput` is set. A request that arrives later
+    /// configures nothing, and re-attaching one to a live session means a second
+    /// `beginConfiguration` cycle on the subsystem this project has measured as
+    /// fragile.
+    ///
+    /// **The resulting failure is completely invisible**: the recorder finds no
+    /// output, throws `outputUnavailable`, and that is swallowed per ADR-013 — so
+    /// the app would show BTS as on and record nothing, forever, with nothing to
+    /// report. `BTSFlowTests` asserts the ordering against `InMemoryCaptureService`
+    /// because it is not observable anywhere else.
+    ///
+    /// **Separate from `startBTSIfEnabled` rather than at the top of it**, because
+    /// this one has a precondition that one does not: it must be called before the
+    /// session exists, and a method that also records is a method that cannot be
+    /// called in the right order from anywhere sensible.
+    private func requestMovieOutputIfBTSEnabled() async {
+        guard btsRecorder != nil else { return }
+        await service.enableMovieOutput()
+    }
+
+    /// Opens a recording, if BTS is on and the microphone permits it.
+    ///
+    /// ## Every failure here is swallowed, and that is the design
+    ///
+    /// `ADR-013`: a denied microphone yields a silent clip, and a BTS failure must
+    /// never cost the user the two photographs that are the actual product. So this
+    /// method cannot throw, cannot set a failure phase, and cannot surface a
+    /// message — a user who declined the microphone should get photographs and no
+    /// interruption, not photographs and a dialog about a clip they cannot have.
+    ///
+    /// **The one thing that is reported is nothing at all**: `isRecording` stays
+    /// false and the commit finds no clip, which is indistinguishable from a
+    /// recording too short to keep. Both are ordinary outcomes.
+    private func startBTSIfEnabled() async {
+        guard let btsRecorder else { return }
+
+        // **Ask only when the feature is on and the answer is not already known.**
+        // A microphone prompt at camera-open for a user who is about to decline it
+        // is the wrong trade, and `AVCaptureDevice` already knows the answer after
+        // the first time.
+        if btsRecorder.microphoneStatus() == .notDetermined {
+            _ = await btsRecorder.requestMicrophoneAuthorization()
+        }
+
+        do {
+            try await btsRecorder.startRecording()
+        } catch {
+            // Nothing. See the method's documentation.
+        }
+    }
+
+    /// Closes the recording and trims it to what the user asked for.
+    ///
+    /// **Returns `nil` for every ordinary absence** — BTS off, never started, too
+    /// short to keep — and the caller treats `nil` as "the moment has no clip",
+    /// which is exactly right.
+    private func finishBTS(clipDuration: TimeInterval) async -> CommittedBTS? {
+        guard let btsRecorder, btsRecorder.isRecording else { return nil }
+
+        do {
+            let recording = try await btsRecorder.stopRecording()
+
+            // **`trim` returning `nil` is not a failure** — `BTSTrim` returns it for
+            // a recording shorter than its floor, which is a user who fired two
+            // shutter presses in half a second. The recording is discarded either
+            // way, because the untrimmed bytes have no further use.
+            //
+            // **`defer`, so the untrimmed source is released on every branch.** It
+            // used to be released on each branch individually, which is exactly the
+            // shape that grows a fourth branch later and leaks.
+            defer { btsRecorder.discard(recording) }
+
+            guard let bytes = try await btsRecorder.trim(recording, toSeconds: clipDuration) else {
+                return nil
+            }
+            return CommittedBTS(data: bytes, hasAudio: recording.hasAudio)
+
+        } catch {
+            // Nothing is reported — the photographs are the moment; a clip is a
+            // bonus (`ADR-013`).
+            //
+            // **But the recorder is abandoned anyway**, and that is not tidiness.
+            // `stopRecording` throws when the movie output has gone, which is what
+            // ADR-027's session rebuild does; the recorder would then hold
+            // `isRecording == true` for the life of the object and every later
+            // `startRecording` would throw `alreadyRecording`, silently swallowed,
+            // so one dead session an hour ago would cost every subsequent moment
+            // its clip. Clearing it here is the difference between losing one clip
+            // and losing all of them.
+            btsRecorder.abandon()
+            return nil
+        }
+    }
+
+    /// Abandons any open recording and removes its bytes.
+    ///
+    /// **Called on every path that throws the pair away** — a re-take, a start
+    /// over, a cancelled capture. A recording left running would keep writing until
+    /// the session stopped, and `LiveBTSRecorder` holds its file in the temporary
+    /// directory for the system to purge eventually, which is not the same as not
+    /// writing it.
+    ///
+    /// **One call, and no `try?`/`if let` around a `stopRecording`.** That shape was
+    /// here first and it is what wedged the recorder: when the stop threw, the
+    /// recording's path was never handed back, so the bytes could not be released
+    /// *and* `isRecording` stayed true. `BTSRecorder.abandon` exists to make the
+    /// branch unnecessary — see its documentation.
+    private func abandonBTS() {
+        guard let btsRecorder, btsRecorder.isRecording else { return }
+        btsRecorder.abandon()
     }
 
     // MARK: - Focus
@@ -270,6 +427,14 @@ final class CameraViewModel {
     }
 
     func stop() async {
+        // **Abandon before the session stops, not after.** Stopping the session
+        // also stops the movie output, so a recording left open at this point
+        // writes nothing more — but its file stays in the temporary directory and,
+        // worse, `isRecording` stays `true`, so the next `startBTSIfEnabled`
+        // throws `alreadyRecording` and the next moment silently loses its clip.
+        // That is a bug about the *next* moment caused by the user leaving *this*
+        // one, which is the hardest kind to notice.
+        abandonBTS()
         await service.stopSession()
         phase = .idle
     }
@@ -374,14 +539,18 @@ final class CameraViewModel {
         guard let kept = captured[position.opposite] else { return }
         phase = .working
         retakeCount += 1
-        invalidateCommit()
+        // **Awaited, not detached** — see `abandonCapture`.
+        await abandonCapture()
 
         do {
             try await service.switchCamera(to: position)
             livePosition = position
             captured = [position.opposite: kept]
             prominentPosition = nil
-            phase = .shooting
+            // **The recording is re-established, not just closed.** See
+            // `resumeShootingAfterDiscard` — this is where a moment silently lost
+            // its clip the first time.
+            await resumeShootingAfterDiscard()
         } catch {
             phase = Self.phase(for: error)
         }
@@ -392,14 +561,17 @@ final class CameraViewModel {
         phase = .working
         captured = [:]
         prominentPosition = nil
-        invalidateCommit()
+        // **Awaited, not detached** — see `abandonCapture`.
+        await abandonCapture()
         let opening = chooseFirstCamera()
         firstPosition = opening
         livePosition = opening
 
         do {
             try await service.switchCamera(to: opening)
-            phase = .shooting
+            // **The recording is re-established, not just closed.** See
+            // `resumeShootingAfterDiscard`.
+            await resumeShootingAfterDiscard()
         } catch {
             phase = Self.phase(for: error)
         }
@@ -433,6 +605,17 @@ final class CameraViewModel {
     /// write has succeeded, so re-running after a *record* failure skips
     /// straight past it rather than writing a second pair.
     private func performCommit(_ pair: CapturedPair) async {
+        // **The clip is finished first, and nothing else can fail because of it.**
+        //
+        // `ADR-022` is "Photos first, record second, and never repeat a step that
+        // succeeded", and this is on the right side of that line: trimming is pure
+        // work on a temporary file, it needs nothing from the library, and it
+        // cannot be lost by a retry because it is recomputed from a recording that
+        // `finishBTS` has not yet discarded. Doing it before the Photos write means
+        // the ordering is preserved and the clip costs the moment nothing.
+        let clip = await finishBTS(clipDuration: BTSTrim.validatedClipDuration(clipDuration()))
+        committedBTS = clip
+
         do {
             if writtenAssets == nil {
                 // No location passed. The write path and EXIF injector support
@@ -445,6 +628,7 @@ final class CameraViewModel {
                     location: nil
                 )
             }
+            await writeBTSIfAsked()
             try await recordMoment(pair)
             isCommitting = false
             phase = .saved
@@ -517,22 +701,136 @@ final class CameraViewModel {
 
     private func recordMoment(_ pair: CapturedPair) async throws {
         guard let record, let assets = writtenAssets else { return }
+        // **The clip only travels if it was actually written to the library.**
+        // `committedBTS` alone would hand the recorder a clip with no
+        // `assetIdentifier`, and the archive would know a clip exists with no way
+        // to find it — which is the "missing from Photos" state, reported for a
+        // clip that was never written at all.
+        //
+        // **`saveBTS: false` therefore records no clip**, rather than recording one
+        // whose bytes exist only in memory. That is the difference between "you
+        // chose not to keep the clip" and "Memoree has a video you cannot find",
+        // and the archive has no way to tell them apart.
+        var committedClip: CommittedBTS?
+        if let clip = committedBTS, let identifier = writtenBTS {
+            committedClip = CommittedBTS(
+                data: clip.data,
+                hasAudio: clip.hasAudio,
+                assetIdentifier: identifier
+            )
+        }
+
         try await record(
             CommittedCapture(
                 back: pair.back,
                 front: pair.front,
                 assets: assets,
                 capturedAt: lastCaptureAt ?? now(),
-                retakeCount: retakeCount
+                retakeCount: retakeCount,
+                bts: committedClip
             )
         )
     }
 
+    /// Writes the clip to Photos, once, and remembers that it happened.
+    ///
+    /// ## Before `record`, so the moment can carry the identifier
+    ///
+    /// `Moment.record` takes `btsAssetIdentifier`, so the clip has to be written
+    /// *before* the row is built or the archive would know a clip exists with no way
+    /// to find it. That puts a second library write inside the commit, which is
+    /// exactly what `ADR-022` warns about — so it carries the same guard the pair
+    /// does: **`writtenBTS` is set the moment the write succeeds, and a retry skips
+    /// straight past it.** A retry after a *record* failure therefore does not write
+    /// a second clip, which is the same invariant `writtenAssets` exists for.
+    ///
+    /// ## A failure is reported and never fatal
+    ///
+    /// The pair is already on disk, so a clip that will not save is a failure to keep
+    /// a bonus. It is reported in **grey on the Today footer and never in amber** —
+    /// amber has exactly one reserved job, a declined permission the user can only
+    /// fix in Settings (`ADR-025`), and a video that did not write is not that.
+    private func writeBTSIfAsked() async {
+        guard let clip = committedBTS, writtenBTS == nil, shouldSaveBTS?() == true else {
+            return
+        }
+        do {
+            writtenBTS = try await photoLibrary.saveBTS(clip.data)
+        } catch {
+            let message = "Your photographs were saved, but the Behind the Scenes "
+                + "clip could not be written to your library."
+            btsFailure = message
+            reportBTSFailure?(message)
+        }
+    }
+
+    /// Whether to write the clip to Photos, read at commit time rather than
+    /// captured at start.
+    ///
+    /// **A closure rather than a `Bool`**, so the view model does not read settings
+    /// it has no business knowing about — the same reasoning as
+    /// `shouldFileIntoAlbum`. Reading at commit matters because a user could change
+    /// the setting while composing, and the answer on screen when they pressed Save
+    /// is the one that counts.
+    private let shouldSaveBTS: (() -> Bool)?
+
+    /// Where to report a failed clip write, so the Today screen can say so.
+    private let reportBTSFailure: ((String) -> Void)?
+
+    /// A BTS write that failed after the photographs were saved. Grey, never amber.
+    var btsFailure: String?
+
+    /// The clip as trimmed at commit, carried through to `recordMoment`.
+    private var committedBTS: CommittedBTS?
+
+    /// The clip's `PHAsset.localIdentifier` once written, and the guard that stops a
+    /// retry writing a second one.
+    private var writtenBTS: String?
+
+    /// The clip length to trim to. See the initialiser's `clipDuration`.
+    private let clipDuration: () -> TimeInterval
+
+    /// Forgets any library write, because the pair it covered no longer exists.
     /// Forgets any library write, because the pair it covered no longer exists.
     private func invalidateCommit() {
         writtenAssets = nil
+        writtenBTS = nil
+        committedBTS = nil
         lastCaptureAt = nil
         isCommitting = false
+    }
+
+    /// Abandons the recording and forgets the pair, together.
+    ///
+    /// **One method rather than `invalidateCommit` calling `abandonBTS` in a
+    /// detached `Task`, and that is the second time this has been the wrong shape.**
+    /// A `Task` here was invisible to every caller: `reshoot` and `startOver`
+    /// returned before it ran, so a test asserting the recording was abandoned saw
+    /// `discardedURLs.count == 0` and — worse — a user who re-shot a half and
+    /// immediately captured again could open a *second* recording while the first
+    /// was still being closed.
+    ///
+    /// Making it `async` and awaiting it at both call sites removes the window
+    /// entirely. The cost is one hop on a path that is already asynchronous and
+    /// already shows a working phase, so nothing the user sees changes.
+    private func abandonCapture() async {
+        abandonBTS()
+        invalidateCommit()
+    }
+
+    /// Puts the camera back to shooting and reopens the BTS recording.
+    ///
+    /// **One helper because the two callers must do exactly the same thing**, and
+    /// the half that matters is the half that is easy to leave out: returning to
+    /// `.shooting` without a recording behind it looks identical on screen to
+    /// returning to it with one.
+    ///
+    /// `startBTSIfEnabled` re-requests the movie output, which is idempotent — the
+    /// controller only sets a flag — so this is cheap on the path that has a live
+    /// session and correct on the one that does not.
+    private func resumeShootingAfterDiscard() async {
+        phase = .shooting
+        await startBTSIfEnabled()
     }
 
     // MARK: - Recovery

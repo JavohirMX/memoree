@@ -55,12 +55,36 @@ struct SettingsView: View {
     /// that matters, but the user asked for something that did not happen.
     @State private var albumFailure: String?
 
+    // MARK: - Behind the Scenes state
+
+    /// Mirrors `settings.btsEnabled` rather than reading the store, for the reason
+    /// `saveToAlbum` does: the toggle has to reflect what was actually written, so
+    /// a failed save springs back rather than showing a setting the app is not
+    /// honouring.
+    @State private var btsEnabled = false
+
+    /// Mirrors `settings.saveBTS`. Distinct from `btsEnabled` — see the section.
+    @State private var saveBTS = false
+
+    /// The chosen clip length in seconds, clamped through `BTSTrim`.
+    @State private var btsDuration = BTSTrim.defaultClipDuration
+
+    /// What to say about the microphone, if anything.
+    ///
+    /// **`nil` in the common case, and that is deliberate.** A declined microphone
+    /// is a supported state, not an error (ADR-013), so there is no amber and no
+    /// dialog — but silently recording nothing forever while a toggle says it is on
+    /// is its own kind of lie. One grey sentence, once, is the honest middle: the
+    /// user asked for a feature, the feature is running, and it is silent.
+    @State private var microphoneNote: String?
+
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     windowSection
                     remindersSection
+                    behindTheScenesSection
                     exportSection
                     photosSection
                     permanenceSection
@@ -308,6 +332,169 @@ struct SettingsView: View {
         }
     }
 
+    // MARK: - Behind the Scenes
+
+    /// Whether Memoree records the few seconds around a moment, and whether it
+    /// keeps them.
+    ///
+    /// **Two toggles and a length, and each earns its place.**
+    ///
+    /// - *Record* decides whether a movie output is attached at all. Off means no
+    ///   microphone prompt, no video written to disk, and nothing to trim.
+    /// - *Keep in Photos* decides whether the trimmed clip becomes an asset in the
+    ///   user's library. **Separate, because they are different promises**: someone
+    ///   who wants the clip and not the photograph on their lock screen is a
+    ///   perfectly ordinary person, and folding the two into one toggle would
+    ///   force them to choose between a feature and half of it.
+    /// - *Length* is the tail of the recording that survives the trim. **The last
+    ///   N seconds, never the first** — ADR-013: the clip is the moment itself, not
+    ///   the walk to the camera.
+    ///
+    /// ## Off by default, and the reason is the microphone
+    ///
+    /// Not conservatism. Turning recording on makes Memoree ask for the
+    /// microphone, and a permission prompt for a feature nobody has heard of is how
+    /// people say no to permissions for things they would have said yes to. The
+    /// user opts in; Memoree does not ask on their behalf.
+    private var behindTheScenesSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            Text("Behind the Scenes")
+                .font(Theme.Typography.screenTitle)
+                .foregroundStyle(Theme.Color.textPrimary)
+
+            Text("""
+                Records a few seconds of video around the shutter, so you can see \
+                the moment rather than only the picture. Off by default — turning \
+                it on is the only thing that asks for the microphone.
+                """)
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textSecondary)
+
+            SettingsRow(
+                title: "Record Behind the Scenes",
+                subtitle: "Capture a short clip with every moment.",
+                control: {
+                    Toggle(
+                        "",
+                        isOn: Binding(
+                            get: { btsEnabled },
+                            set: { enabled in
+                                btsEnabled = enabled
+                                applyBTSPreferences(
+                                    enabled: enabled,
+                                    save: enabled ? saveBTS : false
+                                )
+                            }
+                        )
+                    )
+                    .labelsHidden()
+                }
+            )
+
+            // **Hidden rather than disabled while recording is off.** A greyed-out
+            // row invites the question "what is this", and the answer — a setting
+            // for a feature that is off — is not worth a line of screen. Disabling
+            // it instead would be honest but would also put two dead controls on
+            // the screen, which is what the album toggle's neighbour used to be.
+            if btsEnabled {
+                SettingsRow(
+                    title: "Keep the clip in Photos",
+                    subtitle: "Turning this off leaves your moments as two photographs.",
+                    control: {
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { saveBTS },
+                                set: { enabled in
+                                    saveBTS = enabled
+                                    applyBTSPreferences(enabled: btsEnabled, save: enabled)
+                                }
+                            )
+                        )
+                        .labelsHidden()
+                    }
+                )
+
+                SettingsRow(
+                    title: "Clip length",
+                    subtitle: clipLengthExplanation,
+                    control: {
+                        Picker("", selection: $btsDuration) {
+                            ForEach(Self.clipLengths, id: \.self) { seconds in
+                                Text("\(Int(seconds))s").tag(seconds)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                        .onChange(of: btsDuration) { _, newValue in
+                            applyClipDuration(newValue)
+                        }
+                    }
+                )
+            }
+
+            if let microphoneNote {
+                Text(microphoneNote)
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+        }
+    }
+
+    /// The lengths offered, in seconds.
+    ///
+    /// **A closed list rather than a slider.** Every value between the floor and
+    /// the ceiling is valid, so a slider would expose the full continuum and imply
+    /// that 9.3 seconds means something different from 9 — which is not true, and
+    /// is not a decision anybody wants to make. `BTSTrim.maximumClipDuration` caps
+    /// the range for the same product reason it wrote down.
+    private static let clipLengths: [Double] = [3, 5, 8, 10, BTSTrim.maximumClipDuration]
+
+    /// What the chosen length will actually keep, said plainly.
+    ///
+    /// Because the answer is not the number: a recording shorter than the requested
+    /// length keeps all of it, and one longer than the moment keeps only the tail.
+    /// A row reading "Clip length: 5s" invites the reader to assume they will get
+    /// exactly five seconds, and they will not if they captured fast.
+    private var clipLengthExplanation: String {
+        "Keeps the last \(formatted(btsDuration))."
+            + " A moment you captured very quickly keeps less."
+    }
+
+    private func formatted(_ seconds: Double) -> String {
+        seconds == seconds.rounded()
+            ? "\(Int(seconds)) seconds"
+            : String(format: "%.1f seconds", seconds)
+    }
+
+    /// Writes the two BTS toggles in one place.
+    ///
+    /// **One function rather than two**, because they are written together and read
+    /// together — `CameraHostView`'s `shouldSaveBTS` requires both — and a screen
+    /// that could persist one without the other is a screen that can produce a
+    /// state the rest of the app has no meaning for.
+    private func applyBTSPreferences(enabled: Bool, save: Bool) {
+        let settings = environment.momentStore.settings()
+        settings.btsEnabled = enabled
+        settings.saveBTS = save
+        try? environment.momentStore.saveSettings(settings)
+        refreshMicrophoneNote()
+    }
+
+    /// Clamped on write, not only on read.
+    ///
+    /// `CameraViewModel` clamps again through `BTSTrim.validatedClipDuration`, and
+    /// that is the guard that matters — a store can be corrupt, hand-edited, or
+    /// migrated. Clamping here as well means the value on disk is one the app would
+    /// have chosen, so a reader of the database is not misled about what was
+    /// asked for.
+    private func applyClipDuration(_ seconds: Double) {
+        let clamped = BTSTrim.validatedClipDuration(seconds)
+        let settings = environment.momentStore.settings()
+        settings.btsDuration = clamped
+        try? environment.momentStore.saveSettings(settings)
+    }
+
     // MARK: - Photos
 
     /// Whether Memoree also files each moment into an album of its own.
@@ -391,12 +578,48 @@ struct SettingsView: View {
     @State private var pendingCount = 0
 
     private func reload() async {
-        window = environment.momentStore.settings().timeWindow
-        saveToAlbum = environment.momentStore.settings().saveToAlbum
+        let settings = environment.momentStore.settings()
+        window = settings.timeWindow
+        saveToAlbum = settings.saveToAlbum
+        // **Clamped on read, not only on write.** A store can be corrupt or
+        // migrated, and a picker showing a value the recorder would refuse is a
+        // control describing something that will not happen.
+        btsDuration = BTSTrim.validatedClipDuration(settings.btsDuration)
+        btsEnabled = settings.btsEnabled
+        saveBTS = settings.btsEnabled && settings.saveBTS
         remindersAuthorized = await environment.notificationService
             .authorizationStatus().willDeliver
         pendingCount = await environment.notificationService.pendingCount()
+        refreshMicrophoneNote()
         prepareExport()
+    }
+
+    /// Says what the microphone is doing, and only when it is doing something
+    /// other than the expected thing.
+    ///
+    /// **Three states, two of them silent.** Not asked yet means the prompt is
+    /// still coming and there is nothing true to say; authorised means silence;
+    /// denied and restricted are the two the user should hear about, because both
+    /// produce clips with no sound and neither is visible anywhere else.
+    ///
+    /// **Read from `AVCaptureDevice` through the recorder**, so this screen does
+    /// not import AVFoundation (`AGENTS.md` §3) and the answer cannot drift from
+    /// what the recorder will actually do.
+    private func refreshMicrophoneNote() {
+        guard btsEnabled, let recorder = environment.btsRecorder else {
+            microphoneNote = nil
+            return
+        }
+        switch recorder.microphoneStatus() {
+        case .notDetermined, .authorized:
+            microphoneNote = nil
+        case .denied:
+            microphoneNote = "Memoree does not have microphone access, so clips will "
+                + "be silent. You can change this in Settings."
+        case .restricted:
+            microphoneNote = "Microphone access is blocked on this device, so clips "
+                + "will be silent."
+        }
     }
 
     /// Writes the album preference, and nothing else.

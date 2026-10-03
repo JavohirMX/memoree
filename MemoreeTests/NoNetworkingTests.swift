@@ -88,6 +88,18 @@ struct NoNetworkingTests {
     /// bare identifiers.
     private static let forbiddenPatterns = [
         "import Network",
+        // **`Data(contentsOf:)` is here because it can reach the network, not
+        // because it is a networking type** — it is a file read that silently
+        // becomes an HTTP fetch when handed an `http` URL. Local reads use
+        // `FileManager.contents(atPath:)`, which takes a path and therefore has no
+        // network-shaped failure mode at all. Do not "simplify" it back to this;
+        // the substitution is the point, and it is what lets the symbol stay banned
+        // outright instead of carrying an exemption list.
+        //
+        // The one place in the app that used this was `LiveBTSRecorder.trim`,
+        // which read back a temporary file and handed the bytes to the camera
+        // layer. `trim` now returns `Data`, so the read never leaves `Services/`
+        // at all (`AGENTS.md` §3) — see `BTSRecorder.trim`.
         "Data(contentsOf:",
     ]
 
@@ -121,11 +133,12 @@ struct NoNetworkingTests {
     /// fired, so the reader is left reimplementing the matcher by hand to find
     /// out. The symbol is the whole diagnosis.
     static func networkingName(in line: String) -> String? {
-        if let pattern = forbiddenPatterns.first(where: line.contains) {
+        let code = line.strippingTrailingComment()
+        if let pattern = forbiddenPatterns.first(where: code.contains) {
             return pattern
         }
         return forbiddenTypes.first {
-            line.range(of: "\\b\($0)\\b", options: .regularExpression) != nil
+            code.range(of: "\\b\($0)\\b", options: .regularExpression) != nil
         }
     }
 
@@ -174,10 +187,25 @@ struct NoNetworkingTests {
             "let session = URLSession.shared",
             "import Network",
             "monitor = NWPathMonitor()",
+            // The line that brought this suite a false positive. If the rule is ever
+            // relaxed to "warn instead of fail", this is the line that would go
+            // quiet, so it is asserted rather than assumed.
+            "let bytes = try Data(contentsOf: someURL)",
         ]
         for line in mustBeCaught {
             #expect(Self.namesNetworkingType(line), "the scan would miss: \(line)")
         }
+    }
+
+    @Test("The local-file read this app does use is not caught")
+    func localFileReadIsNotCaught() throws {
+        // The positive form of the rule above, and the reason `LiveBTSRecorder`
+        // reads its trimmed clip with `FileManager.contents(atPath:)` rather than
+        // `Data(contentsOf:)`: a substituted symbol the guard cannot see is a guard
+        // that has been defeated rather than satisfied. This asserts the two
+        // spellings differ, and that the one this app uses is the one allowed.
+        #expect(!Self.namesNetworkingType("FileManager.default.contents(atPath: url.path)"))
+        #expect(Self.namesNetworkingType("let bytes = try Data(contentsOf: url)"))
     }
 
     @Test("Setting a network flag to false is not a violation")
@@ -194,6 +222,30 @@ struct NoNetworkingTests {
                 "the scan reads a prohibition as a violation: \(line)"
             )
         }
+    }
+
+    @Test("A comment naming a forbidden symbol is not a violation")
+    func commentIsNotCode() throws {
+        // Comments are stripped, and the reason is above in
+        // `strippingTrailingComment`: a guard that fires on prose gets worked
+        // around by deleting the prose.
+        #expect(!Self.namesNetworkingType(
+            "// use FileManager.contents(atPath:), not Data(contentsOf:)"
+        ))
+        #expect(!Self.namesNetworkingType("/// Data(contentsOf: is banned"))
+    }
+
+    @Test("Stripping a comment does not hide code after it")
+    func strippingCommentsDoesNotBlindTheScan() throws {
+        // The failure mode a naive `components(separatedBy: "//")[0]` would have:
+        // a `//` inside a string literal truncates the line, and anything the
+        // author put after the literal goes unexamined.
+        let line = #"let path = "a/b"; let s = URLSession.shared"#
+        #expect(Self.namesNetworkingType(line),
+                "a URL after a path string was not seen — the scan is blind past a quoted slash")
+
+        // The ordinary case still works.
+        #expect(Self.networkingName(in: "let x = 1 // and a comment") == nil)
     }
 
     // MARK: - The positive form
@@ -268,4 +320,46 @@ struct NoNetworkingTests {
 
 private extension StringProtocol {
     var trimmed: String { trimmingCharacters(in: .whitespaces) }
+
+    /// The line with any `//` comment removed.
+    ///
+    /// ## Why the scan has to strip comments at all
+    ///
+    /// Because a guard that fires on prose trains people to work around the
+    /// guard. The first version did exactly that: documenting *why* `LiveBTSRecorder`
+    /// reads its trimmed clip with `FileManager.contents(atPath:)` — a note whose
+    /// entire job is to name `Data(contentsOf:)` — failed the suite on its own
+    /// comment. The obvious "fix" would have been to reword the comment until the
+    /// scan stopped firing, which deletes the explanation and leaves the next
+    /// reader to rediscover the rule from a prohibition with no reasoning.
+    ///
+    /// **Comment text is not code.** A `URLSession` named in a comment is not a
+    /// request, and stripping the comment makes the prohibition mean what it says.
+    ///
+    /// ## String literals are respected, because `//` appears in them
+    ///
+    /// A path or a URL inside a string would otherwise be truncated at the second
+    /// slash and the rest of the line — which could contain code — would go
+    /// unexamined. Tracking quote state is the difference between removing a
+    /// comment and removing the tail of a line that is still code.
+    func strippingTrailingComment() -> String {
+        var inString = false
+        var previousWasEscape = false
+        var characters = Array(self)
+        var index = 0
+
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\"" && !previousWasEscape { inString.toggle() }
+            if !inString, character == "/", index + 1 < characters.count,
+               characters[index + 1] == "/" {
+                characters.removeSubrange(index...)
+                break
+            }
+            previousWasEscape = character == "\\" && !previousWasEscape
+            if character != "\\" { previousWasEscape = false }
+            index += 1
+        }
+        return String(characters)
+    }
 }
