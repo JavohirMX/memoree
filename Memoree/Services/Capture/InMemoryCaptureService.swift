@@ -61,6 +61,13 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         /// model.
         var captureFailure: CaptureError?
         var switchFailure: CaptureError?
+        /// Whether the capture subsystem is dead.
+        ///
+        /// Distinct from `captureFailure`, which is a **single** injected
+        /// failure. This one persists until `rebuildSession()`, because that is
+        /// what a dead capture daemon does — it stops answering and stays
+        /// stopped, and nothing short of replacing the session revives it.
+        var isSubsystemDead = false
         /// Injected delay, for testing progress states.
         var artificialDelay: TimeInterval = 0
     }
@@ -95,6 +102,27 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
     func failNextSwitch(with error: CaptureError) {
         lock.withLock { state.switchFailure = error }
     }
+
+    /// Kills the capture subsystem, as a dead capture daemon does.
+    ///
+    /// ## The behaviour this models, and why it is the important one
+    ///
+    /// `failNextCapture(with: .photoDataUnavailable(…))` throws **once** and then
+    /// the double is healthy again — which models a single dropped callback and
+    /// nothing like the real failure. When the daemon actually dies it does not
+    /// recover on its own, so **every** capture fails until something rebuilds
+    /// the session, and `rebuildSession()` is the only thing that brings it back.
+    ///
+    /// Without this the double cannot express the defect the capture path had: a
+    /// `Try again` button that cannot succeed, because the subsystem behind it
+    /// stayed dead. A double that cannot exercise the code it stands in for is a
+    /// double that hides bugs.
+    func killCaptureSubsystem() {
+        lock.withLock { state.isSubsystemDead = true }
+    }
+
+    /// Whether the subsystem is currently dead.
+    var isSubsystemDead: Bool { lock.withLock { state.isSubsystemDead } }
 
     /// Delays every operation, so a test can observe the in-progress state.
     func setArtificialDelay(_ delay: TimeInterval) {
@@ -185,6 +213,11 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
             try Self.throwIfNeeded(&state)
             state.rebuildCount += 1
             state.isRunning = true
+            // **The one thing that revives a dead subsystem.** Matches
+            // `rebuildSession`'s real behaviour of constructing a new session,
+            // which is a fresh connection to a capture daemon that has since
+            // restarted.
+            state.isSubsystemDead = false
         }
     }
 
@@ -211,6 +244,13 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
 
         return try lock.withLock {
+            // **Checked before the injected single-shot failure**, so a test that
+            // kills the subsystem and also injects a one-off is testing what it
+            // thinks it is: the dead subsystem is the state that persists, and
+            // `photoDataUnavailable` is exactly what a dead one reports.
+            if state.isSubsystemDead {
+                throw CaptureError.photoDataUnavailable(state.livePosition)
+            }
             try Self.throwCaptureIfNeeded(&state)
             counter += 1
             let position = state.livePosition

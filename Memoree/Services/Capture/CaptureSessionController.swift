@@ -117,7 +117,9 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     private var photoOutput = AVCapturePhotoOutput()
 
     /// Frame signal only. Its pixel buffers are counted, never read.
-    private let videoOutput = AVCaptureVideoDataOutput()
+    /// Replaced wholesale by `rebuildSession`, because an output cannot be
+    /// moved between sessions — see there. `var` for that reason alone.
+    private var videoOutput = AVCaptureVideoDataOutput()
 
     private var activeInput: AVCaptureDeviceInput?
 
@@ -173,6 +175,10 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// One number, sampled at the exact moment that matters, and it splits the
     /// problem in half. Everything else here is bookkeeping; this is the test.
     private var totalFramesDelivered = 0
+
+    /// How many times `rebuildSession()` has run. Diagnostic only — see
+    /// `sessionRebuildCount()`. Confined to `queue` like everything else here.
+    private var rebuilds = 0
 
     /// The counter when the current wait was armed, so a timeout can report the
     /// difference rather than the total.
@@ -308,6 +314,21 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
     }
 
+    /// How many times the session has been destroyed and rebuilt.
+    ///
+    /// **On the controller rather than counted by the caller**, because two
+    /// callers rebuild for two different reasons and a gate that needs to know
+    /// whether the recovery fired cannot otherwise tell an intended rebuild from
+    /// an accidental one. `SequentialCaptureService` rebuilds on a failed swap
+    /// and, since the capture-path fix, on a dead subsystem — so "the camera
+    /// recovered" and "the camera was rebuilt twice for one failure" are
+    /// different facts and only the controller can distinguish them.
+    func sessionRebuildCount() async -> Int {
+        await withCheckedContinuation { c in
+            queue.async { c.resume(returning: self.rebuilds) }
+        }
+    }
+
     /// An armed photo capture. Exactly one at a time.
     private struct PhotoWait {
         let position: CameraPosition
@@ -419,6 +440,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
             queue.async { [self] in
                 session.stopRunning()
+                rebuilds += 1
                 // Detach the preview from the doomed session before dropping it,
                 // or the layer keeps a strong reference to a dead object.
                 previewSurface.session = nil
@@ -429,7 +451,28 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                 // The old session is unreachable once this returns; every
                 // output, input and continuation it owned goes with it.
                 session = replacement
+
+                // **Both outputs are replaced, and an output cannot be migrated
+                // between sessions.**
+                //
+                // `photoOutput` was always rebuilt here and `videoOutput` was not,
+                // which looked like an oversight and behaved like one. The
+                // frame-signal output stayed attached to the doomed session, so
+                // `canAddOutput` on the replacement returned **false** — and
+                // because nothing ever replaced the object, every subsequent
+                // `configureSession` threw `frame-signal output rejected` for the
+                // life of the process. One dead capture subsystem turned into a
+                // permanently bricked camera, which is precisely the failure
+                // `rebuildSession` exists to end.
+                //
+                // **Found by a device gate at 8/20**, on the run where the daemon
+                // dropped twice and so rebuilt twice: the first rebuild worked, the
+                // second left the camera dead in a different way. An
+                // `AVCaptureOutput` belongs to exactly one session for its whole
+                // life; replacing the session means replacing everything attached
+                // to it.
                 photoOutput = AVCapturePhotoOutput()
+                videoOutput = AVCaptureVideoDataOutput()
                 videoOutput.alwaysDiscardsLateVideoFrames = true
                 videoOutput.setSampleBufferDelegate(
                     self, queue: DispatchQueue(label: "capture.frames")

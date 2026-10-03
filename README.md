@@ -154,8 +154,8 @@ The app works in airplane mode. That is not a limitation — it is the product.
 | --- | --- |
 | [`docs/PRD.md`](docs/PRD.md) | Product requirements, scope, flows, risks |
 | [`docs/TRD.md`](docs/TRD.md) | Technical design, module contracts, algorithms |
-| [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | Eleven phases, sequenced by risk |
-| [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) | Twenty-six ADRs with alternatives and reversal triggers |
+| [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | Twelve phases (0–11), sequenced by risk |
+| [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) | Twenty-seven ADRs with alternatives and reversal triggers |
 
 [`AGENTS.md`](AGENTS.md) covers the conventions any contributor or coding agent must follow.
 
@@ -164,9 +164,12 @@ The app works in airplane mode. That is not a limitation — it is the product.
 Pre-release. 387 tests in 44 suites on the simulator; two of them fail there by design, because a
 skipped device test that reports as passed is worse than a red suite.
 
-One exit criterion is unmet: the twenty-capture reliability gate on hardware, parked at 18/20 with
-an uninvestigated capture-daemon death behind it. Release readiness is Phase 11 and has not been
-done. See `docs/IMPLEMENTATION_PLAN.md` for the current phase and its reasoning.
+One exit criterion is unmet: the twenty-capture reliability gate on hardware, now at **19/20**
+with a capture-daemon death that reproduces on demand, has been investigated, and no longer ends
+the run — the capture path recovers from it once and the next attempt succeeds (ADR-027). The
+threshold has not been moved. Release readiness is Phase 11 and has not been done; the app icon
+has no artwork, which blocks submission outright. See `docs/IMPLEMENTATION_PLAN.md` for the
+current phase and its reasoning.
 
 ## Licence
 

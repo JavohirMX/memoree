@@ -320,6 +320,12 @@ enum CaptureError: Error, LocalizedError, Equatable {
     /// Drives whether the UI offers a retry button or an explanation. A denied
     /// permission is not retryable — the user must change it in Settings — and
     /// offering "try again" there is a dead end (AGENTS.md §6).
+    ///
+    /// **A retryable error whose retry cannot possibly work is that same dead
+    /// end**, which is how `photoDataUnavailable` managed to be one: the capture
+    /// subsystem had died, every later attempt failed identically, and the button
+    /// kept offering a retry against a corpse. `indicatesDeadCaptureSubsystem` is
+    /// what the recovery keys on.
     var isRetryable: Bool {
         switch self {
         case .interrupted, .inUseByAnotherApp, .thermalStateCritical,
@@ -327,6 +333,52 @@ enum CaptureError: Error, LocalizedError, Equatable {
              .configurationFailed, .zoomUnavailable:
             return true
         case .permissionDenied, .restricted, .noInputAvailable, .noThreeByFourFormat:
+            return false
+        }
+    }
+
+    /// Whether this failure means the **capture subsystem is gone**, rather than
+    /// this one attempt having failed.
+    ///
+    /// ## What this is for
+    ///
+    /// The camera session lives in the capture daemon, and that daemon can die.
+    /// When it does, the session does not raise an error and fire a delegate —
+    /// it simply stops answering, so the next capture's photo callback never
+    /// arrives and `photoDataUnavailable` comes back with nothing behind it.
+    ///
+    /// **The consequence used to be that the camera stayed dead for the life of
+    /// the process.** Every later attempt failed identically, and because the
+    /// error is retryable the UI offered a **Try again** button that could not
+    /// succeed — the dead end `AGENTS.md` §6 forbids. The camera swap path has
+    /// always rebuilt the session on failure; the capture path did not, and that
+    /// asymmetry was the defect.
+    ///
+    /// ## Why these two and not the others
+    ///
+    /// - `photoDataUnavailable` — the photo delegate returned, or timed out
+    ///   returning, with no bytes. With a live session this is a single dropped
+    ///   callback; with a dead one it is every callback, forever.
+    /// - `sessionReset` — the session was torn down underneath us, which is the
+    ///   reset path's own report and means there is nothing left to talk to.
+    ///
+    /// **`noDeliveredFrame` is deliberately excluded**, even though it is the
+    /// other signature of a dead subsystem. It is thrown by the frame wait, which
+    /// lives in the *swap* path — and that path already rebuilds on every error,
+    /// including this one. Rebuilding twice for one failure would allocate two
+    /// sessions where one is called for, and `rebuildSession()` is not free: it
+    /// constructs a new `AVCaptureSession`, a synchronous XPC round-trip to the
+    /// daemon that may be the thing that is unwell.
+    ///
+    /// The asymmetry is deliberate in the other direction too. `interrupted`,
+    /// `inUseByAnotherApp` and `thermalStateCritical` all recover on their own,
+    /// and `noInputAvailable` / `configurationFailed` are not transient — so
+    /// none of them should cost a session allocation.
+    var indicatesDeadCaptureSubsystem: Bool {
+        switch self {
+        case .photoDataUnavailable, .sessionReset:
+            return true
+        default:
             return false
         }
     }

@@ -58,7 +58,48 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
     }
 
     func captureCurrentPhoto() async throws -> CapturedPhoto {
-        try await controller.captureCurrentPhoto()
+        do {
+            return try await controller.captureCurrentPhoto()
+        } catch {
+            // **The same recovery `switchCamera` has always had, and the capture
+            // path did not.** That asymmetry was the defect, not the daemon.
+            //
+            // When the capture daemon dies it does not raise an error and fire a
+            // delegate — it stops answering. The photo callback never arrives,
+            // `photoDataUnavailable` comes back, and because the session is gone
+            // every subsequent attempt fails identically for the life of the
+            // process. The UI showed a **Try again** button the whole time, and
+            // it could not work. A retry that cannot succeed is the dead end
+            // `AGENTS.md` §6 forbids.
+            //
+            // So: rebuild, then rethrow the original error. The existing retry
+            // button then does the only thing it says it does — retries the
+            // capture — and it runs against a live session. No new state, no new
+            // copy, and the user is told nothing about a rebuild they did not
+            // cause and cannot act on.
+            //
+            // **One rebuild per attempt, and never a loop.** `rebuildSession()`
+            // constructs a new `AVCaptureSession`, which is a synchronous XPC
+            // round-trip to the very daemon that may be unwell; unbounded
+            // rebuild-on-failure would manufacture the death it exists to fix.
+            // A single rebuild per call is bounded by construction, because this
+            // method does not retry — it reports and returns.
+            //
+            // Narrower than `switchCamera`'s rebuild on purpose. A failed *swap*
+            // leaves the session mid-swap, which is definitionally unusable. A
+            // failed *capture* might be one dropped callback on a healthy
+            // session, and rebuilding for that throws away a working camera to
+            // fix nothing. `indicatesDeadCaptureSubsystem` is the discriminator.
+            //
+            // `any Error`, so narrow before asking it a `CaptureError` question —
+            // and rethrow the *original* either way, so a narrowing that
+            // somehow misses reports what actually went wrong rather than a
+            // second, less accurate error.
+            guard let captureError = error as? CaptureError,
+                  captureError.indicatesDeadCaptureSubsystem else { throw error }
+            try? await controller.rebuildSession()
+            throw error
+        }
     }
 
     func switchCamera(to position: CameraPosition) async throws {
@@ -115,6 +156,18 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
 
     func resetFrameWaitDiagnostics() async {
         await controller.resetFrameWaitDiagnostics()
+    }
+
+    /// How many times the session has been rebuilt.
+    ///
+    /// **Diagnostics, on the concrete service, for the same reason as
+    /// `frameWaitDiagnostics` above** — and this one earns its place more
+    /// strongly, because the capture path now rebuilds on a dead subsystem where
+    /// it previously did not. A device gate that wants to know whether the
+    /// twenty-moment run went green because the camera recovered or because the
+    /// daemon stopped dying has to be able to count the recoveries.
+    func sessionRebuildCount() async -> Int {
+        await controller.sessionRebuildCount()
     }
 
     func rebuildSession() async throws {

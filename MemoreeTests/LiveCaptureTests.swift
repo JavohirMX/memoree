@@ -784,6 +784,29 @@ struct LiveCaptureTests {
         }
         if timeouts.isEmpty { print("  no timeouts") }
 
+        // **How many times the session was rebuilt, printed on every run.**
+        //
+        // The capture path now rebuilds when the daemon dies
+        // (`CaptureError.indicatesDeadCaptureSubsystem`), so a run in which the
+        // daemon died and the camera came back is *green* — and a green run that
+        // silently absorbed a subsystem death is worse than a red one, because
+        // it reads as evidence the daemon stopped dying when what actually
+        // happened is that the recovery started working.
+        //
+        // So the number is reported unconditionally, and a reader can tell the
+        // three cases apart:
+        //
+        // - `rebuilds == 0` — the daemon never died. A clean run, honestly clean.
+        // - `rebuilds > 0` with failures — the daemon died, the recovery did not
+        //   save it, and the gate is red for the reason it has always been red.
+        // - `rebuilds > 0` with no failures — **the recovery worked.** The gate
+        //   went green because a dead capture subsystem no longer ends the run,
+        //   not because the daemon stopped dying.
+        //
+        // That third case is a genuinely different result from the first and
+        // must never be reported as the same thing.
+        print("SESSION-REBUILDS \(await service.sessionRebuildCount())")
+
         #expect(failures.isEmpty)
     }
 

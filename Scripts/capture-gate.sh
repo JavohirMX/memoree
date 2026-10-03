@@ -41,9 +41,34 @@
 #     Scripts/capture-gate.sh                 # the connected device
 #     Scripts/capture-gate.sh <udid>          # a named device
 #
-# The phone must be **unlocked and awake**. A test host is a normal app and locks
-# on the normal schedule; iOS tears the capture session down when the device locks,
-# and there is no error to report afterwards.
+# The phone must be **unlocked and awake** for the *test run*. A test host is a
+# normal app and locks on the normal schedule; iOS tears the capture session down
+# when the device locks, and there is no error to report afterwards.
+#
+# ## Why this builds first, separately — and why that is not an optimisation
+#
+# The first run of this script, on a device that had been idle, reported **0/20**
+# in **0.12 seconds**. Every moment failed instantly with
+# `AVCapturePhotoOutput` bailing on `"hasFigCaptureSession"` — the output had no
+# session behind it at all. Not the daemon death this gate exists to investigate,
+# and not a slow camera: nothing had started.
+#
+# The cause is the harness. `xcodebuild test` builds, installs and *then* runs, and
+# on this machine the build and install take **four and a half minutes**. The plan
+# has already recorded that a locked test host is the likely reason the earlier runs
+# reported a dead capture daemon — *"a test host is a normal app and locks on the
+# normal schedule, and a twenty-moment run is longer than that schedule."* That is
+# the same fact, and it was costing the gate its meaning in a way that looked
+# exactly like a capture defect.
+#
+# So the build happens first, while the phone may be locked and does not matter,
+# and only then does the script stop and wait for a human. **The window in which
+# the device has to be awake shrinks from four and a half minutes to the length of
+# the run itself**, which is the difference between a gate that measures something
+# and one that mostly measures whether someone was holding the phone.
+#
+# `test-without-building` is also faster for the ordinary reason: no rebuild between
+# the two phases.
 
 set -o pipefail
 
@@ -56,6 +81,50 @@ cd "$PROJECT_DIR" || exit 1
 
 echo "Phase 4 capture gate — $DEVICE"
 echo "Log: $LOG"
+echo
+
+# Phase 1 — build. The phone does not need to be awake, unlocked, or even present.
+echo "--- building (the phone may be locked) ---"
+xcodebuild build-for-testing \
+    -project Memoree.xcodeproj \
+    -scheme Memoree \
+    -destination "platform=iOS,id=${DEVICE}" \
+    -allowProvisioningUpdates \
+    DEVELOPMENT_TEAM=MBBD9BRZ67 \
+    -collect-test-diagnostics never \
+    >"$LOG" 2>&1
+BUILD_STATUS=$?
+
+if [ $BUILD_STATUS -ne 0 ]; then
+    echo "FAIL — the build did not succeed, so there is nothing to run."
+    echo
+    tail -40 "$LOG"
+    exit 1
+fi
+
+echo "build ok"
+echo
+
+# Phase 2 — stop and wait. Four and a half minutes of build used to happen here,
+# silently, with the phone going to sleep in the middle of it.
+#
+# `MEMOREE_GATE_ASSUME_AWAKE=1` skips the prompt for a run that is already
+# orchestrated — the caller has just checked, and cannot usefully ask a human
+# through a pipe. It is opt-in precisely because assuming wrongly is the failure
+# this split exists to catch.
+if [ -n "${MEMOREE_GATE_ASSUME_AWAKE:-}" ]; then
+    echo "MEMOREE_GATE_ASSUME_AWAKE is set — not waiting for confirmation."
+    echo "If every moment fails instantly with 'hasFigCaptureSession', the"
+    echo "device was asleep. That is this, and it is not a capture defect."
+else
+    echo "=== UNLOCK THE PHONE AND LEAVE IT AWAKE ==="
+    echo "The run is about to start and takes several minutes. If the device locks,"
+    echo "every moment fails instantly with 'hasFigCaptureSession' and the gate"
+    echo "measures nothing — which is what happened before this script was split."
+    echo
+    printf "Press return once the screen is on and the phone is in your hand: "
+    read -r _
+fi
 echo
 
 # `-collect-test-diagnostics never` is mandatory, not a preference. Without it a
@@ -82,7 +151,7 @@ echo
 # Swift Testing run, on every platform. That is not a skip — read the Swift
 # Testing line, "Test run with N tests in M suites", or you will misdiagnose a
 # perfectly good run as an empty one. It was misread here.
-xcodebuild test \
+xcodebuild test-without-building \
     -project Memoree.xcodeproj \
     -scheme Memoree \
     -destination "platform=iOS,id=${DEVICE}" \

@@ -1153,6 +1153,121 @@ the invariant is wrong; a screenshot will not decide it.
 
 ---
 
+## ADR-027 — The capture path recovers from a dead capture subsystem, once, silently
+
+**Status:** Accepted · **Date:** 2026-10-03
+**Consequence of:** ADR-020 (deadlines live in the capture controller), TRD §5.5
+
+**Context.** Phase 4's twenty-moment reliability gate has been parked at 18/20 since
+2026-10-01, and five attempts at fixing it each failed differently. The sixth attempt's
+log carried the answer, and it had been present in an earlier run and read as noise:
+
+```
+FigCaptureSessionRemote: storage->connectionDied
+err=-16453
+```
+
+**The capture daemon itself died**, at moment 3 of 20. It does not raise an error and
+fire a delegate callback — it stops answering. The photo callback never arrives, so the
+next capture reports `photoDataUnavailable`, and because the session is gone every
+attempt after it fails identically for the life of the process.
+
+**The bug was not the daemon. It was the asymmetry.** `SequentialCaptureService.switchCamera`
+has always rebuilt the session when a swap fails, on the reasoning that a session left
+mid-swap is not reliably reusable. `captureCurrentPhoto` did not. And
+`CaptureError.photoDataUnavailable` is `isRetryable`, so the camera screen showed a
+**Try again** button — which re-captured against the same dead session and failed the
+same way, indefinitely.
+
+That is the dead end `AGENTS.md` §6 forbids, and it is a far worse failure than the two
+flaked moments the gate was counting: a user whose capture daemon dies once loses the
+camera until they kill the app, and is told to keep pressing a button.
+
+**Decision.**
+
+**A dead-subsystem capture failure rebuilds the session once, then rethrows the original
+error.** The existing retry button then does the only thing it claims to do — retry the
+capture — against a live session. No new view state and no new copy: the user is told
+nothing about a rebuild they did not cause and cannot act on.
+
+**The error set is narrow, and `CaptureError.indicatesDeadCaptureSubsystem` is where the
+judgement lives.** Two cases fire: `photoDataUnavailable` and `sessionReset`.
+
+**`noDeliveredFrame` is deliberately excluded**, which is the decision most worth arguing.
+It is the *other* signature of a dead subsystem and it is very tempting to include. It is
+thrown by the frame wait, which lives in the swap path — and that path already rebuilds on
+every error, including this one. Rebuilding again would allocate two sessions for one
+failure, and `rebuildSession()` is not free: it constructs an `AVCaptureSession`, which is
+a synchronous XPC round-trip to the daemon that may be the thing that is unwell. The rest
+are excluded because they either recover on their own (`interrupted`,
+`inUseByAnotherApp`, `thermalStateCritical`) or are not transient at all (`noInputAvailable`,
+`configurationFailed`, the permission errors).
+
+**One rebuild per attempt, never a loop, and this is structural rather than a counter.** The
+method does not retry — it reports and returns — so there is nothing to bound. Unbounded
+rebuild-on-failure would manufacture the exact death it exists to fix, which is the failure
+mode Phase 4 spent six device runs learning about: eight session allocations in one process
+is enough to wedge the daemon.
+
+**The gate now reports how many rebuilds happened, on every run.** This is the part that
+keeps the fix honest. A run in which the daemon died and the camera came back is *green*,
+and a green run that silently absorbed a subsystem death is worse than a red one — it reads
+as evidence the daemon stopped dying when what happened is that recovery started working.
+`SESSION-REBUILDS 0` is an honestly clean run; `SESSION-REBUILDS > 0` with no failures means
+the recovery carried it. **Those are different results and must never be reported as the
+same one.**
+
+**Alternatives rejected.** *Rebuild on every capture failure* — throws away a working camera
+to fix a single dropped callback, and pays a session allocation for it. *Stop offering the
+retry after N failures* — a new terminal state and new copy, for a case the recovery now
+handles; and it would be an admission that the button was a lie, which is worse than
+fixing it. *Rebuild transparently and re-capture in the same call* — the user gets a delay
+they did not ask for instead of a button they can see and choose, and a silent re-capture
+is exactly the "the app did something you did not ask for" shape this project keeps
+rejecting. *Do nothing and let the app die* — the status quo, and the bug.
+
+**Reversal trigger.** If a device run shows the daemon dying *and* the rebuild failing to
+revive it — the third case above becoming the common one — then a dead subsystem is not
+recoverable by a new session and this ADR is wrong about the mechanism. The response is a
+terminal state with copy that says the camera is unavailable, not a bigger retry loop.
+**The measurement that would show it is `SESSION-REBUILDS > 0` with failures in the same
+run**, which is exactly why the gate reports it unconditionally.
+
+**What this decision does not establish, and the one risk in it.** It assumes a new
+`AVCaptureSession` revives a dead subsystem, on the grounds that the daemon is restarted by
+the system and a fresh session connects to the new one. **That is a plausible mechanism and
+not a measured one.** The counter-argument is real: `AVCaptureSession.init()` is a
+*synchronous* XPC round-trip, and Phase 4 measured `rebuildSession()` at **200.8 seconds**
+when it ran against a session other tests had already started and stopped. A rebuild issued
+*because* the daemon died is the worst possible moment to issue one — if the daemon is
+unresponsive rather than restarted, this replaces a fast, honest failure with a slow one, on
+every attempt, for as long as the daemon stays dead.
+
+Nothing here bounds that. The rebuild is bounded in *number* — one per attempt, never a
+loop — but not in *duration*, because `rebuildSession()` is not cancellable in any way that
+would help. **If the gate comes back with a much longer wall time than its usual six
+minutes and a non-zero `SESSION-REBUILDS`, that is this risk, not a regression**, and the
+fix is a deadline around the rebuild rather than a larger retry budget. Recorded here
+because `AGENTS.md` §13 asks for uncertainty to be flagged rather than presented as
+established fact.
+
+**The duration risk did not materialise; a different one did, and it was worse.** A second
+device run rebuilt **twice** and came back 8/20 with
+`configurationFailed("frame-signal output rejected")` for the remaining moments. The cause
+was in `rebuildSession` itself: it replaced `photoOutput` and reused `videoOutput`, and
+**an `AVCaptureOutput` belongs to exactly one session and cannot be migrated**. The
+frame-signal output stayed attached to the doomed session, `canAddOutput` on the
+replacement returned false, and because nothing ever replaced the object every later
+`configureSession` threw — turning one dead subsystem into a permanently bricked camera.
+
+That defect predates this ADR and was reachable before it through a failed swap. What
+changed is that the capture path now rebuilds too, so it is reachable more often — and the
+second rebuild is where it bites. **Both outputs are now replaced.** The rebuild took
+0.4–1.0s in every observed case, including against a dying daemon, so the duration concern
+above is retired rather than merely unproven.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

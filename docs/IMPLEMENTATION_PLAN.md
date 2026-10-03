@@ -584,6 +584,156 @@ xcodebuild collects a sysdiagnose from the host before exiting, which on a devic
 indefinitely with no output and reports `BUILD INTERRUPTED` — destroying the exit code that
 would have said the run had finished. It reads exactly like a frozen test run.
 
+### Progress as of 2026-10-03 — the death was survivable all along, and the gate was measuring the harness
+
+**Two findings, and the first one is about the instrument rather than the capture path.**
+
+#### The gate had been reporting a locked phone as a capture failure
+
+The first run of the day returned **0/20 in 0.12 seconds**. Every moment failed instantly with
+
+```
+<<<< AVCapturePhotoOutput >>>> Fig assert: "hasFigCaptureSession" at bail (AVCapturePhotoOutput.m:596)
+configurationFailed("Cannot Record")
+```
+
+`hasFigCaptureSession` means the photo output had **no session behind it at all**. Nothing had
+started: `FRAME-WAITS (0)`, `SESSION-REBUILDS 0`, twenty identical failures at about 4ms each.
+That is not a camera failing. That is a guard rejecting everything on sight.
+
+The cause is the harness. `xcodebuild test` builds, installs and *then* runs, and the build and
+install take **four and a half minutes** on this machine. This document has already recorded
+that a test host is a normal app that locks on the normal schedule — *"a test host is a normal
+app and locks on the normal schedule, and a twenty-moment run is longer than that schedule"* —
+and attributed the earlier daemon deaths to it. Same fact, and it was costing the gate its
+meaning in a way indistinguishable from a capture defect.
+
+**`Scripts/capture-gate.sh` now builds first, then stops and waits for a human.** The window in
+which the phone must be awake drops from four and a half minutes to the length of the run, which
+is about two. `MEMOREE_GATE_ASSUME_AWAKE=1` skips the prompt for an already-orchestrated run.
+Confirmed immediately by the cheapest possible test — `twoPressesProduceAPair`, the three-second
+one — which passed at 4032×3024 in both orders on the same build.
+
+#### The daemon death is real, reproduces cold, and the app now survives it
+
+With the phone genuinely awake, the gate measures again. **19/20, `SESSION-REBUILDS 1`,
+19 frame waits and 0 timeouts.**
+
+The frame-wait number is the one that closes a two-week-old argument: **every frame wait was
+clean.** Four attempts' worth of tuning had been spent on a mechanism that produced zero
+timeouts in a full run. It was never the problem.
+
+The daemon still dies, and it is now timestamped rather than reconstructed:
+
+```
+14:03:05.501  << FigXPC >> signalled err=-16155
+14:03:05.501  FigCaptureSessionRemote  "! storage->connectionDied"  err=-16405
+              FigCaptureSourceRemote   "! storage->connectionDied"  err=-16453   (×119)
+```
+
+**It is not thermal and it is not the lock.** This was a cold device, 37 seconds into the run,
+after five successful moments. And it is not the frame wait, which was clean throughout.
+
+What changed is what happens next. Moment 18 failed with `photoDataUnavailable(.back)`, the
+recovery rebuilt the session once, and **moments 19 and 20 captured correctly.** Previously the
+daemon's death ended the run: every later moment failed identically for the life of the process,
+behind a **Try again** button that could not work.
+
+**A detail that argues the death is survivable more often than not.** The connection died twice
+in this run — once after moment 5, and once before moment 18 — and moments 6 through 17 all
+succeeded across the first one. iOS re-established the XPC connection and the existing session
+carried on. Only the second death was not self-healed. So the honest description is not "the
+daemon dies and the camera dies": it is **the daemon's connection drops, usually recovers on its
+own, and occasionally does not** — and the recovery is what covers the occasions that do not.
+
+#### The second run found a worse bug, and it was not the one being investigated
+
+The next run returned **8/20**, and its failure signature was new:
+
+```
+moment  5: noDeliveredFrame(.back)
+moment  6: configurationFailed("Cannot Record")
+moment 11: photoDataUnavailable(.back)
+moment 12: configurationFailed("frame-signal output rejected")
+moment 13: configurationFailed("frame-signal output rejected")      …and so on, to 20
+SESSION-REBUILDS 2
+```
+
+**Two rebuilds where the first run had one.** The daemon dropped twice, so `rebuildSession` ran
+twice, and the second one left the camera dead *in a different way* — not dead-subsystem, but
+`frame-signal output rejected`, forever.
+
+The cause is a line of `rebuildSession` that had been there since Phase 4:
+
+```swift
+session = replacement
+photoOutput = AVCapturePhotoOutput()      // replaced
+videoOutput.alwaysDiscardsLateVideoFrames = true   // NOT replaced — the old object is reused
+```
+
+**An `AVCaptureOutput` belongs to exactly one session and cannot be migrated.** The frame-signal
+output stayed attached to the doomed session, so `canAddOutput` on the replacement returned
+**false** — and because nothing ever replaced the object, every subsequent `configureSession`
+threw for the life of the process. **One dead capture subsystem turned into a permanently
+bricked camera, which is the exact failure `rebuildSession` exists to end.**
+
+It read like an oversight because it *was* one, and it survived two weeks of device runs because
+reaching it required a swap to fail *and* a rebuild to already have happened. A single-rebuild run
+looks perfect. The gate only found it because the daemon happened to drop twice.
+
+**And this is the second time today that a defect presented as one thing was another.** The first
+was a locked phone reported as a capture failure. Both were found by the gate measuring
+something other than what it was pointed at.
+
+#### Where this leaves the gate
+
+Three runs, same build of the app except where noted:
+
+| Run | Result | `SESSION-REBUILDS` | What actually happened |
+| --- | --- | --- | --- |
+| 1 | 0/20 in 0.12s | 0 | Phone locked during a 4.5-minute build. Nothing started. |
+| 2 | **19/20** | 1 | One daemon death, recovered, moments 19–20 fine. Frame waits **19/19 clean**. |
+| 3 | 8/20 | 2 | Two daemon deaths. The second hit the output-migration defect above. |
+
+**The gate's result tracks how many times the daemon drops, and nothing else.** One drop costs
+one moment. Two drops cost twelve. That is the whole variance, and it is a property of the
+device's capture subsystem rather than of this code — with one exception that was a real bug and
+is now fixed.
+
+**Still not 20/20, and the threshold has not moved.** But the number now means something
+different: it is no longer "two flakes and a dead camera", it is "one moment lost per daemon
+death, and the camera comes back". Whether that is the right exit criterion is a decision for
+the user, not something to settle by editing the threshold.
+
+#### What this does not settle
+
+**Why the daemon drops is still unknown.** `-16155` on `FigXPC` precedes every death and is not
+explained. It is now reproducible on demand on a cold device, which is the most this phase ever
+had: five attempts failed to produce one clean observation of the event.
+
+**19/20 is not 20/20, and the gate's criterion has not been met.** The threshold has not been
+moved — `AGENTS.md` §13 asks for uncertainty to be flagged rather than presented as fact, and
+this section is not a claim that it has. The remaining failure is the daemon dying *during* a
+capture, which no app-side code can prevent.
+
+**But the gate and the product now disagree about what a failure means.** The gate records a
+failure and moves to the next moment. The product shows **Try again**, and the user takes it —
+and after the recovery that retry now succeeds. The gate never presses it, so it counts a
+self-healed failure exactly as heavily as an unrecoverable one. Making the gate retry the way a
+person would is a change to what the gate *measures*, not a loosened threshold, and it needs to
+be decided explicitly rather than adopted because it produces a green number.
+
+#### ADR-027 and one risk in it, still unproven
+
+`ADR-027` records the recovery and its reversal trigger. The risk it names did **not**
+materialise: the rebuild did not hang, and the run took 128 seconds — roughly a third of the
+six minutes the gate is documented as taking. `rebuildSession()` against a dying daemon was fast.
+That is one observation, not a guarantee, and the ADR says so.
+
+**Also unchanged and still unexplained:** `[SwiftUI] Invalid frame dimension (negative or
+non-finite)` fires at about 1/second for the whole run, not only at launch as previously
+recorded. Still harmless, still not found.
+
 ---
 
 ## Phase 5 — Today screen

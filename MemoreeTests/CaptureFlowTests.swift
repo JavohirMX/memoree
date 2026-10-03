@@ -41,6 +41,13 @@ struct CaptureFlowTests {
             .thermalStateCritical, .noDeliveredFrame(.front),
             .photoDataUnavailable(.back), .configurationFailed("x"),
             .sessionReset,
+            // **Added late and missed here for a long time.** The test is called
+            // "every capture error" and was not checking every capture error —
+            // `zoomUnavailable` arrived with the zoom buttons and this list was
+            // never extended. A test whose name claims completeness and does not
+            // have it is worse than one that names its scope, because the gap
+            // reads as covered.
+            .zoomUnavailable(.ultraWide, .front),
         ]
         for error in errors {
             #expect(
@@ -66,6 +73,87 @@ struct CaptureFlowTests {
         #expect(CaptureError.thermalStateCritical.isRetryable)
         #expect(CaptureError.noDeliveredFrame(.front).isRetryable)
         #expect(CaptureError.sessionReset.isRetryable)
+    }
+
+    // MARK: - A dead capture subsystem
+
+    /// Which failures mean the daemon is gone, rather than this attempt failing.
+    ///
+    /// **The decision is the substance of the fix, so it is pinned
+    /// exhaustively.** A recovery that fires on the wrong errors costs a session
+    /// allocation — and `rebuildSession()` constructs an `AVCaptureSession`, a
+    /// synchronous XPC round-trip to the daemon that may be the thing that is
+    /// unwell. A recovery that fails to fire leaves the user tapping a retry
+    /// button that cannot work.
+    @Test("Only a dead-subsystem failure earns a rebuild")
+    func deadSubsystemIsDistinguishedFromOneBadAttempt() {
+        // Fires. Both mean there is nothing left to talk to.
+        #expect(CaptureError.photoDataUnavailable(.back).indicatesDeadCaptureSubsystem)
+        #expect(CaptureError.sessionReset.indicatesDeadCaptureSubsystem)
+
+        // Does not fire, and each for a stated reason rather than by omission.
+        //
+        // `noDeliveredFrame` is the interesting exclusion: it is the *other*
+        // signature of a dead subsystem, and it is thrown by the frame wait —
+        // which lives in the swap path, and that path already rebuilds on every
+        // error. Rebuilding again for a failure already being recovered from
+        // would allocate two sessions where one is called for.
+        #expect(!CaptureError.noDeliveredFrame(.front).indicatesDeadCaptureSubsystem,
+                "the swap path already rebuilds for this one")
+
+        // These recover on their own or not at all, so none should cost an
+        // allocation.
+        for error in [CaptureError.interrupted,
+                      .inUseByAnotherApp,
+                      .thermalStateCritical] {
+            #expect(!error.indicatesDeadCaptureSubsystem,
+                    "\(error) recovers without a rebuild")
+        }
+
+        // Not transient. A second attempt with a working camera will not find
+        // one, so rebuilding cannot help.
+        for error in [CaptureError.permissionDenied,
+                      .restricted,
+                      .noInputAvailable(.back),
+                      .noThreeByFourFormat(.back),
+                      .zoomUnavailable(.ultraWide, .front),
+                      .configurationFailed("photo output rejected")] {
+            #expect(!error.indicatesDeadCaptureSubsystem,
+                    "\(error) is not fixed by a new session")
+        }
+    }
+
+    @Test("A dead subsystem stays dead until the session is rebuilt")
+    func deadSubsystemPersistsUntilRebuilt() async throws {
+        // **`failNextCapture` would not express this.** It throws once and the
+        // double is healthy again, which models a single dropped callback. The
+        // real failure persists: the daemon does not come back on its own, and
+        // nothing short of replacing the session revives it. Without a double
+        // that can hold that state, the retry button's dead end is untestable.
+        let service = InMemoryCaptureService()
+        try await service.startSession(on: .back)
+        service.killCaptureSubsystem()
+
+        // Every attempt fails, and it is the same failure every time — which is
+        // the shape of the bug: a retry button over a corpse.
+        for attempt in 1...3 {
+            await #expect(throws: CaptureError.self) {
+                _ = try await service.captureCurrentPhoto()
+            }
+            #expect(service.isSubsystemDead, "attempt \(attempt) revived nothing")
+        }
+
+        #expect(service.rebuildCount == 0,
+                "nothing rebuilt the session, so nothing could have revived it")
+
+        // And a rebuild is genuinely the thing that fixes it.
+        try await service.rebuildSession()
+        #expect(service.rebuildCount == 1)
+        #expect(!service.isSubsystemDead)
+
+        _ = try await service.captureCurrentPhoto()
+        #expect(service.capturedPositions == [.back],
+                "the camera works again after a rebuild")
     }
 
     // MARK: - The two-press sequence

@@ -60,7 +60,7 @@ framework, and **none of them imports SwiftUI**:
 | `Services/PhotoLibrary/PhotoKitLibrary.swift` | `Photos` | Writes the two assets |
 | `Services/PhotoLibrary/ArchiveThumbnailCache.swift` | `Photos` | Reads assets for the archive grid |
 | `Services/Capture/SequentialCaptureService.swift` | `AVFoundation` | Owns the capture sequence |
-| `Services/Capture/CaptureSessionController.swift` | `AVFoundation` | Owns the session |
+| `Services/Capture/CaptureSessionController.swift` | `AVFoundation` (`@preconcurrency`) | Owns the session. **The only `@preconcurrency` import in the codebase** — AVFoundation is not `Sendable` and cannot be made so (§5) |
 | `Services/Capture/CapturePhotoService.swift` | `AVFoundation` | `CMTime` and `AVMediaType` in signatures |
 | `Services/Capture/CaptureFormatSelector.swift` | `AVFoundation` | `AVCaptureDevice.Format` in the pure selector |
 
