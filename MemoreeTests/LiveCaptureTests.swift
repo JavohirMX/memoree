@@ -686,33 +686,60 @@ struct LiveCaptureTests {
         // runs in, and the old loop was testing something no user could reach.
         let service = SequentialCaptureService()
 
+        // **Moments that needed the retry a person would have pressed.**
+        //
+        // Recorded separately and printed unconditionally, because a run where
+        // every moment eventually succeeded *because the recovery worked* must
+        // never read the same as a run where every moment succeeded first time.
+        // Those are different results and the gate reports both.
+        var neededRetry: [Int] = []
+
         for moment in 1...20 {
-            do {
-                let opening = CameraPosition.allCases[moment % 2]
-                try await service.startSession(on: opening)
+            let opening = CameraPosition.allCases[moment % 2]
+            var attempt = 0
 
-                let back = try await service.captureCurrentPhoto()
-                try await service.switchCamera(to: opening.opposite)
-                try await Task.sleep(for: composePause)
-                let front = try await service.captureCurrentPhoto()
-
-                let pair = [back, front]
-                for photo in pair {
-                    if !photo.isThreeByFour {
-                        failures.append("moment \(moment) \(photo.position.rawValue): wrong ratio "
-                                        + "(\(photo.pixelWidth)x\(photo.pixelHeight))")
+            // **One retry, and only for a dead capture subsystem.**
+            //
+            // The product shows **Try again** on a retryable failure, and the
+            // user presses it. Since ADR-027 the capture path rebuilds the
+            // session first, so that press runs against a live one. The gate
+            // records a failure and moves on — which is not what anybody does,
+            // and made it count a self-healed failure exactly as heavily as an
+            // unrecoverable one. ADR-028.
+            //
+            // **Narrower than the retry button on purpose.** Only
+            // `indicatesDeadCaptureSubsystem` earns the second attempt: a
+            // `noInputAvailable` or a `configurationFailed` will be exactly as
+            // true on the next try, and retrying those would manufacture
+            // recoveries a user would not get either.
+            //
+            // **The bar is unchanged.** A moment that cannot be captured even
+            // after the retry is still a failure, and the test still fails.
+            while true {
+                do {
+                    try await Self.captureMoment(moment,
+                                                 opening: opening,
+                                                 service: service,
+                                                 composePause: composePause,
+                                                 failures: &failures)
+                    print("CAPTURE moment \(moment)/20 ok (\(opening.rawValue) first)"
+                          + (attempt > 0 ? " — after \(attempt) retry" : ""))
+                    break
+                } catch {
+                    let isDeadSubsystem = (error as? CaptureError)?
+                        .indicatesDeadCaptureSubsystem ?? false
+                    guard isDeadSubsystem, attempt == 0 else {
+                        failures.append("moment \(moment): \(error)")
+                        print("CAPTURE moment \(moment)/20 FAILED: \(error)")
+                        break
                     }
-                    if photo.data.count < 10_000 {
-                        failures.append("moment \(moment) \(photo.position.rawValue): "
-                                        + "implausibly small bytes — likely a blank frame")
-                    }
+                    attempt += 1
+                    neededRetry.append(moment)
+                    print("CAPTURE moment \(moment)/20 dead subsystem (\(error)) — "
+                          + "retrying once, as a person would")
+                    // Leave nothing half-configured behind for the retry.
+                    await service.stopSession()
                 }
-                print("CAPTURE moment \(moment)/20 ok (\(opening.rawValue) first)")
-
-                await service.stopSession()
-            } catch {
-                failures.append("moment \(moment): \(error)")
-                print("CAPTURE moment \(moment)/20 FAILED: \(error)")
             }
         }
 
@@ -721,6 +748,10 @@ struct LiveCaptureTests {
         // Printed unconditionally on success too, so a green run carries its
         // own evidence rather than relying on someone remembering to look.
         print("live capture: 20 paced moments, \(failures.count) failures")
+        print("live capture: \(neededRetry.count) moment(s) needed the retry: "
+              + (neededRetry.isEmpty
+                  ? "none"
+                  : neededRetry.map(String.init).joined(separator: ", ")))
         for failure in failures { print("  \(failure)") }
 
         // **The frame-wait table, printed on every run.**
@@ -808,6 +839,46 @@ struct LiveCaptureTests {
         print("SESSION-REBUILDS \(await service.sessionRebuildCount())")
 
         #expect(failures.isEmpty)
+    }
+
+    /// One moment, start to finish, checking both photographs.
+    ///
+    /// **Extracted so the retry above is a retry of the whole moment** rather
+    /// than of whichever step happened to fail. A moment that died during its
+    /// first capture has a session in a different state from one that died after
+    /// the swap, and resuming the second attempt from the failed step would be
+    /// testing a shape the app never runs — the user starts over from the
+    /// shutter.
+    ///
+    /// Throws so the caller's `catch` decides what a failure means. Geometry and
+    /// plausibility problems are appended to `failures` instead, because a
+    /// photograph of the wrong ratio is not worth retrying: it was captured, and
+    /// it was wrong.
+    private static func captureMoment(
+        _ moment: Int,
+        opening: CameraPosition,
+        service: SequentialCaptureService,
+        composePause: Duration,
+        failures: inout [String]
+    ) async throws {
+        try await service.startSession(on: opening)
+
+        let back = try await service.captureCurrentPhoto()
+        try await service.switchCamera(to: opening.opposite)
+        try await Task.sleep(for: composePause)
+        let front = try await service.captureCurrentPhoto()
+        await service.stopSession()
+
+        for photo in [back, front] {
+            if !photo.isThreeByFour {
+                failures.append("moment \(moment) \(photo.position.rawValue): wrong ratio "
+                                + "(\(photo.pixelWidth)x\(photo.pixelHeight))")
+            }
+            if photo.data.count < 10_000 {
+                failures.append("moment \(moment) \(photo.position.rawValue): "
+                                + "implausibly small bytes — likely a blank frame")
+            }
+        }
     }
 
     @Test("The front camera is mirrored and the rear is not")

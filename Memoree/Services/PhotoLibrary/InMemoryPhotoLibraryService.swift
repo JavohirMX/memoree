@@ -205,7 +205,7 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
                 throw LibraryError.assetMissing("one or more assets did not resolve")
             }
 
-            let identifier = try ensureAlbumSynchronously(named: name)
+            let identifier = ensureAlbumSynchronously(named: name)
             state.albumMembers[name, default: []].append(contentsOf: identifiers)
             return identifier
         }

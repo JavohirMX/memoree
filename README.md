@@ -155,7 +155,7 @@ The app works in airplane mode. That is not a limitation — it is the product.
 | [`docs/PRD.md`](docs/PRD.md) | Product requirements, scope, flows, risks |
 | [`docs/TRD.md`](docs/TRD.md) | Technical design, module contracts, algorithms |
 | [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | Twelve phases (0–11), sequenced by risk |
-| [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) | Twenty-seven ADRs with alternatives and reversal triggers |
+| [`docs/DECISION_LOG.md`](docs/DECISION_LOG.md) | Twenty-eight ADRs with alternatives and reversal triggers |
 
 [`AGENTS.md`](AGENTS.md) covers the conventions any contributor or coding agent must follow.
 

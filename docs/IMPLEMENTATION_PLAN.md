@@ -705,6 +705,36 @@ different: it is no longer "two flakes and a dead camera", it is "one moment los
 death, and the camera comes back". Whether that is the right exit criterion is a decision for
 the user, not something to settle by editing the threshold.
 
+**Phase 4 remains open at 19/20**, by decision. The criterion is met in the sense that the app
+now behaves correctly and the cause is understood and survivable; it is not met in the literal
+sense that twenty captures have not all succeeded unprompted. Both facts are recorded rather
+than reconciled, because reconciling them would mean moving the threshold.
+
+#### The gate now retries, because the product does — ADR-028
+
+The gate and the product had started to disagree about what a failure means. The gate
+records one and moves to the next moment. The product shows **Try again**, the user presses
+it, and since ADR-027 that press runs against a live session. **So the gate was counting a
+self-healed failure exactly as heavily as an unrecoverable one.**
+
+A moment that fails with `indicatesDeadCaptureSubsystem` is now retried once, from the
+shutter — the whole moment, not the step that failed, because a moment that died during its
+first capture leaves a different session state from one that died after the swap, and a user
+starts over from the shutter rather than from halfway.
+
+**Three things this deliberately does not do**, and each is the point:
+
+| | |
+| --- | --- |
+| **It does not lower the bar** | A moment that cannot be captured after the retry is still a failure and the test still fails |
+| **It is narrower than the retry button** | Only a dead subsystem earns a second attempt. `noInputAvailable` and `configurationFailed` are exactly as true on the next try |
+| **It does not hide the retries** | `needed the retry` is printed unconditionally beside `SESSION-REBUILDS` and `FRAME-WAITS summary` |
+
+That last one is what keeps it honest. **A run where twenty moments succeeded because the
+recovery worked must not read like a run where twenty moments succeeded first time.** A
+reader can now tell them apart, and the reversal trigger in ADR-028 says what would make the
+whole mechanism removable: three consecutive cold runs at 20/20 with no retry and no rebuild.
+
 #### What this does not settle
 
 **Why the daemon drops is still unknown.** `-16155` on `FigXPC` precedes every death and is not

@@ -1268,6 +1268,73 @@ above is retired rather than merely unproven.
 
 ---
 
+## ADR-028 — The capture gate retries once, because the product does
+
+**Status:** Accepted · **Date:** 2026-10-03
+**Consequence of:** ADR-027
+
+**Context.** ADR-027 made the capture path survive a dead capture subsystem. The gate
+went from 18/20 to **19/20** with `SESSION-REBUILDS 1` — and the remaining failure is a
+daemon death *during* a capture, which no app-side code can prevent.
+
+That left the gate and the product disagreeing about what a failure means.
+
+**The gate records a failure and moves to the next moment.** The product shows **Try
+again**, and the user presses it — and since ADR-027 that press runs against a live
+session. So the gate counted a **self-healed** failure at exactly the same weight as an
+unrecoverable one, and printed `SESSION-REBUILDS > 0` with a failure beside it, which
+reads as "the recovery did not work" when the recovery demonstrably had.
+
+**This ADR changes what the gate measures. It does not change the bar.**
+
+**Decision.**
+
+**A moment that fails with `indicatesDeadCaptureSubsystem` is retried once, from the
+shutter, exactly as a person would.** The second attempt restarts the whole moment
+rather than resuming the step that failed — a moment that died during its first
+capture leaves a session in a different state from one that died after the swap, and
+the user starts over from the shutter rather than from halfway.
+
+**The retry is narrower than the retry button.** Only `indicatesDeadCaptureSubsystem`
+earns a second attempt. A `noInputAvailable` or a `configurationFailed` will be
+exactly as true on the next try, and retrying those would manufacture recoveries a
+user would not get either.
+
+**A moment that cannot be captured after the retry is still a failure, and the test
+still fails.** The criterion — twenty real captures, all succeeding — is untouched. A
+run that needs the retry on most moments to reach 20/20 is not a clean run, and the
+output says so.
+
+**How many moments needed the retry is printed unconditionally, on every run, pass or
+fail.** This is the part that keeps the change honest. `needed the retry` sits beside
+`SESSION-REBUILDS` beside `FRAME-WAITS summary`, and a run where twenty moments
+succeeded *because the recovery worked* must not read like a run where twenty moments
+succeeded first time. Those are different results, and a reader must not be left to
+infer which one happened.
+
+**Alternatives rejected.** *Report two numbers and assert neither* — honest, but it
+leaves the gate with no verdict, and a gate that cannot fail is a printout. *Retry
+unbounded* — a user pressing a button is not a loop, and a loop here would allocate
+sessions against a daemon that may be the thing that is unwell. *Retry on every
+retryable error* — retries things that are not transient, and inflates the recovery
+count with successes no user would have got. *Lower the bar to 19/20* — the thing this
+ADR exists to avoid doing, and it would discard the very distinction the retry count
+provides.
+
+**Reversal trigger.** If the gate ever reports 20/20 with `0` needing the retry and
+`SESSION-REBUILDS 0` on three consecutive cold runs, the daemon death is not
+reproducible on this hardware and this ADR — along with ADR-027's recovery — is
+carrying weight it no longer needs. That would be a reason to *remove* the recovery, not
+to keep it: code that never fires is code that will surprise someone the one time it
+does.
+
+**What is deliberately still open.** Whether a *user* experiences any of this as a
+failure. A daemon death costs one moment and one tap, and the gate now models exactly
+that — but whether that is an acceptable product is not a question this document can
+answer.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:
