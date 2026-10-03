@@ -8,7 +8,15 @@ import Testing
 /// The same property `NoNetworkingTests` depends on, and for the same reason:
 /// `#filePath` is baked in by the compiler and names a path on the build machine,
 /// which exists on a simulator and does not exist on hardware.
-private let sourceIsReadableOnThisHost = SourceScan.isReadable
+/// Shared with `NoNetworkingTests`, `SessionRebuildInvariantTests` and
+/// `BTSSessionInvariantTests`.
+///
+/// **It lived in `SourceScan` and the four suites each had their own private copy**,
+/// which is four places to change when the property it reads is renamed. Promoting
+/// it to one internal constant fixes that — and it has to be *internal* rather than
+/// public, because two files declaring the same internal name in the same module is
+/// exactly the ambiguity the compiler reported.
+let sourceIsReadableOnThisHost = SourceScan.isReadable
 
 /// The design-system and accessibility commitments, asserted rather than intended.
 ///

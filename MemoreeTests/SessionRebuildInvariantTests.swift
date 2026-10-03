@@ -8,7 +8,6 @@ import Testing
 /// `#filePath` is baked in by the compiler and names a path on the build machine,
 /// which exists on a simulator and does not exist on hardware — the same
 /// property `NoNetworkingTests` and `DesignSystemInvariantTests` depend on.
-private let sourceIsReadableOnThisHost = SourceScan.isReadable
 
 /// Structural claims about `CaptureSessionController` that only a device can
 /// observe the consequences of.

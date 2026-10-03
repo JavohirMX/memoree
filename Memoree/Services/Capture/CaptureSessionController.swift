@@ -166,6 +166,53 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// moved between sessions — see there. `var` for that reason alone.
     private var videoOutput = AVCaptureVideoDataOutput()
 
+    /// The Behind-the-Scenes output, when BTS is on. `nil` when it is off.
+    ///
+    /// ## Attached once and left alone, like the other outputs
+    ///
+    /// Not added and removed per capture. Session churn is the thing this phase
+    /// has already measured as dangerous — 40 swaps in six minutes is what the
+    /// capture daemon does not survive — and a movie output that came and went
+    /// with each moment would be the most churn of anything in the file.
+    ///
+    /// So BTS being *on* attaches it for the session's life, and turning BTS off
+    /// means it was never there. `SessionRebuildInvariantTests` fails the build if
+    /// `rebuildSession` does not replace it, because that is the exact defect
+    /// this file shipped once already with `videoOutput`.
+    private var movieOutput: AVCaptureMovieFileOutput?
+
+    /// Whether BTS has asked for a movie output on this session.
+    ///
+    /// Set once, before the session is configured, and read by
+    /// `configureSession`. **A `var` and not a parameter** because the session is
+    /// configured in six places and threading a flag through all of them is how
+    /// the "camera works exactly once per launch" defect happened.
+    private var wantsMovieOutput = false
+
+    /// Asks for a Behind-the-Scenes output, for sessions started after this call.
+    ///
+    /// **Call before `startSession`.** It configures *future* sessions rather
+    /// than mutating a running one, because attaching an output to a running
+    /// session means another `beginConfiguration` cycle — more churn, on the one
+    /// subsystem this project has measured as fragile.
+    func enableMovieOutput() async {
+        await withCheckedContinuation { c in
+            queue.async {
+                self.wantsMovieOutput = true
+                c.resume()
+            }
+        }
+    }
+
+    /// The movie output, once a session has been configured with one.
+    ///
+    /// **`nil` until `enableMovieOutput` has been called *and* a session has been
+    /// configured**, and reading it is how `LiveBTSRecorder` tells the difference
+    /// between "BTS is off" and "BTS is on and the output failed to attach".
+    var movieFileOutput: AVCaptureMovieFileOutput? {
+        movieOutput
+    }
+
     private var activeInput: AVCaptureDeviceInput?
 
     /// The live camera, once a session is configured.
@@ -538,6 +585,15 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                 videoOutput.setSampleBufferDelegate(
                     self, queue: DispatchQueue(label: "capture.frames")
                 )
+                // **The movie output too, and this is the third time this shape
+                // has bitten.** An output cannot be migrated between sessions: the
+                // old one stays attached to the doomed session, `canAddOutput`
+                // returns false on the replacement, and every later
+                // `configureSession` throws for the life of the process. It cost a
+                // 20-moment device run to find with `videoOutput` — which is why
+                // `SessionRebuildInvariantTests` now names every output the
+                // controller owns rather than the one that happened to break.
+                movieOutput = nil
                 activeInput = nil
 
                 do {
@@ -834,6 +890,17 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         // invisible until somebody counted sessions.
         try attach(photoOutput, rejection: "photo output rejected")
         try attach(videoOutput, rejection: "frame-signal output rejected")
+
+        // **Created here rather than stored, so a rebuilt session gets a new
+        // one.** An `AVCaptureOutput` belongs to exactly one session for its whole
+        // life — the defect `rebuildSession` shipped once with `videoOutput`, and
+        // the invariant that now catches it names this output too.
+        if wantsMovieOutput, movieOutput == nil {
+            movieOutput = AVCaptureMovieFileOutput()
+        }
+        if let movieOutput {
+            try attach(movieOutput, rejection: "movie output rejected")
+        }
 
         try attachInput(at: position)
         try applyFormat(for: activePosition)

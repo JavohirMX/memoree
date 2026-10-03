@@ -9,7 +9,6 @@ import Testing
 /// machine. False on hardware, where it names a path the device has never heard
 /// of. See the suite's documentation for why that is a property of the check and
 /// not a bug in it.
-private let sourceIsReadableOnThisHost = SourceScan.isReadable
 
 /// The "no server" commitment, asserted rather than intended.
 ///
