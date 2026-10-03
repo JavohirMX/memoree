@@ -103,7 +103,52 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     static var frameWaitTimeoutForDiagnostics: TimeInterval { frameWaitTimeout }
 
     /// How long to wait for the session to stop after `stopSession`.
+    ///
+    /// **Declared and never used.** Recorded rather than deleted: the stop path
+    /// has the same unbounded shape as the start path, and someone thought about
+    /// it once. `stopRunning()` is documented to block until the session stops, so
+    /// this number has a job to do whenever that gets fixed.
     private static let stopTimeout: TimeInterval = 1.0
+
+    /// How long to wait for `startRunning()` to return.
+    ///
+    /// ## Why this one is not like the other two
+    ///
+    /// `frameWaitTimeout` and `photoWaitTimeout` are both armed with
+    /// `queue.asyncAfter` — **on the session queue** — because both wait for
+    /// something that will hand the continuation back. That works: the queue is
+    /// idle, and whichever of callback-or-deadline arrives first clears the
+    /// pending slot and resumes it once.
+    ///
+    /// **`startRunning()` is not idle.** It *occupies* the session queue and
+    /// blocks there. A deadline scheduled on that queue cannot run until
+    /// `startRunning()` returns, which is precisely the case the deadline exists
+    /// to catch. So this deadline is armed on a different queue and arbitrated by
+    /// `ResumeGate` instead of by a queue-confined pending slot.
+    ///
+    /// ## The measurement, and why 5 seconds
+    ///
+    /// A device gate ran **eighteen minutes** without printing a summary.
+    /// `startRunning()` against a wedged capture daemon never returned, and
+    /// because it was holding the serial queue, every later capture operation
+    /// queued behind it forever. The camera screen was not slow — it was
+    /// permanently unresponsive, with no error and no way out.
+    ///
+    /// Five seconds is the frame wait's figure for the same measured reason: an
+    /// idle swap-and-wait runs a median of 0.472s and a maximum of 0.815s across
+    /// forty swaps on an iPhone 17, and a photo capture adds a little more. Six
+    /// times the worst observation is not a number anyone tunes — it is a number
+    /// chosen so that being wrong means the daemon is genuinely gone.
+    private static let startTimeout: TimeInterval = 5.0
+
+    /// The queue the start deadline runs on, because the session queue cannot.
+    ///
+    /// A single shared queue rather than a fresh one per call: a timer that has
+    /// already fired does nothing, and these fire at most once per camera-screen
+    /// opening. The alternative — `DispatchQueue.global()` — would put app work
+    /// next to a five-second sleep on a shared thread, for no benefit.
+    private static let startDeadlineQueue =
+        DispatchQueue(label: "capture.start.deadline", qos: .userInitiated)
 
     // MARK: - Isolated state
 
@@ -398,16 +443,32 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         }
         guard status == .authorized else { throw CaptureError.permissionDenied }
 
+        let gate = ResumeGate()
         try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            // **Armed before the queue is asked to do anything**, so the deadline
+            // is already counting while `configureSession` runs. A gate armed
+            // inside the queue closure could not fire until `startRunning()`
+            // returned — which is the case it exists to catch.
+            gate.arm(
+                c,
+                timeout: Self.startTimeout,
+                on: Self.startDeadlineQueue,
+                timeoutError: {
+                    CaptureError.configurationFailed(
+                        "the camera did not start within \(Int(Self.startTimeout)) seconds"
+                    )
+                }
+            )
+
             queue.async { [self] in
                 do {
                     try configureSession(startingAt: position)
                     session.startRunning()
                     state = .running
-                    c.resume()
+                    gate.succeed()
                 } catch {
                     state = .failed(Self.map(error, at: self.activePosition))
-                    c.resume(throwing: Self.map(error, at: self.activePosition))
+                    gate.fail(with: Self.map(error, at: self.activePosition))
                 }
             }
         }
@@ -1558,5 +1619,81 @@ private final class SingleShotPhotoDelegate: NSObject, AVCapturePhotoCaptureDele
         // Nothing to do. `didFinishProcessingPhoto` carries the data and
         // already resumed; this exists so the delegate conforms fully and so
         // the ordering of the two callbacks is explicit rather than implied.
+    }
+}
+
+// MARK: - Resume gate
+
+/// Resumes exactly one continuation, whichever of two paths arrives first.
+///
+/// ## Why this exists rather than a pending slot
+///
+/// Every other wait in this file is arbitrated by a slot on the session queue,
+/// which works because the queue is free to run the deadline. `startRunning()` is
+/// not — it is *running on* that queue — so its two completion paths are on
+/// **different queues** and cannot share one. That makes this a genuine
+/// cross-queue race, and a `CheckedContinuation` resumed twice traps.
+///
+/// ## `@unchecked Sendable`, and why a lock rather than a queue
+///
+/// Confinement is an `NSLock` because the two racing paths do not share a queue
+/// to be confined to. Every mutable field is guarded by it, and the only thing
+/// handed out is a `CheckedContinuation`, which is safe to resume once. This is
+/// the shape `AGENTS.md` §5 asks for — one primitive owning all the mutable
+/// state, with the reason written down rather than implied.
+final class ResumeGate: @unchecked Sendable {
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Void, Error>?
+    private var isSettled = false
+
+    /// Takes the continuation and arms the timeout.
+    ///
+    /// - Parameters:
+    ///   - timeout: How long to wait.
+    ///   - queue: **Must not be the session queue.** Arming there defeats the
+    ///     entire purpose — see `startTimeout`.
+    ///   - error: Built only if the deadline actually fires, so the common path
+    ///     allocates nothing.
+    func arm(
+        _ continuation: CheckedContinuation<Void, Error>,
+        timeout: TimeInterval,
+        on queue: DispatchQueue,
+        timeoutError error: @escaping @Sendable () -> Error
+    ) {
+        lock.lock()
+        precondition(!isSettled, "a resume gate is armed once")
+        self.continuation = continuation
+        lock.unlock()
+
+        queue.asyncAfter(deadline: .now() + timeout) { [self] in
+            fail(with: error())
+        }
+    }
+
+    /// The work completed.
+    func succeed() {
+        settle(with: .success(()))
+    }
+
+    /// The work failed with `error`.
+    func fail(with error: Error) {
+        settle(with: .failure(error))
+    }
+
+    private func settle(with result: Result<Void, Error>) {
+        lock.lock()
+        // **Exactly once, and this check is the entire type.** The two paths race
+        // by construction — the common case is that the deadline fires a moment
+        // after the work returned — and resuming a continuation twice traps.
+        guard !isSettled, let continuation else {
+            lock.unlock()
+            return
+        }
+        isSettled = true
+        self.continuation = nil
+        lock.unlock()
+
+        continuation.resume(with: result)
     }
 }

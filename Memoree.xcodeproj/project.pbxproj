@@ -70,6 +70,7 @@
 		A2E176FD2C9111669B0B4AE9 /* InMemoryPhotoLibraryService.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB972B6DBC6BA37BACC36F5E /* InMemoryPhotoLibraryService.swift */; };
 		A31930AA78BD5E3DAFE695CD /* SequentialCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D9DE8AAABD3004BA4E6EA79 /* SequentialCaptureService.swift */; };
 		A365DB7FA4F9AE4D71B01D3A /* TodayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08772852EC1C853B0D0F1D1 /* TodayView.swift */; };
+		A50918F2188E88D80B35102C /* ResumeGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 07931FE867FFA30A0320CB99 /* ResumeGateTests.swift */; };
 		A632C1A434FD18FF4C50E080 /* LivePhotoRunGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6181DAD5BD1416D9C47784D2 /* LivePhotoRunGuard.swift */; };
 		A7AE29B08C3B84BD814A12C3 /* DynamicTypeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 290D167C74BB7A31F7B312DD /* DynamicTypeTests.swift */; };
 		A953353882546F0AA624A9BB /* AppEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81691AD301F716B16E4B474D /* AppEnvironment.swift */; };
@@ -129,6 +130,7 @@
 		0199319C81AC3B09C6F31596 /* MomentWindowChangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentWindowChangeTests.swift; sourceTree = "<group>"; };
 		0419E1B7E777D5F8FD093B2A /* PhotoLibraryWritePathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryWritePathTests.swift; sourceTree = "<group>"; };
 		05C2F17AB8004A19D55463C5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
+		07931FE867FFA30A0320CB99 /* ResumeGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeGateTests.swift; sourceTree = "<group>"; };
 		091BC34556F0C555F4445FA4 /* ReducedMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReducedMotion.swift; sourceTree = "<group>"; };
 		0BF834C3D9C01DB11A624CF3 /* StreakSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakSummaryTests.swift; sourceTree = "<group>"; };
 		0E9AD7FACEC7C44964337A0F /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
@@ -408,6 +410,7 @@
 				0419E1B7E777D5F8FD093B2A /* PhotoLibraryWritePathTests.swift */,
 				C035884EA3B2B9DB84A89A50 /* PhotoMetadataInjectorTests.swift */,
 				706A7274F260EA460A887F3C /* ReduceMotionTests.swift */,
+				07931FE867FFA30A0320CB99 /* ResumeGateTests.swift */,
 				2D5BF5FAFFFD4A723416F2DC /* SessionRebuildInvariantTests.swift */,
 				5813FE0F46A7A66B303ABBA0 /* ShareTests.swift */,
 				4D9305F1F5984423B92AAF49 /* SourceScan.swift */,
@@ -741,6 +744,7 @@
 				7923012A47F591B2198DB9C6 /* PhotoLibraryWritePathTests.swift in Sources */,
 				B7AE3A2FCEF4174BD99795D4 /* PhotoMetadataInjectorTests.swift in Sources */,
 				76351D531FBF2951932E3331 /* ReduceMotionTests.swift in Sources */,
+				A50918F2188E88D80B35102C /* ResumeGateTests.swift in Sources */,
 				5A15CC6A77AD6C4C5DC6E391 /* SessionRebuildInvariantTests.swift in Sources */,
 				F0CF5BC193973823452ACDCB /* ShareTests.swift in Sources */,
 				DD882102CA9648F77652C558 /* SourceScan.swift in Sources */,

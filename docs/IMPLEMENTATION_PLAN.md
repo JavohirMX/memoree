@@ -769,11 +769,54 @@ in the same ADR already said the evidence was one observation — it was two, an
 as enough to close the question. It was not, and closing it is what made this run the one that
 found it.
 
-**Not fixed, and it should be.** It is outside the scope this session agreed, and it is a
-bigger change than it looks: the deadline cannot be scheduled on the session queue, because the
-queue is stuck inside the call it would have to follow. The existing in-queue pattern does not
-transfer, and a fix that reports a timeout while leaving the queue wedged converts a silent
-hang into a loud one — better, and still not recovery.
+**Fixed the same day, and the established pattern did not transfer — which is the
+interesting part.**
+
+`frameWaitTimeout` and `photoWaitTimeout` are armed with `queue.asyncAfter` **on the session
+queue**, which works because the queue is idle while it waits. `startRunning()` is not idle:
+it *occupies* that queue and blocks there, so a deadline scheduled on it cannot run until the
+call returns — which is the case the deadline exists to catch. **The one mechanism this file
+had for bounding a wait was structurally incapable of bounding this one.**
+
+So the deadline is armed on a separate queue and arbitrated by `ResumeGate`, a small
+lock-guarded exactly-once gate, rather than by a queue-confined pending slot. Five seconds,
+matching the frame wait for the same measured reason — the worst idle observation across forty
+swaps on an iPhone 17 is 0.815s, so six times that is a number chosen so being wrong means the
+daemon is genuinely gone. The gate is armed **before** the queue is asked to do anything, so
+the clock runs while `configureSession` does.
+
+**`ResumeGateTests` covers what a device run cannot produce on demand.** A wedged daemon needs
+hardware and twenty minutes and cannot be made to hang deliberately. The gate is pure
+concurrency with no AVFoundation in it, and its one way to be wrong **traps** rather than
+fails — a `CheckedContinuation` resumed twice. So 200 iterations race the work against the
+deadline and assert the settle count is exactly one every time; zero hangs the caller, two
+traps. Also pinned: a success is not undone by a deadline firing afterwards, and an unfinished
+call surfaces the timeout error rather than hanging.
+
+**One test deliberately does not exist.** `arm` guards a double-arm with a `precondition`,
+which traps — correct for a programmer error, and `AGENTS.md` §6 permits a trap only where a
+unit test catches it. **Exercising it would take the whole suite down**, so the test that would
+prove it is not written; what is pinned instead is the property that would trap in production,
+which is that *settling* an already-settled gate is a no-op rather than a second resume.
+
+**What this does not fix, stated plainly.** The session queue is still held by the blocked
+`startRunning()`. The user now gets **"the camera did not start within 5 seconds"** instead of
+an indefinite spinner, and can leave the screen — but the session is not usable until the
+process restarts, because the recovery path (`rebuildSession`) needs the same queue. **This is
+a bounded, reported failure where there was an unbounded silent one.** It is not recovery, and
+`AGENTS.md` §6's "no dead ends" is satisfied by the error and not by the camera working.
+
+**The remaining piece, precisely.** Recovery means the timeout abandons the wedged queue and
+rebuilds on a **fresh** one — a new `DispatchQueue` and a new `AVCaptureSession` swapped in
+together. The hazard is exactly-once resumption: the abandoned closure must not touch shared
+state or resume again once its continuation has been settled, which means it has to capture its
+own session and queue rather than reading `self.session`. That is a change to the concurrency
+core of the most safety-critical file in the project, and it is not something to write on the
+same day as finding the bug.
+
+**And `stopTimeout` is declared at the top of the file and never used** — the same unbounded
+shape on the stop path, noticed once by someone and left unwired. Recorded rather than deleted,
+because the number has a job to do whenever the stop path gets the same treatment.
 
 #### What this does not settle
 

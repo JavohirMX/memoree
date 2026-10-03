@@ -161,7 +161,7 @@ The app works in airplane mode. That is not a limitation — it is the product.
 
 ## Status
 
-Pre-release. 387 tests in 44 suites on the simulator; two of them fail there by design, because a
+Pre-release. 395 tests in 46 suites on the simulator; two of them fail there by design, because a
 skipped device test that reports as passed is worse than a red suite.
 
 One exit criterion is unmet: the twenty-capture reliability gate on hardware, now at **19/20**
