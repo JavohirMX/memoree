@@ -339,6 +339,22 @@ struct PhotoKitLibrary: PhotoLibraryService {
         PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).count > 0
     }
 
+    #if DEBUG
+    func allImageAssetIdentifiers() -> [String] {
+        // **Debug-only.** Enumerating the library is exactly what add-only
+        // authorisation exists to make unnecessary, so this is compiled out of
+        // release — see the protocol's declaration for why the layout audit needs
+        // it and why it must not ship.
+        let options = PHFetchOptions()
+        options.sortDescriptors = [NSSortDescriptor(key: "creationDate", ascending: true)]
+        let result = PHAsset.fetchAssets(with: .image, options: options)
+
+        var identifiers: [String] = []
+        result.enumerateObjects { asset, _, _ in identifiers.append(asset.localIdentifier) }
+        return identifiers
+    }
+    #endif
+
     /// Original bytes for sharing.
     ///
     /// Deliberately not a `CGImage`: `requestImageDataAndOrientation` hands back

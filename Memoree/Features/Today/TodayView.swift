@@ -124,6 +124,16 @@ struct TodayView: View {
                 case "archive": isShowingArchive = true
                 case "settings": isShowingSettings = true
                 case "stats": isShowingStats = true
+                // **The one screen with no flag, until the landscape audit.**
+                //
+                // The camera is a `fullScreenCover` on the shutter, so reaching it
+                // needs a tap — and `simctl` cannot tap. That made the camera the
+                // only screen in the app nobody could *look* at without a human
+                // holding a phone, which is a poor property for the screen the
+                // plan already flags as the one most likely to break sideways:
+                // a full-bleed composite paired with three controls, and a shutter
+                // row with fixed vertical padding in a 430pt-tall viewport.
+                case "camera": isShowingCamera = true
                 default: break
                 }
             #endif

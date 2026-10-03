@@ -37,6 +37,7 @@ struct MemoreeApp: App {
                 }
             }
             .preferredColorScheme(.dark)
+            .modifier(DebugForcedOrientation())
             // Reduce Motion, published once here and read by every
             // `.appAnimation` in the tree.
             //
@@ -68,6 +69,68 @@ struct MemoreeApp: App {
         } catch {
             startupError = error.localizedDescription
         }
+    }
+}
+
+/// Forces the window sideways when `-MemoreeForceLandscape` is passed.
+///
+/// ## Why this exists
+///
+/// **Landscape was declared allowed but has never been *seen*.** Phase 4 enabled
+/// landscape left and right because a landscape photograph could not otherwise be
+/// taken, and four latent layout bugs were fixed by reasoning. **No landscape
+/// screenshot has ever been taken of any screen**, because rotating a simulator
+/// needs the Simulator GUI — which is not installed on this machine, and cannot be
+///: there is no `simctl` subcommand for orientation. `simctl io … screenshot`
+/// captures whatever the device is showing and nothing can change what that is.
+///
+/// A layout that has never been rendered is a layout nobody has checked, and the
+/// project's own record is that reasoning about a layout finds strictly fewer
+/// problems than looking at it: four of the four bugs fixed during the orientation
+/// work were found by holding the phone, and every one of them was invisible in the
+/// code.
+///
+/// ## `-MemoreeForceLandscape`, not a settings row
+///
+/// A user-facing orientation switch would be a feature nobody asked for, in an app
+/// whose premise is that it does one thing. This is a **DEBUG launch argument**,
+/// alongside `-MemoreeSkipOnboarding`, `-MemoreeSeedMoments` and `-MemoreeOpen`,
+/// and it compiles out of release entirely for the same reason they do: inert code
+/// in a shipping binary is still code that ships.
+///
+/// ## Why it asks rather than asserts
+///
+/// `requestGeometryUpdate` is the supported way to rotate programmatically, and it
+/// needs the app to declare that its orientations changed — hence the second
+/// `UIViewController.setNeedsUpdateOfSupportedInterfaceOrientations()`. Forcing
+/// `supportedInterfaceOrientations` to portrait-only and back would be shorter and
+/// is **not** done: the simulator honours the device's real rotation settings, and
+/// a screenshot that came out landscape because the app fought the system would be
+/// evidence about the flag rather than about the layout.
+private struct DebugForcedOrientation: ViewModifier {
+
+    func body(content: Content) -> some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-MemoreeForceLandscape") {
+            content.onAppear {
+                guard let scene = UIApplication.shared.connectedScenes
+                    .compactMap({ $0 as? UIWindowScene })
+                    .first else { return }
+                scene.requestGeometryUpdate(
+                    .iOS(interfaceOrientations: .landscapeRight)
+                )
+                // Declares that this controller's supported orientations changed,
+                // so the request above is honoured. Called on the *instance* —
+                // it is not a class method, and the compiler says so.
+                scene.keyWindow?.rootViewController?
+                    .setNeedsUpdateOfSupportedInterfaceOrientations()
+            }
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }
 

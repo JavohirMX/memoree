@@ -158,6 +158,17 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
         }
     }
 
+    #if DEBUG
+    /// Reports nothing, because a double has no library to enumerate.
+    ///
+    /// The layout audit attaches *real* assets to seeded rows, so there is no
+    /// honest stand-in here: any identifier this invented would resolve to
+    /// `image(for:)` returning a mock rectangle, which is the empty-cell case the
+    /// audit exists to avoid. Returning empty makes `-MemoreeSeedWithPhotos` print
+    /// its "no assets" message, which is the true statement about a double.
+    func allImageAssetIdentifiers() -> [String] { [] }
+    #endif
+
     // The prefetch half of the read path. Recorded rather than simulated:
     // there is nothing to warm, and what a test wants to know is *whether* the
     // grid asked, and for which identifiers.

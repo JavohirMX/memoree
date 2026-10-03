@@ -187,6 +187,35 @@ final class MomentStore {
         try save()
     }
 
+    #if DEBUG
+    /// Points existing moments at real `PHAsset` identifiers, for the layout audit.
+    ///
+    /// **A debug affordance, and the only method here that writes asset
+    /// identifiers without a photograph having been captured.** `record` is the
+    /// single write path in production and this is emphatically not a second one:
+    /// it exists so the archive grid, the Today composite and the moment detail
+    /// screen can be *looked at* with pixels in them, which a grid of empty
+    /// rectangles does not exercise — the `scaledToFit` mat, the front inset sized
+    /// from the short side, and the composite renderer all need a real image to
+    /// reveal anything.
+    ///
+    /// Compiled out of release. On a device this would violate ADR-008 in the most
+    /// literal way available — pointing a user's archive at assets they never
+    /// captured — so `AppEnvironment` gates the call behind a runtime
+    /// simulator check rather than trusting the `#if` alone.
+    func attachPhotographsForSeeding(
+        to moments: [Moment],
+        back: [String],
+        front: [String]
+    ) throws {
+        for (index, moment) in moments.enumerated() {
+            moment.backAssetIdentifier = back[index % back.count]
+            moment.frontAssetIdentifier = front[index % front.count]
+        }
+        try save()
+    }
+    #endif
+
     /// Trims a note and treats an empty or whitespace-only note as absent.
     ///
     /// Shared by `record` and `updateNote` so a note entered at capture time and

@@ -57,6 +57,24 @@ protocol PhotoLibraryService: Sendable {
     /// Whether an asset still exists. Drives tombstoning of orphaned moments.
     func assetExists(_ identifier: String) async -> Bool
 
+    #if DEBUG
+    /// Every image identifier in the library, oldest first.
+    ///
+    /// **Debug-only, and it exists because the layout audit needs real pixels.**
+    /// `-MemoreeSeedMoments` deliberately writes no identifiers so a debug launch
+    /// cannot put photographs into a user's camera roll (ADR-008); the
+    /// consequence is that every seeded cell renders as "no photographs on
+    /// record", which exercises none of the geometry that a real photograph
+    /// reveals. This reads identifiers that are *already* in the library — on a
+    /// simulator, `simctl addmedia` put them there — and attaches them to seeded
+    /// rows.
+    ///
+    /// **Not on the protocol in release.** A production build has no use for an
+    /// enumeration of the user's whole library, and add-only authorisation is
+    /// precisely the permission that makes such a method alarming to read.
+    func allImageAssetIdentifiers() -> [String]
+    #endif
+
     /// Warms Photos' own cache for identifiers about to be displayed.
     ///
     /// Separate from `image(for:targetSize:)` because the two do different jobs

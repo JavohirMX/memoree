@@ -298,6 +298,17 @@ struct AlbumTests {
 
         func saveBTS(_ data: Data) async throws -> String { "bts" }
 
+        #if DEBUG
+        /// Debug-only on the protocol, so a test double has to answer it.
+        ///
+        /// Reporting empty is the honest answer for a double that exists to fail
+        /// album operations: there is no library behind it to enumerate, and any
+        /// identifier it invented would resolve to nothing. `-MemoreeSeedWithPhotos`
+        /// prints its "no assets" message against an empty list, which is the true
+        /// statement — see `InMemoryPhotoLibraryService`'s implementation.
+        func allImageAssetIdentifiers() -> [String] { [] }
+        #endif
+
         func ensureAlbum(named name: String) async throws -> String? {
             throw LibraryError.albumUnavailable
         }

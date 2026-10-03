@@ -71,6 +71,16 @@ final class AppEnvironment {
         self._captureService = captureService
         self.haptics = haptics ?? SystemHapticFeedback()
 
+        // **Every DEBUG affordance is here, and the helpers they call are in a second
+        // block that ends at the `#endif` below `seedSyntheticArchive`.** Both have
+        // to be DEBUG, and getting that wrong is invisible in Debug: the helpers
+        // were briefly outside a block, so Debug built clean and **Release failed**,
+        // because `allImageAssetIdentifiers()` and `attachPhotographsForSeeding`
+        // are themselves DEBUG-only. Every gate this project had ever run was a
+        // Debug gate, which is why it went unnoticed. `AGENTS.md` §12 asks for
+        // zero warnings; it does not say "in the configuration you usually build".
+        //
+        // **Build Release before believing a change compiles.**
         #if DEBUG
         // Development affordance: skip first-run so the Today screen can be
         // inspected without walking the permission prompts. Debug builds only,
@@ -103,11 +113,90 @@ final class AppEnvironment {
             let count = Int(argument.split(separator: "=").last ?? "") ?? 500
             seedSyntheticArchive(count: min(max(count, 0), 2_000))
         }
+
+        // `-MemoreeSeedWithPhotos` attaches **real** photographs to the seeded
+        // rows, so the archive and Today screens can be looked at with pictures
+        // in them rather than as an empty grid.
+        //
+        // **Only ever on a simulator, and the guard is a precondition rather than
+        // a `guard`.** `-MemoreeSeedMoments` deliberately writes no asset
+        // identifiers, because seeding real photographs would write into the
+        // *user's* camera roll and Memoree has add-only authorisation and can
+        // never clean them up (ADR-008). On a simulator that library is synthetic
+        // and disposable, so the objection does not apply — and the layout audit
+        // needs actual pixels in the cells, since a grid of empty rectangles
+        // exercises none of the geometry that matters: the `scaledToFit` mat, the
+        // front inset sized from the short side, and the composite renderer.
+        //
+        // The images are read out of the simulator's own library rather than
+        // bundled, so nothing ships and nothing is downloaded. `simctl addmedia`
+        // puts them there first.
+        if ProcessInfo.processInfo.arguments.contains("-MemoreeSeedWithPhotos") {
+            // **A `precondition` and not a `guard`**, because the alternative on
+            // hardware is the most literal available violation of ADR-008: an
+            // archive pointing at assets the user never captured, written by a flag
+            // someone typed on a phone by mistake. Trap loudly instead.
+            precondition(Self.isRunningOnASimulator,
+                         "-MemoreeSeedWithPhotos writes real assets and must never run on a device")
+            attachSimulatorPhotographsToSeededArchive()
+        }
         #endif
     }
 
     #if DEBUG
+    /// Whether this process is a simulator, by the one test that does not lie.
+    ///
+    /// `#if targetEnvironment(simulator)` is a **compile-time** answer, so it
+    /// cannot guard a runtime flag: a Debug build compiled for the simulator is
+    /// also what gets installed on a device during a device run. Reading
+    /// `TARGET_DEVICE_SIMULATOR` at runtime is the check that means what it says.
+    private static var isRunningOnASimulator: Bool {
+        ProcessInfo.processInfo.environment["SIMULATOR_DEVICE_NAME"] != nil
+            || ProcessInfo.processInfo.environment["SIMULATOR_UDID"] != nil
+    }
+
+    /// Points the newest seeded moments at real photographs from the library.
+    ///
+    /// Alternates portrait and landscape so both geometries are on screen at
+    /// once — which is the whole point of the audit, since the archive cell uses
+    /// `scaledToFit` with a mat and the portrait case is the one that could hide a
+    /// landscape regression.
+    private func attachSimulatorPhotographsToSeededArchive() {
+        let fetched = photoLibrary.allImageAssetIdentifiers()
+        guard !fetched.isEmpty else {
+            print("Memoree seed: -MemoreeSeedWithPhotos found no assets. "
+                  + "Run `xcrun simctl addmedia <udid> …` first.")
+            return
+        }
+
+        // Alternating so a single screenshot shows both. Two of each is enough:
+        // this is for looking at, not for measuring a grid.
+        let back = [fetched[0 % fetched.count], fetched[2 % fetched.count]]
+        let front = [fetched[1 % fetched.count], fetched[3 % fetched.count]]
+
+        let moments = momentStore.allMoments      // already newest-first
+        let targets = Array(moments.prefix(4).filter { $0.backAssetIdentifier == nil })
+        guard !targets.isEmpty else {
+            print("Memoree seed: seeded moments already carry photographs")
+            return
+        }
+        // A managed-object edit does not reach disk on its own, so the store has to
+        // save — and `save()` is private because the store owns when it persists.
+        // The whole operation therefore lives in the store, and this reads like the
+        // one call it is rather than an edit here plus a hopeful save elsewhere.
+        try? momentStore.attachPhotographsForSeeding(to: targets, back: back, front: front)
+        print("Memoree seed: attached photographs to \(targets.count) seeded moment(s)")
+    }
+
     /// Inserts `count` moments on consecutive past days, with no photographs.
+    ///
+    /// **This `#if` wraps the seeder, `isRunningOnASimulator` and
+    /// `attachSimulatorPhotographsToSeededArchive` together**, so a Release build
+    /// contains none of it and `allImageAssetIdentifiers()` — which is itself
+    /// DEBUG-only on the protocol — is never named outside a Debug build. That is
+    /// not tidiness: the first version nested a *second* `#if` around the call
+    /// site, and the outer block's `#endif` was left matching the inner one, so
+    /// Release compiled against methods that did not exist in it.
     ///
     /// `-1` days is the *newest* day, so the rows land in the past and cannot
     /// collide with the one-per-day invariant for today. `DayRecord`s are not

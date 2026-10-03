@@ -1639,6 +1639,89 @@ the rollover.
 written a test with an expiry date.** Any such test is green until the day it was authored. Two in
 ~350, found by waiting, not by reading.
 
+### Progress as of 2026-10-03 — landscape, finally looked at
+
+**Fourteen screenshots, five screens, both orientations, with real photographs in the
+grid.** The open item that read *"the layouts of Today, the camera, Stats, Settings and
+the archive have not been looked at sideways"* is now closed, and closing it took a
+DEBUG affordance rather than a device.
+
+**Why it had never been done, and why it was not a missing afternoon.** Rotating a
+simulator needs the Simulator GUI, which is not installed on this machine — and
+**there is no `simctl` subcommand for orientation.** `simctl io … screenshot` captures
+whatever the device is showing, and nothing available can change what that is. So the
+app asks the window to rotate itself: `-MemoreeForceLandscape` calls
+`requestGeometryUpdate`, the supported way, DEBUG-only like the other three flags.
+
+**And the archive needed real pixels before any of it meant anything.**
+`-MemoreeSeedMoments` writes no asset identifiers so a debug launch cannot put
+photographs into a user's camera roll (ADR-008) — and the consequence is that every
+cell is an empty rectangle, which exercises none of the geometry that matters: the
+`scaledToFit` mat, the front inset sized from the short side, the composite renderer.
+`-MemoreeSeedWithPhotos` attaches identifiers **already in the simulator's library**.
+
+**One guard is a runtime check rather than a `#if`, and that is the point.**
+`targetEnvironment(simulator)` is a *compile-time* answer, so it cannot gate a runtime
+flag: the same Debug build is what a device run installs. The check reads
+`SIMULATOR_DEVICE_NAME` at runtime, behind a `precondition` on the simulator and a
+hard no-op on hardware — because pointing a user's archive at assets they never
+captured is the most literal possible violation of ADR-008.
+
+#### What the screenshots show: all five screens are sound
+
+| Screen | Portrait | Landscape | Verdict |
+| --- | --- | --- | --- |
+| **Archive** | 3 across, matted | 2 across, matted | **Landscape photos keep all of their width** with two thin bars. The `scaledToFit` fix holds. |
+| **Today** | Shutter visible, centred | Scrolls; shutter visible | The size-class fix holds — nothing falls off the bottom. |
+| **Stats** | Full column | Full column, scrolls | Scrolling as designed; the `Recent` list is reachable. |
+| **Settings** | Full column | Full column, scrolls | Window pickers and both sliders intact at 2622pt wide. |
+| **Onboarding** | Full | Full, centred | First run is the one screen that had never been seen in either orientation. |
+
+**Four latent layout bugs were fixed by reasoning before any of this existed**, and
+none of them reappeared. That is a good result for the fixes and **no evidence at all
+that reasoning was sufficient** — it is four bugs that were found, not four that were
+the total.
+
+#### And building Release found a class of defect every gate here had missed
+
+The audit's own flags **did not compile in Release**, and nothing noticed for an hour
+because **every gate this project has ever run was a Debug gate** — the test suite, the
+device runs, the lint. `allImageAssetIdentifiers()` and
+`attachPhotographsForSeeding` are DEBUG-only, and the two helpers calling them were
+sitting outside the DEBUG block. Debug built clean. Release failed.
+
+**`AGENTS.md` §12 asks for zero warnings; it does not say "in the configuration you
+usually build."** A configuration nobody builds is a configuration nobody checks. The
+fix for that is a gate rather than a promise, and the honest statement today is that
+**Release compilation is verified by hand and not by anything automatic** — which is
+exactly how the Release-only `try` warning in `InMemoryPhotoLibraryService` survived
+earlier the same day.
+
+That is now **three times in one day** that a claim of completeness turned out to be
+scoped to whatever happened to be checked: a test named "every capture error" missing
+one, "zero warnings" measured only in Debug, and "landscape has not been looked at"
+turning out to need an affordance that did not exist. Worth naming as a pattern rather
+than as three coincidences. `Scripts/layout-matrix.sh` should build both
+configurations; until it does, the gap is recorded here.
+
+#### Two things the audit could not do, recorded rather than hidden
+
+**The camera screen's *review* state was not captured.** The review screen needs a
+capture, and the simulator has no camera — so its landscape layout remains the one
+place this document singled out as most at risk ("a full-bleed composite paired with
+three controls, and a shutter row's fixed vertical padding in a 430pt-tall viewport")
+and is still unverified. **The live capture screen *was* verified** in both
+orientations, with its Cancel, shutter and zoom row intact.
+
+**`simctl` cannot tap, so a permission alert blocks every screenshot behind it.** The
+first four attempts were all photographs of an alert. `xcrun simctl privacy` fixes it
+*if granted before the first launch* — and granting `photos` alongside `photos-add`
+makes Photos escalate to a full-access prompt that then covers the app for the rest of
+the session. That cost about twenty minutes and is now a comment at the top of the
+script, because the next person will otherwise rediscover it exactly as I did.
+
+`Scripts/layout-matrix.sh` runs the whole matrix.
+
 ### The BTS toggle: cut, and why that is a decision rather than an omission
 
 The plan offered it "only if Phase 7 is built". Phase 7 turned out to be Stats, so the
