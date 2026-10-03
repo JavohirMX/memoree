@@ -972,117 +972,7 @@ UTC+12 in August, not +13 — NZDT does not start until 27 September — so 11:3
 
 ---
 
-## Phase 7 — Behind the Scenes · **building it**
-
-> **Reordered 2026-10-01, and this was the phase most likely to be deleted rather than built.**
-> The rest of the roadmap moved ahead of it — Stats, then polish, then share — and the reason is
-> in ADR-023: the premise narrowed from *forced spontaneity* to *a daily photo journal with a
-> reminder*. BTS is the most BeReal-residual feature in this document, and it is the only one
-> that adds a second media type, a second permission, a new playback surface and a new failure
-> mode (a video that will not play) to a product whose entire claim is one unretouched
-> photograph a day.
->
-> "Prefer removing code to adding it" (`AGENTS.md` §13) applies to phases, not only to lines.
-> The decision was deferred to the end of polish for exactly that reason.
->
-> **Decided 2026-10-03: build it.** The user chose to keep it, so the case for cutting it —
-> which this header still argued — is recorded here and not acted on. `AppSettings` has carried
-> `btsEnabled`/`btsDuration`/`saveBTS` defaulted **off** since Phase 2, specifically so no toggle
-> in the app described a feature that did not exist; that reasoning stands, and the fields stop
-> being inert with this phase.
->
-> **Sequenced after Phase 4's gate on purpose.** BTS attaches an `AVCaptureMovieFileOutput` to
-> the same `AVCaptureSession` whose lifecycle the twenty-moment gate is stress-testing, and the
-> daemon death behind that gate is still uninvestigated. Perturbing the highest-risk code in the
-> project in order to add a feature to it, before the thing being perturbed is known-good,
-> inverts the order this document has argued for since Phase 0.
-
-| Task | Notes |
-| --- | --- |
-| `BTSRecorder` | `AVCaptureMovieFileOutput` → temp file → trim to last N seconds |
-| Primary-camera-only | Matches BeReal semantics |
-| Mic permission | Lazy, only on first enable; silent clip on denial |
-| Zero-length guard | Clamp the trim range at zero for very fast captures |
-| Playback | Long-press to preview; mute toggle |
-| Save to Photos | `settings.saveBTS`, default on |
-| Settings toggle | Per-app preference, not per-moment |
-
-**Exit:** a moment captured with BTS plays back correctly, including after an app restart.
-**Estimate:** 1.5 days.
-
-### Progress as of 2026-10-03 — the arithmetic, the seam, and the double
-
-The foundations of three tasks are in. **No capture session is touched yet**, for the reason in
-the note above.
-
-- **`BTSTrim`** — the whole decision of *which part of a continuous recording survives*, as a
-  pure function over `TimeInterval` with no `CMTime` in it. `AVAssetExportSession` speaks in
-  `CMTimeRange`, but every rule that can go wrong is arithmetic on seconds, and a plan in
-  seconds is testable on a simulator with no asset, no export session and no camera. The same
-  split `CaptureFormatSelector` makes between its arithmetic and its one-line wrapper.
-- **`BTSRecorder`** — a protocol, on the same terms as `CapturePhotoService`: microphone
-  authorisation is a *supported state* rather than an error, no `BTSRecorderError` case is
-  retryable (the opposite of `CaptureError.isRetryable`, and the difference is the point — the
-  user has already taken the photograph), and trimming returns `nil` rather than throwing when
-  there is nothing to keep.
-- **`InMemoryBTSRecorder`** — the test double, so the path is testable off-device. It records
-  what it was *asked* to do, which is how the assertions are written: a test checks the clip was
-  trimmed to the configured duration, not that nothing threw.
-
-**The guard is a floor as well as a clamp, and the floor was the interesting half.** "Clamp the
-trim range at zero" prevents an *inverted* range, which `AVAssetExportSession` rejects with no
-error a caller can act on. It cannot prevent a range that is merely tiny: open the camera, press
-twice inside half a second, and the recording is around 0.4s — exportable, storable, and a
-frozen frame behind a play button. Below `minimumRecordedDuration` there is no clip, and the
-moment is photographs only.
-
-**The write-up caught a bug in its own first draft, which is the reason to write them.** The
-first `validatedClipDuration` guarded on `isFinite`, which handles `NaN` at the cost of two
-wrong answers: an infinite setting became the *default* rather than the end of the range it
-names. `NaN` fails every comparison, so `min`/`max` pass it straight through — and that is the
-one input the clamp exists to catch. Guarding on `isNaN` instead makes both infinities clamp
-correctly through the same arithmetic that handles every other value, with no branch of its own.
-
-**Sixteen tests, table-driven.** The ones that earn their keep are the boundaries: the floor
-asserted from *both* sides (0.5s yields a clip, 0.4999s does not), a recording one millisecond
-either side of an exact length, and a floating-point sweep asserting the *relationship* —
-`duration <= recorded`, `end >= start` — rather than a literal, because a literal asserts the
-representation error instead of the behaviour. Two of them failed against the implementation as
-first written.
-
-**Not done, deliberately:** the `AVCaptureMovieFileOutput` attachment, the microphone prompt,
-playback, and the Settings toggle. The toggle especially — surfacing it before the recorder
-works is precisely the dead control `Models.swift` warns against, so it arrives with the
-feature or not at all.
-
----
-
-## Phase 9 (was 8) — Share and export · **last of the three**
-
-> **Reordered last.** Sharing is genuinely useful and genuinely unlike BeReal — the company
-> cannot get your photos out, and this is the answer to that. It is also the least load-bearing
-> thing left, because nothing in the daily loop depends on it and no defect in it costs a
-> streak.
->
-> The onboarding warning in this table is **already done** — it ships in the Settings screen,
-> where "If you delete Memoree" states the asymmetry outright.
-
-| Task | Notes |
-| --- | --- |
-| Share sheet | Both originals as two files |
-| Composite renderer | Optional combined image, rendered on demand, **never** written to Photos |
-| `ShareLink` | Straight from Photos via `PHAsset` image requests — never from app storage |
-| `MomentExporter` | All metadata → single Codable JSON |
-| Export via share sheet | Filename `memoree-export-<date>.json` |
-| Import/restore | Optional stretch: read an export back |
-| ~~Onboarding warning~~ | **Done** — Settings, "If you delete Memoree" |
-
-**Exit:** sharing produces two clean, unwatermarked originals and a correct JSON export.
-**Estimate:** 1 day.
-
----
-
-## Phase 7 (was 9) — Stats ✅
+## Phase 7 — Stats ✅
 
 > **Reordered ahead of share and BTS, and it is cheaper than it looks:**
 > `StreakCalculator.summary` already computes every number this phase displays —
@@ -1106,7 +996,7 @@ reorder intact.
 | Busiest hour | Histogram of `capturedAt` — already computed, never displayed |
 | Streak history | Current and past streaks, in place of BeReal's Memories calendar |
 | Empty states | Zero moments, one moment |
-| BTS count | **Omitted.** BTS has no recorder behind it (see Phase 8), so the row would always read "0". |
+| BTS count | **Omitted.** BTS has no recorder behind it (see Phase 10), so the row would always read "0". |
 
 **Exit:** numbers match the archive by hand-check on three days of data.
 **Estimate:** 1 day.
@@ -1146,7 +1036,7 @@ being told they scored zero.
 
 ---
 
-## Phase 8 (was 10) — Polish ✅
+## Phase 8 — Polish ✅
 
 > **The Settings screen already exists** — window picker, reminders status, the reinstall
 > warning, the camera-reset hook, pending-count diagnostics — shipped with Phase 6 because the
@@ -1488,23 +1378,163 @@ written a test with an expiry date.** Any such test is green until the day it wa
 
 ### The BTS toggle: cut, and why that is a decision rather than an omission
 
-The plan offered it "only if Phase 7 is built". Phase 7 is built. **It still should not be
-surfaced**, and the reason is already written into `Models.swift`:
+The plan offered it "only if Phase 7 is built". Phase 7 turned out to be Stats, so the
+condition never held. **It still should not be surfaced**, and the reason is already written
+into `Models.swift`:
 
 > Both defaulted to on and true, which made the settings row describe a feature the app does not
 > have until Phase 7 — *a toggle that says "save your Behind the Scenes clip" and then silently
 > does nothing.*
 
-**There is no `BTSRecorder`.** `btsEnabled` and `saveBTS` are model fields with nothing on the
-other end; `saveBTS` on the library writes bytes nobody produces. The comment's condition was
-written for the reverse case — it assumed Phase 7 *was* BTS. Phase 7 turned out to be Stats and
-BTS moved later, so the condition no longer holds.
+**There was no `BTSRecorder`.** `btsEnabled` and `saveBTS` were model fields with nothing on
+the other end; `saveBTS` on the library wrote bytes nobody produced. Surfacing the toggle
+would have been exactly the dead control the comment describes, and it would have been the
+app's first dead control. **The flag stayed in the model, where it was inert and cost
+nothing, and the row waited for a recorder that exists.**
 
-Surfacing the toggle now would be exactly the dead control the comment describes, and it would be
-the app's first dead control. **The flag stays in the model, where it is inert and costs nothing,
-and the row waits for a recorder that exists.**
+**Superseded 2026-10-03, and now inverted.** BTS was re-adopted as Phase 10, and a
+`BTSRecorder` protocol, the trim arithmetic and a test double exist — but there is still no
+recording implementation, no session wiring and no playback. So the reasoning above holds
+*exactly as written*: the row still waits, and now it waits on Phase 10 rather than on a
+phase number that was reassigned underneath it. The row ships with the feature or not at
+all.
 
 ---
+
+---
+
+## Phase 9 — Share and export ✅
+
+> **Reordered last of the three cheap phases, 2026-10-01.** Sharing is genuinely useful and
+> genuinely unlike BeReal — the company cannot get your photos out, and this is the answer to
+> that. It is also the least load-bearing thing left, because nothing in the daily loop depends
+> on it and no defect in it costs a streak.
+>
+> It is **not** the last phase any more: BTS was re-adopted as Phase 10 on 2026-10-03, and
+> release readiness is Phase 11.
+>
+> The onboarding warning in this table is **already done** — it ships in the Settings screen,
+> where "If you delete Memoree" states the asymmetry outright.
+
+**Status: complete.** `MomentExporter`, `SharedImageFile`/`SharedArchiveFile` and
+`MomentCompositeRenderer` all ship, wired to two live `ShareLink` surfaces — the moment
+detail view (both photographs, and the combined picture) and Settings (the JSON archive).
+32 tests. The optional import/restore stretch is not done, and nothing depends on it.
+
+**One defect this phase shipped and its own tests did not catch.** `SharedFile` hardcoded
+`exportedContentType: .image`, so the **JSON** export left the app advertised to the share
+sheet and to every receiving app as `public.image` while carrying a `.json` filename. The
+tests asserted the filename suffix and never looked at the declaration. Fixed 2026-10-03 by
+splitting the type — `Transferable.transferRepresentation` is `static`, so a declared
+content type is a property of the *type*, and one type can only declare one. A `contentType`
+property would not have helped: it would have been unreadable from the one place it has to
+be used. See `SharedArchiveFile`'s documentation.
+
+| Task | Notes |
+| --- | --- |
+| Share sheet | Both originals as two files |
+| Composite renderer | Optional combined image, rendered on demand, **never** written to Photos |
+| `ShareLink` | Straight from Photos via `PHAsset` image requests — never from app storage |
+| `MomentExporter` | All metadata → single Codable JSON |
+| Export via share sheet | Filename `memoree-export-<date>.json` |
+| Import/restore | Optional stretch: read an export back |
+| ~~Onboarding warning~~ | **Done** — Settings, "If you delete Memoree" |
+
+**Exit:** sharing produces two clean, unwatermarked originals and a correct JSON export.
+**Estimate:** 1 day.
+
+---
+
+## Phase 10 — Behind the Scenes · **building it**
+
+> **Numbering, and why this was Phase 7 until 2026-10-03.** The document carried two
+> sections numbered 7 — this one and Stats — because BTS was renumbered to 7 when it was
+> cut-and-reconsidered, and Stats was never renumbered back. The sequence diagram at the
+> bottom already had BTS at 10, which is where it belongs: 7, 8 and 9 were executed in
+> that order and are done. **The duplicate was only ever a heading**, so nothing that
+> reads this document by number was misled — but a document whose own contents page
+> disagrees with its body is one nobody can navigate.
+>
+> **Reordered 2026-10-01, and this was the phase most likely to be deleted rather than built.**
+> The rest of the roadmap moved ahead of it — Stats, then polish, then share — and the reason is
+> in ADR-023: the premise narrowed from *forced spontaneity* to *a daily photo journal with a
+> reminder*. BTS is the most BeReal-residual feature in this document, and it is the only one
+> that adds a second media type, a second permission, a new playback surface and a new failure
+> mode (a video that will not play) to a product whose entire claim is one unretouched
+> photograph a day.
+>
+> "Prefer removing code to adding it" (`AGENTS.md` §13) applies to phases, not only to lines.
+> The decision was deferred to the end of polish for exactly that reason.
+>
+> **Decided 2026-10-03: build it.** The user chose to keep it, so the case for cutting it —
+> which this header still argued — is recorded here and not acted on. `AppSettings` has carried
+> `btsEnabled`/`btsDuration`/`saveBTS` defaulted **off** since Phase 2, specifically so no toggle
+> in the app described a feature that did not exist; that reasoning stands, and the fields stop
+> being inert with this phase.
+>
+> **Sequenced after Phase 4's gate on purpose.** BTS attaches an `AVCaptureMovieFileOutput` to
+> the same `AVCaptureSession` whose lifecycle the twenty-moment gate is stress-testing, and the
+> daemon death behind that gate is still uninvestigated. Perturbing the highest-risk code in the
+> project in order to add a feature to it, before the thing being perturbed is known-good,
+> inverts the order this document has argued for since Phase 0.
+
+| Task | Notes |
+| --- | --- |
+| `BTSRecorder` | `AVCaptureMovieFileOutput` → temp file → trim to last N seconds |
+| Primary-camera-only | Matches BeReal semantics |
+| Mic permission | Lazy, only on first enable; silent clip on denial |
+| Zero-length guard | Clamp the trim range at zero for very fast captures |
+| Playback | Long-press to preview; mute toggle |
+| Save to Photos | `settings.saveBTS`, default on |
+| Settings toggle | Per-app preference, not per-moment |
+
+**Exit:** a moment captured with BTS plays back correctly, including after an app restart.
+**Estimate:** 1.5 days.
+
+### Progress as of 2026-10-03 — the arithmetic, the seam, and the double
+
+The foundations of three tasks are in. **No capture session is touched yet**, for the reason in
+the note above.
+
+- **`BTSTrim`** — the whole decision of *which part of a continuous recording survives*, as a
+  pure function over `TimeInterval` with no `CMTime` in it. `AVAssetExportSession` speaks in
+  `CMTimeRange`, but every rule that can go wrong is arithmetic on seconds, and a plan in
+  seconds is testable on a simulator with no asset, no export session and no camera. The same
+  split `CaptureFormatSelector` makes between its arithmetic and its one-line wrapper.
+- **`BTSRecorder`** — a protocol, on the same terms as `CapturePhotoService`: microphone
+  authorisation is a *supported state* rather than an error, no `BTSRecorderError` case is
+  retryable (the opposite of `CaptureError.isRetryable`, and the difference is the point — the
+  user has already taken the photograph), and trimming returns `nil` rather than throwing when
+  there is nothing to keep.
+- **`InMemoryBTSRecorder`** — the test double, so the path is testable off-device. It records
+  what it was *asked* to do, which is how the assertions are written: a test checks the clip was
+  trimmed to the configured duration, not that nothing threw.
+
+**The guard is a floor as well as a clamp, and the floor was the interesting half.** "Clamp the
+trim range at zero" prevents an *inverted* range, which `AVAssetExportSession` rejects with no
+error a caller can act on. It cannot prevent a range that is merely tiny: open the camera, press
+twice inside half a second, and the recording is around 0.4s — exportable, storable, and a
+frozen frame behind a play button. Below `minimumRecordedDuration` there is no clip, and the
+moment is photographs only.
+
+**The write-up caught a bug in its own first draft, which is the reason to write them.** The
+first `validatedClipDuration` guarded on `isFinite`, which handles `NaN` at the cost of two
+wrong answers: an infinite setting became the *default* rather than the end of the range it
+names. `NaN` fails every comparison, so `min`/`max` pass it straight through — and that is the
+one input the clamp exists to catch. Guarding on `isNaN` instead makes both infinities clamp
+correctly through the same arithmetic that handles every other value, with no branch of its own.
+
+**Sixteen tests, table-driven.** The ones that earn their keep are the boundaries: the floor
+asserted from *both* sides (0.5s yields a clip, 0.4999s does not), a recording one millisecond
+either side of an exact length, and a floating-point sweep asserting the *relationship* —
+`duration <= recorded`, `end >= start` — rather than a literal, because a literal asserts the
+representation error instead of the behaviour. Two of them failed against the implementation as
+first written.
+
+**Not done, deliberately:** the `AVCaptureMovieFileOutput` attachment, the microphone prompt,
+playback, and the Settings toggle. The toggle especially — surfacing it before the recorder
+works is precisely the dead control `Models.swift` warns against, so it arrives with the
+feature or not at all.
 
 ---
 
@@ -1541,7 +1571,7 @@ Phase 0 ──► Phase 1 ──► Phase 2 ──┐
                      photos         │         │         │     │
                                    │         └── Settings ───┘
                      Phase 4 ──────┘      (done)    │
-                     capture                   BTS · last, possibly cut ──► Phase 10
+                     capture                   BTS · now building ──► Phase 11
                                                                              release
 ```
 

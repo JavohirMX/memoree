@@ -247,7 +247,7 @@ struct SettingsView: View {
 
             if let export = preparedExport {
                 ShareLink(
-                    item: SharedFile.export(
+                    item: SharedArchiveFile.export(
                         day: exportedOn.formatted(.iso8601.year().month().day()),
                         data: export
                     ),
@@ -289,7 +289,7 @@ struct SettingsView: View {
 
     /// The encoded export, prepared on appear and held in memory.
     ///
-    /// Never written to disk here — `SharedFile` does that when the share sheet
+    /// Never written to disk here — `SharedArchiveFile` does that when the share sheet
     /// asks, in a temporary directory (AGENTS.md §2.4).
     @State private var preparedExport: Data?
     @State private var exportFailure: String?

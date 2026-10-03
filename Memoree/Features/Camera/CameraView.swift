@@ -385,7 +385,7 @@ struct CameraView: View {
                 .overlay {
                     Circle()
                         .fill(Theme.Color.textPrimary)
-                        .padding(6)
+                        .padding(Theme.Size.shutterInnerInset)
                 }
         }
         // **The shutter dips on press** — see `PressDipStyle` for why this is the

@@ -250,14 +250,39 @@ struct DesignSystemInvariantTests {
                     offences.append("\(file.lastPathComponent):\(line.number) icon or font size")
                 }
                 // Dimension arguments to the layout modifiers.
-                let dimension = #"(width|height|minHeight|maxHeight|size):\s*(?:Theme\.\w+\.\w+)?\s*([0-9]+)"#
-                guard let range = code.range(
-                    of: dimension,
-                    options: .regularExpression
-                ) else { continue }
-                let value = code[range].components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces) ?? ""
-                // A token reference is exactly what we want.
-                guard value.allSatisfy(\.isNumber), Int(value) ?? 0 > 1 else { continue }
+                //
+                // **`padding` is here now, and its absence was a gap rather than
+                // an exemption.** The first version matched only
+                // `width|height|minHeight|maxHeight|size:`, so a `.padding(6)`
+                // in the shutter's press-fill overlay passed — while the token
+                // written for exactly that inset, `Theme.Size.shutterInnerInset`,
+                // sat unused in `Theme.swift`. A scan which cannot see a whole
+                // category of the rule is not a scan of the rule; it is a scan of
+                // the cases its author happened to think of, and it reads exactly
+                // like one that is complete.
+                let dimension = #"(?:width|height|minHeight|maxHeight|size):\s*(?:Theme\.\w+\.\w+)?\s*([0-9]+)"#
+                        + #"|\.padding\(\s*([0-9]+)"#
+                guard let regex = try? NSRegularExpression(pattern: dimension),
+                      let match = regex.firstMatch(
+                          in: code,
+                          range: NSRange(code.startIndex..., in: code)
+                      ) else { continue }
+                // Group 1 is the `size:` form's number, group 2 is the
+                // `.padding(` form's. Whichever matched, the other is absent.
+                let number = (1...2).lazy
+                    .compactMap { group -> String? in
+                        guard match.range(at: group).location != NSNotFound else {
+                            return nil
+                        }
+                        let range = Range(match.range(at: group), in: code)
+                        return range.map { String(code[$0]) }
+                    }
+                    .first
+                // A token reference is exactly what we want, and so is `0` and `1`:
+                // a `VStack(spacing: 0)` and a 1pt divider are literals by nature,
+                // which is the exemption `AGENTS.md` §12's author intended — a scan
+                // with no exceptions is a scan that gets switched off.
+                guard let number, let value = Int(number), value > 1 else { continue }
                 offences.append(
                     "\(file.lastPathComponent):\(line.number) hardcoded dimension \(value)"
                 )
@@ -419,8 +444,16 @@ struct DesignSystemInvariantTests {
                 ) ?? 0
                 guard value > 1 else { continue }
 
+                // **`Bool(false)`, not `false`.** A scan reports *every*
+                // offending line with its number rather than stopping at the
+                // first, which means the expectation is deliberately
+                // unsatisfiable — and `#expect(false)` warns that it will
+                // always fail. `Bool(false)` is the same value with the
+                // compiler's constant folding suppressed, so the scan still
+                // reports all of them and the build is warning-free
+                // (`AGENTS.md` §12).
                 #expect(
-                    false,
+                    Bool(false),
                     """
                     \(file.lastPathComponent):\(line.number) pins a height to \(value): \
                     \(line.code.trimmingCharacters(in: .whitespaces))

@@ -52,8 +52,23 @@ Support/      → imports nothing internal
   that cannot be faked are services that cannot be tested.
 - **`Features/` contains SwiftUI views and view models only.** No AVFoundation, no PhotoKit.
 
-Targeted exceptions to "no SwiftUI in Services" — `PhotoKitLibrary` imports `Photos`,
-`SequentialCaptureService` imports `AVFoundation`. Neither may import `SwiftUI`.
+Targeted exceptions to "no SwiftUI in Services" — six files import a capture or Photos
+framework, and **none of them imports SwiftUI**:
+
+| File | Imports | Why |
+| --- | --- | --- |
+| `Services/PhotoLibrary/PhotoKitLibrary.swift` | `Photos` | Writes the two assets |
+| `Services/PhotoLibrary/ArchiveThumbnailCache.swift` | `Photos` | Reads assets for the archive grid |
+| `Services/Capture/SequentialCaptureService.swift` | `AVFoundation` | Owns the capture sequence |
+| `Services/Capture/CaptureSessionController.swift` | `AVFoundation` | Owns the session |
+| `Services/Capture/CapturePhotoService.swift` | `AVFoundation` | `CMTime` and `AVMediaType` in signatures |
+| `Services/Capture/CaptureFormatSelector.swift` | `AVFoundation` | `AVCaptureDevice.Format` in the pure selector |
+
+The `InMemory*` doubles in `Services/` also import `AVFoundation` to mirror the types
+their protocols name. **This list was two entries long for most of the project's life** —
+it named only the first two files — so the rule read as broken when it was merely stale.
+A named-exception list that undercounts is worse than none: it sends the next reader to
+delete a legitimate import.
 
 ## 4. Naming
 

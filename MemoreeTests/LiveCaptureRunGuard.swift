@@ -27,8 +27,8 @@ struct LiveCaptureRunGuardTests {
         // message used to interpolate a bare `6`; adding the lens survey made that
         // wrong on the same day. Replacing it with `expectedCount` on the suite
         // just moved the problem — the first value written there was `7`, and
-        // there are nine `@Test`s in that file, because two of them are easy to
-        // forget when counting by eye.
+        // counting by eye is how the comment below went stale too. It read "nine"
+        // for several months while the file held ten.
         //
         // So the count is **measured from the source** instead. This runs
         // everywhere, including on a simulator where every live test skips and

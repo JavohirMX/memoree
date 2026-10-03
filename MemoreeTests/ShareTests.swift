@@ -435,7 +435,7 @@ struct MomentSharePayloadTests {
         // is belt-and-braces — but a traversal in a share filename would write
         // outside the directory the user was told about, and the check costs
         // three characters.
-        let hostile = SharedFile(filename: "../../escape.jpg", data: backData)
+        let hostile = SharedImageFile(filename: "../../escape.jpg", data: backData)
         let url = try hostile.writeToTemporaryFile()
 
         #expect(url.deletingLastPathComponent().path.hasSuffix(".json")
@@ -444,5 +444,52 @@ struct MomentSharePayloadTests {
         #expect(url.lastPathComponent != "escape.jpg")
 
         try? FileManager.default.removeItem(at: url.deletingLastPathComponent())
+    }
+
+    // MARK: - Declared content type
+
+    /// What the share sheet and the receiving app are told the file **is**.
+    ///
+    /// `Transferable.transferRepresentation` is `static`, so the declared type
+    /// cannot be read off the value — it is a property of the *type*, and it has
+    /// to be asserted per type rather than inferred from a filename. This test
+    /// exists because the JSON export was declared `public.image` while carrying
+    /// a `.json` name, and every existing test passed: one asserted the filename
+    /// suffix, and none looked at the declaration.
+    @Test("Each shared file declares the type it actually is")
+    func declaredContentTypeMatchesContents() throws {
+        // One case per `Transferable` in `SharedFile.swift`. Adding a kind means
+        // adding a case here, which is the point — a new file type with no
+        // assertion about its declaration is how the original defect shipped.
+        let images: [SharedImageFile] = [
+            SharedImageFile.photograph(day: "2026-10-01", half: "back", data: backData),
+            SharedImageFile.composite(day: "2026-10-01", data: backData),
+        ]
+        let archives: [SharedArchiveFile] = [
+            SharedArchiveFile.export(day: "2026-10-01", data: Data("{}".utf8)),
+        ]
+
+        for file in images {
+            #expect(file.filename.hasSuffix(".jpg"),
+                    "\(file.filename) is named as a JPEG")
+        }
+        #expect(archives.allSatisfy { $0.filename.hasSuffix(".json") },
+                "the archive export is named as JSON")
+
+        // The declarations themselves, read back from the transfer
+        // representations rather than from the source text — a test that
+        // grepped the file would pass on a comment.
+        let imageType = SharedImageFile.declaredContentType
+        let archiveType = SharedArchiveFile.declaredContentType
+
+        #expect(imageType.conforms(to: .image))
+        #expect(archiveType == .json,
+                "the archive export must not be advertised as \(imageType.identifier)")
+
+        // The round trip that actually matters: a file's declared type has to be
+        // consistent with its own name, or a receiving app is entitled to reject it.
+        #expect(!archiveType.conforms(to: .image),
+                "a .json file declared as an image is the defect this pins")
+        #expect(archiveType.conforms(to: .json))
     }
 }
