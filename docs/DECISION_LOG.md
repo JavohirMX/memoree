@@ -1262,9 +1262,28 @@ replacement returned false, and because nothing ever replaced the object every l
 
 That defect predates this ADR and was reachable before it through a failed swap. What
 changed is that the capture path now rebuilds too, so it is reachable more often — and the
-second rebuild is where it bites. **Both outputs are now replaced.** The rebuild took
-0.4–1.0s in every observed case, including against a dying daemon, so the duration concern
-above is retired rather than merely unproven.
+second rebuild is where it bites. **Both outputs are now replaced.**
+
+**And the duration concern above was real after all. I retired it too early.** Two
+runs in which the rebuild returned quickly were enough for me to write that the risk
+was "retired rather than merely unproven", and a later run contradicted that within
+the hour: the gate went silent for **18 minutes** on moment 13 and never printed its
+summary. The hang is not in `rebuildSession` — it is in **`startSession`**, which calls
+`session.startRunning()` on the session queue inside a continuation with **no
+deadline**, and `startRunning()` blocks that queue against a wedged daemon. Every
+other capture operation then queues behind it forever.
+
+**So the risk was never about the rebuild being slow. It was about there being no
+deadline anywhere on the path into a running session at all** — which is this
+project's own established rule, written 50 lines above the defect in the same file:
+`frameWaitTimeout` and `photoWaitTimeout` both exist because *"an un-resumed
+continuation hangs the app rather than failing it."* `startSession` has neither, and
+the comment explaining why the others are scheduled **inside** the queue does not
+apply here — the queue is stuck inside the call the deadline would have to follow.
+
+Not yet fixed. It is recorded here as the reversal of my own claim rather than left
+to be rediscovered, because "retired" is exactly the kind of word that stops the next
+person looking.
 
 ---
 

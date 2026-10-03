@@ -735,6 +735,46 @@ recovery worked must not read like a run where twenty moments succeeded first ti
 reader can now tell them apart, and the reversal trigger in ADR-028 says what would make the
 whole mechanism removable: three consecutive cold runs at 20/20 with no retry and no rebuild.
 
+#### A run that hung for eighteen minutes, on a defect I had written off
+
+The next run did not finish. It printed **twelve moments and then went silent** — the last log
+line at `14:50:34`, the kill at `15:09:05`, no summary line. Moment 13 never returned.
+
+The retry did what ADR-028 says it should, first:
+
+```
+CAPTURE moment  9/20 dead subsystem (photoDataUnavailable(.front)) — retrying once, as a person would
+CAPTURE moment  9/20 FAILED: configurationFailed("Cannot Record")
+```
+
+It retried, and the retry failed too, and the moment was recorded as a failure. **That part is
+correct.** Moment 10 also failed, moments 11 and 12 succeeded, and then moment 13 hung.
+
+**The hang is in `startSession`, and it is not the rebuild.** `session.startRunning()` is called
+on the session queue inside a `withCheckedThrowingContinuation` with **no deadline**. When the
+capture daemon is wedged rather than merely slow, `startRunning()` blocks that queue, the
+continuation is never resumed, the `await` never returns, **and every other capture operation
+queues behind the same serial queue** — so the camera screen is not merely stuck, it is
+permanently unresponsive with no error and no way out.
+
+**This project already wrote the rule that forbids it, fifty lines above the defect, in the same
+file.** `frameWaitTimeout` and `photoWaitTimeout` both exist because *"an un-resumed
+continuation hangs the app rather than failing it."* `startSession` has neither.
+
+**And this is the reversal of a claim made two hours earlier.** ADR-027 named the slow-rebuild
+risk, observed two fast rebuilds, and I wrote that the concern was *"retired rather than merely
+unproven."* It was not retired. It was **mislocated**: the risk was never the rebuild being
+slow, it was that **nothing on the path into a running session has a deadline at all.** A note
+in the same ADR already said the evidence was one observation — it was two, and I treated that
+as enough to close the question. It was not, and closing it is what made this run the one that
+found it.
+
+**Not fixed, and it should be.** It is outside the scope this session agreed, and it is a
+bigger change than it looks: the deadline cannot be scheduled on the session queue, because the
+queue is stuck inside the call it would have to follow. The existing in-queue pattern does not
+transfer, and a fix that reports a timeout while leaving the queue wedged converts a silent
+hang into a loud one — better, and still not recovery.
+
 #### What this does not settle
 
 **Why the daemon drops is still unknown.** `-16155` on `FigXPC` precedes every death and is not
