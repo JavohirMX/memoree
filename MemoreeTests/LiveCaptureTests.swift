@@ -142,7 +142,7 @@ struct LiveCaptureTests {
     /// stop. `LiveCaptureRunGuardTests` scans this file and fails if the two
     /// disagree, so a literal nobody has to remember is the only kind that stays
     /// correct.
-    nonisolated static let expectedCount = 10
+    nonisolated static let expectedCount = 11
 
     private final class RunCounter: @unchecked Sendable {
         private let lock = NSLock()
@@ -839,6 +839,240 @@ struct LiveCaptureTests {
         print("SESSION-REBUILDS \(await service.sessionRebuildCount())")
 
         #expect(failures.isEmpty)
+    }
+
+    /// Twenty moments **with a movie output attached**, all succeed.
+    ///
+    /// ## Why this is a second test and not a flag on the first
+    ///
+    /// `twentyPacedMoments` has an established baseline — **19/20**, with one
+    /// capture-daemon death per run that the recovery absorbs. Its whole value is
+    /// that the number is comparable to the last one. Turning BTS on inside it
+    /// would replace the baseline with a different measurement, and a regression in
+    /// either direction would be invisible.
+    ///
+    /// So the question "does a third output degrade the session?" gets its own run,
+    /// its own printout, and its own verdict. **Both must be read.** A green
+    /// twenty-without-video says nothing about a green twenty-with-video, and the
+    /// failure this guards against is precisely a regression that only shows up in
+    /// the second one.
+    ///
+    /// ## What it does *not* cover
+    ///
+    /// The production ordering — `enableMovieOutput` before `startSession`,
+    /// `startRecording` after — is **duplicated here rather than shared**, and the
+    /// duplication is deliberate. `CameraViewModel` cannot be used to drive this gate
+    /// because `commit()` writes two assets to Photos on every moment, and twenty
+    /// moments of that is forty assets in the user's camera roll that Memoree can
+    /// never remove (ADR-008). The alternative to duplicating the ordering is
+    /// factoring it out for the sake of a test, and the ordering itself is already
+    /// guarded where it lives — `BTSFlowTests` against
+    /// `InMemoryCaptureService`'s event log, and `BTSSessionInvariantTests` against
+    /// the source. This gate's question is narrower: *does the extra output hurt?*
+    ///
+    /// ## Nothing is written to Photos, including the clips
+    ///
+    /// Trimmed bytes are counted and dropped. Same reason as the photographs.
+    @Test("Twenty moments with Behind the Scenes recording, all succeed")
+    func twentyPacedMomentsWithBTS() async throws {
+        guard requireCamera() else { return }
+
+        let composePause: Duration = .milliseconds(700)
+        var failures: [String] = []
+
+        // **One controller, two services.** A session cannot have two movie outputs
+        // and the recorder drives the movie output on *this* session — a recorder
+        // built against its own controller would record from a session nothing is
+        // writing to, which is not a failure the gate could report.
+        let controller = CaptureSessionController()
+        let service = SequentialCaptureService(controller: controller)
+        let recorder = LiveBTSRecorder(controller: controller)
+        defer { recorder.clearTemporaryFiles() }
+
+        var neededRetry: [Int] = []
+        var clipsKept = 0
+        var clipsTooShort = 0
+        var clipFailures: [String] = []
+        var sessionRebuildsBeforeRetry: [String] = []
+
+        for moment in 1...20 {
+            let opening = CameraPosition.allCases[moment % 2]
+            var attempt = 0
+
+            // **The same retry ADR-028 gives the photograph gate, for the same
+            // reason and the same narrowness.** A dead subsystem is worth one more
+            // attempt; `noInputAvailable` is not.
+            while true {
+                do {
+                    try await Self.captureMomentWithBTS(
+                        moment,
+                        opening: opening,
+                        service: service,
+                        recorder: recorder,
+                        composePause: composePause,
+                        failures: &failures,
+                        clipsKept: &clipsKept,
+                        clipsTooShort: &clipsTooShort,
+                        clipFailures: &clipFailures
+                    )
+                    print("BTS moment \(moment)/20 ok (\(opening.rawValue) first)"
+                          + (attempt > 0 ? " — after \(attempt) retry" : ""))
+                    break
+                } catch {
+                    let isDeadSubsystem = (error as? CaptureError)?
+                        .indicatesDeadCaptureSubsystem ?? false
+                    guard isDeadSubsystem, attempt == 0 else {
+                        failures.append("moment \(moment): \(error)")
+                        print("BTS moment \(moment)/20 FAILED: \(error)")
+                        break
+                    }
+                    attempt += 1
+                    neededRetry.append(moment)
+                    sessionRebuildsBeforeRetry.append("moment \(moment)")
+                    print("BTS moment \(moment)/20 dead subsystem (\(error)) — "
+                          + "retrying once, as a person would")
+                    await service.stopSession()
+                    // **The recorder is abandoned too.** A recording left open across
+                    // a session rebuild points at an output that no longer exists,
+                    // and `stopRecording` would throw — which is the wedge
+                    // `BTSRecorder.abandon()` exists to prevent.
+                    recorder.abandon()
+                }
+            }
+        }
+
+        await service.stopSession()
+
+        // Printed unconditionally, for every reason the photograph gate prints its
+        // own numbers unconditionally.
+        print("live BTS: 20 paced moments, \(failures.count) capture failures")
+        print("live BTS: \(clipsKept) clips kept, \(clipsTooShort) too short to keep")
+        print("live BTS: \(clipFailures.count) clip failures")
+        print("live BTS: \(neededRetry.count) moment(s) needed the retry: "
+              + (neededRetry.isEmpty
+                  ? "none"
+                  : neededRetry.map(String.init).joined(separator: ", ")))
+        for failure in clipFailures { print("  clip: \(failure)") }
+        for failure in failures { print("  \(failure)") }
+
+        let waits = await service.frameWaitDiagnostics()
+        let timeouts = waits.filter(\.timedOut)
+        print("BTS FRAME-WAITS summary: \(waits.count) waits, \(timeouts.count) timed out")
+        for outcome in timeouts {
+            print("  TIMEOUT \(outcome)")
+            print("    CAUSE: \(Self.cause(of: outcome))")
+        }
+        print("BTS SESSION-REBUILDS \(await service.sessionRebuildCount())")
+
+        // ## The bar, and what counts as a clip failure
+        //
+        // **A missing clip is not a failure of the gate.** ADR-013 says the clip is
+        // a bonus and the photographs are the moment, so a `clipFailures` entry is
+        // reported loudly and not asserted on: a phone that records twenty moments
+        // and keeps no clips has lost nothing the product promised. The *gate* is
+        // whether the extra output degrades the session, and that is `failures`.
+        //
+        // **Too short is reported separately from a failure** because it is the
+        // expected outcome of the 700ms compose pause at a 5-second clip length in
+        // the handful of moments where the user would have captured faster — and a
+        // number that mixes the two hides which is which.
+        #expect(failures.isEmpty, "a third output degraded the capture session")
+        #expect(clipFailures.isEmpty,
+                "the recorder failed to produce a clip where one was due")
+    }
+
+    /// One moment with BTS, and what it produced.
+    ///
+    /// **Returns clip outcomes through `inout` rather than a tuple** because a
+    /// four-member tuple of an `inout` counter and two `[String]` accumulators is
+    /// unreadable at the call site, and this is called in a loop that already has
+    /// five arguments.
+    private static func captureMomentWithBTS(
+        _ moment: Int,
+        opening: CameraPosition,
+        service: SequentialCaptureService,
+        recorder: LiveBTSRecorder,
+        composePause: Duration,
+        failures: inout [String],
+        clipsKept: inout Int,
+        clipsTooShort: inout Int,
+        clipFailures: inout [String]
+    ) async throws {
+        // **In the same order `CameraViewModel` uses, and the order is the feature.**
+        // `CaptureSessionController` attaches a movie output only to sessions
+        // configured after `wantsMovieOutput` is set, so asking afterwards
+        // configures nothing and the recorder throws `outputUnavailable` for the
+        // whole run — silently, because ADR-013 swallows it.
+        await service.enableMovieOutput()
+        try await service.startSession(on: opening)
+
+        // **And after, because it writes into an output that now exists.**
+        do {
+            try await recorder.startRecording()
+        } catch {
+            // Recorded, not thrown: the gate is about the session, and a recorder
+            // that will not open on this hardware should not abort twenty moments
+            // of photograph testing. One line, printed once.
+            if clipFailures.isEmpty {
+                clipFailures.append(
+                    "the recorder never opened (\(error)); every moment below ran "
+                    + "without a clip, which is a real result and not a pass"
+                )
+            }
+        }
+
+        let back = try await service.captureCurrentPhoto()
+        try await service.switchCamera(to: opening.opposite)
+        try await Task.sleep(for: composePause)
+        let front = try await service.captureCurrentPhoto()
+
+        // **Closed and trimmed before the session stops.** Stopping the session
+        // first would also stop the movie output, and the measured duration would
+        // arrive from a delegate the recorder has already torn down.
+        if recorder.isRecording {
+            do {
+                let recording = try await recorder.stopRecording()
+                defer { recorder.discard(recording) }
+
+                // **Trimmed to the same length Settings defaults to**, so the bytes
+                // on disk are representative rather than a token 15-second clip the
+                // real product would never write.
+                let requested = BTSTrim.defaultClipDuration
+                if let clip = try await recorder.trim(recording, toSeconds: requested) {
+                    clipsKept += 1
+                    if clip.isEmpty {
+                        clipFailures.append("moment \(moment): trimmed to zero bytes")
+                    }
+                    // **The window's own arithmetic, asserted on real bytes.** A clip
+                    // longer than was asked for means the trim did nothing; a
+                    // negative or oversized `recordedDuration` means the measurement
+                    // the export used was wrong. Both are silent on a phone.
+                    if recording.recordedDuration < 0 {
+                        clipFailures.append(
+                            "moment \(moment): negative recorded duration "
+                            + "\(recording.recordedDuration)"
+                        )
+                    }
+                } else {
+                    clipsTooShort += 1
+                }
+            } catch {
+                clipFailures.append("moment \(moment): \(error)")
+            }
+        }
+
+        await service.stopSession()
+
+        for photo in [back, front] {
+            if !photo.isThreeByFour {
+                failures.append("moment \(moment) \(photo.position.rawValue): wrong ratio "
+                                + "(\(photo.pixelWidth)x\(photo.pixelHeight))")
+            }
+            if photo.data.count < 10_000 {
+                failures.append("moment \(moment) \(photo.position.rawValue): "
+                                + "implausibly small bytes — likely a blank frame")
+            }
+        }
     }
 
     /// One moment, start to finish, checking both photographs.

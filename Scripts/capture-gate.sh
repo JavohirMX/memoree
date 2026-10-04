@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# The Phase 4 capture gate, in its own process.
+# The Phase 4 capture gates, each in its own process.
 #
 # ## Why this exists
 #
@@ -17,8 +17,25 @@
 #
 # The two alternative fixes both break something — one shared service means the
 # destructive `rebuildSession` test wrecks the instance for everything after it
-# (0.583s on a fresh service, 200.8s on a shared one). So the gate runs alone.
+# (0.583s on a fresh service, 200.8s on a shared one). So each gate runs alone.
 # One allocation, which is the shape that is known to work.
+#
+# ## Why there are two gates
+#
+# `twentyPacedMomentsWithBTS` is the same twenty moments **with an
+# `AVCaptureMovieFileOutput` attached**, and it is a separate invocation rather than
+# a flag on the first for one reason: the first gate's number is a baseline.
+#
+# **A baseline you replace is not a baseline.** Its whole value is being comparable
+# to the 19/20 recorded on 2026-10-03, one capture-daemon death and one recovery.
+# Running BTS inside it would answer "does the extra output hurt?" by replacing the
+# thing being compared, and a regression in either direction would be invisible.
+#
+# **Both run, always, and both are reported.** Running only the second would say
+# nothing about what changed; running only the first would not notice that Phase 10
+# attached a third output to the session the gate stress-tests. Two device runs of
+# four minutes each is the cost of a comparison that means something, and the
+# alternative is a green tick that could have come from either change.
 #
 # ## Why this script and not a scheme
 #
@@ -33,7 +50,7 @@
 # xcodebuild reports success.** That is this project's recurring failure mode: four
 # Phase 3 tests "passed" in a millisecond while asserting nothing, and a
 # twenty-moment run once reported zero iterations as if it had finished. So this
-# greps the output for the gate's own name and fails if it is absent. A gate that
+# greps the output for each gate's own name and fails if it is absent. A gate that
 # did not run must never look like a gate that passed.
 #
 # ## Usage
@@ -41,7 +58,7 @@
 #     Scripts/capture-gate.sh                 # the connected device
 #     Scripts/capture-gate.sh <udid>          # a named device
 #
-# The phone must be **unlocked and awake** for the *test run*. A test host is a
+# The phone must be **unlocked and awake** for *both* test runs. A test host is a
 # normal app and locks on the normal schedule; iOS tears the capture session down
 # when the device locks, and there is no error to report afterwards.
 #
@@ -64,23 +81,31 @@
 # So the build happens first, while the phone may be locked and does not matter,
 # and only then does the script stop and wait for a human. **The window in which
 # the device has to be awake shrinks from four and a half minutes to the length of
-# the run itself**, which is the difference between a gate that measures something
-# and one that mostly measures whether someone was holding the phone.
+# the runs themselves**, which is the difference between a gate that measures
+# something and one that mostly measures whether someone was holding the phone.
 #
 # `test-without-building` is also faster for the ordinary reason: no rebuild between
-# the two phases.
+# the phases.
 
 set -o pipefail
 
 DEVICE="${1:-00008150-00192CE23A7A401C}"
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-LOG="$(mktemp -t capture-gate)"
-GATE_NAME="Twenty moments, taken at a human pace, all succeed"
+BUILD_LOG="$(mktemp -t capture-gate-build)"
+GATE_LOG="$(mktemp -t capture-gate-run)"
+
+# The gate's Swift Testing function name and its display name, kept together
+# because the two must agree and a mismatch is the silent-skip failure.
+GATE_A_ID="twentyPacedMoments()"
+GATE_A_NAME="Twenty moments, taken at a human pace, all succeed"
+GATE_B_ID="twentyPacedMomentsWithBTS()"
+GATE_B_NAME="Twenty moments with Behind the Scenes recording, all succeed"
 
 cd "$PROJECT_DIR" || exit 1
 
-echo "Phase 4 capture gate — $DEVICE"
-echo "Log: $LOG"
+echo "Phase 4 capture gates — $DEVICE"
+echo "Build log: $BUILD_LOG"
+echo "Run log:   $GATE_LOG"
 echo
 
 # Phase 1 — build. The phone does not need to be awake, unlocked, or even present.
@@ -92,13 +117,13 @@ xcodebuild build-for-testing \
     -allowProvisioningUpdates \
     DEVELOPMENT_TEAM=MBBD9BRZ67 \
     -collect-test-diagnostics never \
-    >"$LOG" 2>&1
+    >"$BUILD_LOG" 2>&1
 BUILD_STATUS=$?
 
 if [ $BUILD_STATUS -ne 0 ]; then
     echo "FAIL — the build did not succeed, so there is nothing to run."
     echo
-    tail -40 "$LOG"
+    tail -40 "$BUILD_LOG"
     exit 1
 fi
 
@@ -118,9 +143,9 @@ if [ -n "${MEMOREE_GATE_ASSUME_AWAKE:-}" ]; then
     echo "device was asleep. That is this, and it is not a capture defect."
 else
     echo "=== UNLOCK THE PHONE AND LEAVE IT AWAKE ==="
-    echo "The run is about to start and takes several minutes. If the device locks,"
-    echo "every moment fails instantly with 'hasFigCaptureSession' and the gate"
-    echo "measures nothing — which is what happened before this script was split."
+    echo "Both runs are about to start and take several minutes each. If the device"
+    echo "locks, every moment fails instantly with 'hasFigCaptureSession' and the"
+    echo "gate measures nothing — which is what happened before this script was split."
     echo
     printf "Press return once the screen is on and the phone is in your hand: "
     read -r _
@@ -151,55 +176,125 @@ echo
 # Swift Testing run, on every platform. That is not a skip — read the Swift
 # Testing line, "Test run with N tests in M suites", or you will misdiagnose a
 # perfectly good run as an empty one. It was misread here.
-xcodebuild test-without-building \
-    -project Memoree.xcodeproj \
-    -scheme Memoree \
-    -destination "platform=iOS,id=${DEVICE}" \
-    -allowProvisioningUpdates \
-    DEVELOPMENT_TEAM=MBBD9BRZ67 \
-    -collect-test-diagnostics never \
-    "-only-testing:MemoreeTests/LiveCaptureTests/twentyPacedMoments()" \
-    >"$LOG" 2>&1
-STATUS=$?
+
+# Echoes its own name into the log and reports whether the gate passed.
+#
+# # The three verdicts are distinct and all three are needed
+#
+# "Did not run" and "ran and failed" look identical from outside — a green
+# `xcodebuild` with no output is precisely what a misspelled identifier produces —
+# and a third verdict exists for the case where the gate reported nothing wrong but
+# the process did not finish, which is a wedged daemon rather than a result.
+#
+# # The "did it run" check needs *two* signals, and the second one is new
+#
+# Grepping for the display name is not enough, because **Swift Testing reports a
+# skipped test by name.** A gate that hit `requireCamera()` and returned early
+# appears in the log under its own name and would pass a name-only check — which is
+# the precise failure this script exists to prevent, arriving through a different
+# door. So each gate also has to print its own summary line, which only happens
+# after the twenty-moment loop has actually run. A skip prints the banner and no
+# summary, and a banner is not a measurement.
+#
+# Returns 0 for pass, 1 for anything else. The caller decides whether that ends
+# the script; it does not, because the second gate is still worth running.
+run_gate() {
+    local identifier="$1"
+    local display_name="$2"
+    local summary_prefix="$3"
+
+    xcodebuild test-without-building \
+        -project Memoree.xcodeproj \
+        -scheme Memoree \
+        -destination "platform=iOS,id=${DEVICE}" \
+        -allowProvisioningUpdates \
+        DEVELOPMENT_TEAM=MBBD9BRZ67 \
+        -collect-test-diagnostics never \
+        "-only-testing:MemoreeTests/LiveCaptureTests/${identifier}" \
+        >>"$GATE_LOG" 2>&1
+    local status=$?
+
+    echo "=== $display_name ==="
+    echo "xcodebuild exited $status"
+
+    # The gate must appear *and* not be reported as failed. Both checks, because a
+    # name appearing in a failure banner proves nothing.
+    if ! grep -q "$display_name" "$GATE_LOG"; then
+        echo "DID NOT RUN — the log never mentioned the gate."
+        echo "That is the silent-skip failure: -only-testing matched nothing, which"
+        echo "is indistinguishable from a pass unless you check. The usual cause is"
+        echo "a wrong identifier — see the note above about the empty parentheses."
+        echo
+        echo "Tail of the log:"
+        tail -40 "$GATE_LOG"
+        return 1
+    fi
+
+    # **The second signal.** See above: a skipped test is named in the log.
+    if ! grep -q "$summary_prefix" "$GATE_LOG"; then
+        echo "DID NOT RUN — the gate was named but printed no measurements."
+        echo "That means it was skipped, not that it passed. On a device the usual"
+        echo "cause is a camera that could not be opened; on this host, check the"
+        echo "log for the SKIPPED banner the live suite prints when it bails."
+        echo
+        echo "Tail of the log:"
+        tail -40 "$GATE_LOG"
+        return 1
+    fi
+
+    if grep -qE "✘.*${display_name}" "$GATE_LOG"; then
+        echo "FAILED — the gate ran and did not pass."
+        echo
+        grep -E "live (capture|BTS)|SESSION-REBUILDS|FRAME-WAITS summary|needed the retry|✘" "$GATE_LOG" \
+            | tail -40
+        return 1
+    fi
+
+    if [ $status -ne 0 ]; then
+        # The gate's name is in the log and it is not marked failed, so something
+        # else went wrong — most likely the run being interrupted. Worth saying
+        # plainly rather than reporting a pass.
+        echo "INCONCLUSIVE — the gate's name is in the log but xcodebuild exited $status."
+        echo "The gate did not report a failure, but the run did not finish cleanly."
+        return 1
+    fi
+
+    echo "PASSED"
+    grep -E "live (capture|BTS)|SESSION-REBUILDS|FRAME-WAITS summary|needed the retry" "$GATE_LOG" \
+        | tail -20
+    return 0
+}
+
+# **The run log is appended to, not truncated, so the diagnostic lines from the
+# first gate are still there when the second one runs.** `run_gate` greps the whole
+# file for its display name, and two names in one file is fine — they are distinct
+# strings — while two logs would mean a reader comparing two `SESSION-REBUILDS`
+# numbers has to know which file is which.
+: >"$GATE_LOG"
+
+run_gate "$GATE_A_ID" "$GATE_A_NAME" "live capture: 20 paced moments"
+A=$?
 
 echo
-echo "--- gate result ---"
+run_gate "$GATE_B_ID" "$GATE_B_NAME" "live BTS: 20 paced moments"
+B=$?
 
-# The gate must appear *and* not be reported as failed. Both checks, because a
-# name appearing in a failure banner proves nothing.
-if ! grep -q "$GATE_NAME" "$LOG"; then
-    echo "FAIL — the gate did not run."
-    echo
-    echo "xcodebuild exited $STATUS and never mentioned '$GATE_NAME'."
-    echo "That is the silent-skip failure: -only-testing matched nothing, which"
-    echo "is indistinguishable from a pass unless you check. The usual cause is"
-    echo "a wrong identifier — see the note above about the empty parentheses."
-    echo
-    echo "Tail of the log:"
-    tail -40 "$LOG"
-    exit 1
-fi
-
-if grep -qE "✘.*Twenty moments" "$LOG"; then
-    echo "FAIL — the gate ran and did not pass."
-    echo
-    tail -60 "$LOG"
-    exit 1
-fi
-
-if [ $STATUS -ne 0 ]; then
-    # The gate's name is in the log and it is not marked failed, so something
-    # else went wrong — most likely the run being interrupted. Worth saying
-    # plainly rather than reporting a pass.
-    echo "INCONCLUSIVE — the gate's name is in the log but xcodebuild exited $STATUS."
-    echo "The gate did not report a failure, but the run did not finish cleanly."
-    echo
-    tail -60 "$LOG"
-    exit 1
-fi
-
-echo "PASS — $GATE_NAME"
 echo
-echo "Phase 4's exit criterion is met: twenty paced captures, all succeeding."
-echo "Remember to record it in docs/IMPLEMENTATION_PLAN.md."
+echo "--- both gates ---"
+echo "photographs only : $([ $A -eq 0 ] && echo PASS || echo "NOT PASSING (exit $A)")"
+echo "with BTS recording: $([ $B -eq 0 ] && echo PASS || echo "NOT PASSING (exit $B)")"
+echo
+echo "Full output: $GATE_LOG"
+echo
+
+if [ $A -ne 0 ] || [ $B -ne 0 ]; then
+    echo "FAIL — see above. Record the numbers in docs/IMPLEMENTATION_PLAN.md"
+    echo "whatever they are; a regression is only visible against the previous run."
+    exit 1
+fi
+
+echo "PASS — both gates"
+echo
+echo "Phase 4's exit criterion is met, and a third output on the session did not"
+echo "change it. Remember to record the numbers in docs/IMPLEMENTATION_PLAN.md."
 exit 0
