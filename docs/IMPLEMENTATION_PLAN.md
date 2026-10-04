@@ -1922,10 +1922,18 @@ naming no file; every build and every suite passed. `Scripts/make-appicon.swift`
 the design system's own geometry, and `AppIconTests` found a real one immediately: the first
 render had an alpha channel, which App Store Connect rejects outright.
 
-**Still outstanding:** the Stats `btsCount` row (Phase 7's table has carried "omitted, BTS has no
-recorder" since Phase 2, and that reason has now expired), and re-running the Phase 4 gate with
-BTS enabled. **That re-run is the reason to trust any of this on hardware** — a third output is
-attached to the session the gate stress-tests, and no amount of unit testing substitutes for the
+**Still outstanding:** nothing in the feature. The `btsCount` row has landed on Stats, and the
+twenty-moment gate now runs twice — once as it always has, once with a movie output attached —
+because Phase 10 changed the session it stress-tests. **That second gate has not been run.**
+It is the only remaining piece of Phase 10 and it needs a physical device, which means a human
+holding an unlocked phone:
+
+```
+Scripts/capture-gate.sh
+```
+
+**Nothing in this section is evidence until that run happens.** A third output on the session is
+a real change to the thing the gate measures, and no amount of unit testing substitutes for the
 twenty-moment run.
 
 ## Phase 11 — Release readiness
