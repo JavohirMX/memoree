@@ -143,6 +143,24 @@ final class StatsViewModel {
         "\(summary.missedDays) with nothing"
     }
 
+    /// Clips recorded, or nothing at all when there are none.
+    ///
+    /// **Hidden at zero, for the same reason retakes are** — a user who has BTS off,
+    /// which is the default for everyone, is not being told they scored zero clips.
+    /// A row reading "0" describes a feature they are not using as though they were
+    /// using it badly.
+    ///
+    /// ## Why it is a count and not a percentage
+    ///
+    /// The temptation is "3 of 12 days" or "25%". Both are worse. A percentage
+    /// invites the reading that more is better, and it is not — the photographs are
+    /// the product and a clip is context (ADR-013), so a month where every day has a
+    /// clip is not a better month. A count is a fact and nothing more.
+    var btsDescription: String? {
+        guard summary.btsCount > 0 else { return nil }
+        return Self.plural(summary.btsCount, "clip")
+    }
+
     /// Whether there is anything to say at all.
     var isEmpty: Bool { summary.totalMoments == 0 }
 

@@ -42,7 +42,8 @@ struct StatsViewModelTests {
         _ harness: Harness,
         daysAgo offset: Int,
         onTime: Bool = true,
-        retakes: Int = 0
+        retakes: Int = 0,
+        hasBTS: Bool = false
     ) throws -> Moment {
         let today = DayIdentifier(date: Self.reference, calendar: calendar)
         let day = today.offset(by: -offset, calendar: calendar)
@@ -53,7 +54,8 @@ struct StatsViewModelTests {
             capturedAt: onTime ? start.addingTimeInterval(60) : start.addingTimeInterval(3600),
             retakeCount: retakes,
             backAssetIdentifier: nil,
-            frontAssetIdentifier: nil
+            frontAssetIdentifier: nil,
+            hasBTS: hasBTS
         )
     }
 
@@ -180,6 +182,49 @@ struct StatsViewModelTests {
         // 2/3. Two decimals would be "0.67", which is a precision the underlying
         // integer counts cannot support.
         #expect(model.retakeDescription == "0.7 on average")
+    }
+
+    @Test("A clip count of zero is hidden, because BTS is off by default")
+    func zeroClipsAreHidden() throws {
+        // **The row existed in the plan from Phase 2 marked "omitted".** The reason
+        // given was that BTS had no recorder, so the row would always read "0" —
+        // which is still true for every user who has not turned it on, and is the
+        // majority. A row reading zero describes a feature they are not using as
+        // though they were using it badly. Hidden at zero, like retakes.
+        let harness = try makeHarness(now: Self.reference)
+        try record(harness, daysAgo: 1, hasBTS: false)
+
+        let model = makeModel(harness)
+        model.load()
+        #expect(model.btsDescription == nil)
+        #expect(model.summary.btsCount == 0, "the count is still zero; only the row is hidden")
+    }
+
+    @Test("A clip count is shown once there is one, and is a count not a percentage")
+    func clipsAreShown() throws {
+        let harness = try makeHarness(now: Self.reference)
+        try record(harness, daysAgo: 1, hasBTS: true)
+        try record(harness, daysAgo: 2, hasBTS: true)
+        try record(harness, daysAgo: 3, hasBTS: false)
+
+        let model = makeModel(harness)
+        model.load()
+        // **"2 clips", not "67%".** A percentage invites the reading that more is
+        // better, and it is not: the photographs are the product and a clip is
+        // context (ADR-013). Also singular/plural, because "1 clips" is the kind of
+        // thing that survives a release.
+        #expect(model.summary.btsCount == 2)
+        #expect(model.btsDescription == "2 clips")
+    }
+
+    @Test("One clip reads in the singular")
+    func oneClipIsSingular() throws {
+        let harness = try makeHarness(now: Self.reference)
+        try record(harness, daysAgo: 1, hasBTS: true)
+
+        let model = makeModel(harness)
+        model.load()
+        #expect(model.btsDescription == "1 clip")
     }
 
     @Test("Busiest hour is absent with no history")

@@ -116,6 +116,12 @@ struct StatsView: View {
             if let retakes = model.retakeDescription {
                 MetadataRow(label: "Retakes", value: retakes)
             }
+            // **A count, not a percentage**, and hidden at zero — see the view
+            // model's note. This row was carried as "omitted, BTS has no recorder"
+            // from Phase 2 until Phase 10 gave the feature something to count.
+            if let clips = model.btsDescription {
+                MetadataRow(label: "Behind the Scenes", value: clips)
+            }
             if let hour = model.busiestHourDescription {
                 MetadataRow(label: "Most often at", value: hour)
             }

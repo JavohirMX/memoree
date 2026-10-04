@@ -1259,7 +1259,7 @@ reorder intact.
 | Busiest hour | Histogram of `capturedAt` — already computed, never displayed |
 | Streak history | Current and past streaks, in place of BeReal's Memories calendar |
 | Empty states | Zero moments, one moment |
-| BTS count | **Omitted.** BTS has no recorder behind it (see Phase 10), so the row would always read "0". |
+| BTS count | **Added 2026-10-04**, when Phase 10 gave it something to count. A count, not a percentage, and hidden at zero — the omission's stated reason ("BTS has no recorder, so the row would always read 0") is still true for every user who has not turned it on, and is the majority |
 
 **Exit:** numbers match the archive by hand-check on three days of data.
 **Estimate:** 1 day.
@@ -1882,7 +1882,51 @@ playback, and the Settings toggle. The toggle especially — surfacing it before
 works is precisely the dead control `Models.swift` warns against, so it arrives with the
 feature or not at all.
 
----
+### Progress as of 2026-10-04 — wired end to end, and three defects that only wiring finds
+
+The feature works from camera-open to playback. Five commits, `33a0cf3` through `27ff180`.
+
+**Nothing called `enableMovieOutput`.** The recorder existed and no production code ever invoked
+the method that attaches its output, so `controller.movieFileOutput` was permanently `nil` and
+every real `startRecording` would have thrown `outputUnavailable` — which ADR-013's design
+correctly swallows. The app would have shown BTS as on and recorded nothing, forever, with
+nothing to report. **This is the third silent failure of the same shape this session**, after the
+`videoOutput` migration defect and the Release-only `try` warning, and it is why each is now
+guarded rather than merely fixed.
+
+**Ordering is the whole feature and nothing on screen reveals it.** The controller attaches a
+movie output only to sessions configured *after* `wantsMovieOutput` is set, so the request must
+precede `startSession` while the recording must follow it — two acts, two methods, and
+`InMemoryCaptureService` grew an event log so the order is assertable. "Both happened" passes on
+the broken version; only an ordered log does not.
+
+**A re-take permanently lost the clip.** `reshoot` and `startOver` closed the recording and
+returned to `.shooting` without reopening it, so the second attempt at a moment had no clip and
+no on-screen sign of it. Found by tightening one assertion from `savedBTSCount <= 1` to
+`startedRecordings.count == 2` — the loose version passed a view model that recorded nothing.
+
+**`try? stopRecording()` + `discard` wedged the recorder.** When the stop throws — which is what
+ADR-027's session rebuild causes — the path is never handed back, so the bytes cannot be released
+*and* `isRecording` stays `true`, which makes every later `startRecording` throw
+`alreadyRecording`. Swallowed, the symptom is "BTS stopped working" with nothing to report.
+`BTSRecorder.abandon()` cannot fail that way.
+
+**Playback needed a decision, not just code.** A clip the app writes and cannot open is half a
+feature. `ADR-029` records where `AVPlayer` lives, and `DesignSystemInvariantTests` now keeps the
+exception table honest in both directions — an entry naming a deleted file fails, and an entry
+granting an unused import fails. Both verified by breaking.
+
+**The app icon, which had blocked submission, was the same shape of defect.** The
+`AppIcon.appiconset` directory had been in the repository since day one with a `Contents.json`
+naming no file; every build and every suite passed. `Scripts/make-appicon.swift` now draws it from
+the design system's own geometry, and `AppIconTests` found a real one immediately: the first
+render had an alpha channel, which App Store Connect rejects outright.
+
+**Still outstanding:** the Stats `btsCount` row (Phase 7's table has carried "omitted, BTS has no
+recorder" since Phase 2, and that reason has now expired), and re-running the Phase 4 gate with
+BTS enabled. **That re-run is the reason to trust any of this on hardware** — a third output is
+attached to the session the gate stress-tests, and no amount of unit testing substitutes for the
+twenty-moment run.
 
 ## Phase 11 — Release readiness
 
