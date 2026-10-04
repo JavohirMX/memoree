@@ -133,7 +133,7 @@ struct NoNetworkingTests {
     /// fired, so the reader is left reimplementing the matcher by hand to find
     /// out. The symbol is the whole diagnosis.
     static func networkingName(in line: String) -> String? {
-        let code = line.strippingTrailingComment()
+        let code = line.withoutComment()
         if let pattern = forbiddenPatterns.first(where: code.contains) {
             return pattern
         }
@@ -226,9 +226,9 @@ struct NoNetworkingTests {
 
     @Test("A comment naming a forbidden symbol is not a violation")
     func commentIsNotCode() throws {
-        // Comments are stripped, and the reason is above in
-        // `strippingTrailingComment`: a guard that fires on prose gets worked
-        // around by deleting the prose.
+        // Comments are stripped, and the reason is in
+        // `SourceScan.strippingTrailingComment`: a guard that fires on prose gets
+        // worked around by deleting the prose.
         #expect(!Self.namesNetworkingType(
             "// use FileManager.contents(atPath:), not Data(contentsOf:)"
         ))
@@ -268,10 +268,17 @@ struct NoNetworkingTests {
         )
         let contents = try String(contentsOf: library, encoding: .utf8)
 
+        // **Comments are stripped, and this suite has now been bitten by this
+        // twice.** The first version failed on its own documentation — a comment
+        // explaining that `PHAssetResourceRequestOptions` has *no*
+        // `isNetworkAccessAllowed`, written precisely so nobody would add one.
+        // Naming the flag to say "do not set this" is how the prohibition is
+        // stated, so a guard that reads prose forbids its own reasoning.
         let assignments = contents
             .split(separator: "\n", omittingEmptySubsequences: false)
-            .filter { $0.contains("isNetworkAccessAllowed") }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { String($0) }
+            .filter { $0.withoutComment().contains("isNetworkAccessAllowed") }
+            .map { $0.withoutComment().trimmingCharacters(in: .whitespaces) }
 
         // Every mention must set it to false. The flag is never read from a
         // variable, so a bare `options.isNetworkAccessAllowed` with no
@@ -321,45 +328,7 @@ struct NoNetworkingTests {
 private extension StringProtocol {
     var trimmed: String { trimmingCharacters(in: .whitespaces) }
 
-    /// The line with any `//` comment removed.
-    ///
-    /// ## Why the scan has to strip comments at all
-    ///
-    /// Because a guard that fires on prose trains people to work around the
-    /// guard. The first version did exactly that: documenting *why* `LiveBTSRecorder`
-    /// reads its trimmed clip with `FileManager.contents(atPath:)` — a note whose
-    /// entire job is to name `Data(contentsOf:)` — failed the suite on its own
-    /// comment. The obvious "fix" would have been to reword the comment until the
-    /// scan stopped firing, which deletes the explanation and leaves the next
-    /// reader to rediscover the rule from a prohibition with no reasoning.
-    ///
-    /// **Comment text is not code.** A `URLSession` named in a comment is not a
-    /// request, and stripping the comment makes the prohibition mean what it says.
-    ///
-    /// ## String literals are respected, because `//` appears in them
-    ///
-    /// A path or a URL inside a string would otherwise be truncated at the second
-    /// slash and the rest of the line — which could contain code — would go
-    /// unexamined. Tracking quote state is the difference between removing a
-    /// comment and removing the tail of a line that is still code.
-    func strippingTrailingComment() -> String {
-        var inString = false
-        var previousWasEscape = false
-        var characters = Array(self)
-        var index = 0
-
-        while index < characters.count {
-            let character = characters[index]
-            if character == "\"" && !previousWasEscape { inString.toggle() }
-            if !inString, character == "/", index + 1 < characters.count,
-               characters[index + 1] == "/" {
-                characters.removeSubrange(index...)
-                break
-            }
-            previousWasEscape = character == "\\" && !previousWasEscape
-            if character != "\\" { previousWasEscape = false }
-            index += 1
-        }
-        return String(characters)
-    }
+    /// See `SourceScan.strippingTrailingComment` — this is the same thing, named
+    /// so the line-splitting below reads as what it is.
+    func withoutComment() -> String { SourceScan.strippingTrailingComment(String(self)) }
 }

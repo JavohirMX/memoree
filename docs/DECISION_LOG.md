@@ -1354,6 +1354,63 @@ answer.
 
 ---
 
+## ADR-029 — `Features/` may render an `AVPlayer`, and only for that
+
+**Status:** Accepted · **Date:** 2026-10-04
+**Consequence of:** ADR-013, ADR-018
+
+`AGENTS.md` §3 says `Features/` contains SwiftUI views and view models only, with no
+AVFoundation and no PhotoKit. It has held without exception since it was written. Behind-
+the-Scenes playback breaks it, and this ADR is the exception.
+
+**Why playback forces the question at all.** A clip the app writes into Photos and cannot
+open is half a feature, and "a video that will not play" was the failure most likely to
+ship — silent, in exactly the way ADR-013's design makes everything else silent. So the
+question was not whether to have playback but where `AVPlayer` lives.
+
+**Three answers were available.**
+
+*Put the player in `DesignSystem`.* That layer imports nothing internal, so it satisfies the
+rule as written with no exception at all — and it is the wrong home for a control one feature
+uses. A layer whose rule is never broken is a layer nobody has to think about, and the cost
+of never breaking it is a video component living where colour tokens do.
+
+*Put it in `Features` and write the exception down.* A view is presentation, and `AVPlayer` is
+presentation. The half of the rule that was never about presentation — that a view model may
+not name AVFoundation — holds untouched: `BTSPlaybackModel` in the same file does not import
+it either. `VideoPlayer` is AVKit's and `AVPlayer` is AVFoundation's, so the file needs both,
+and a rule listing one without the other is a rule that gets re-litigated by the next person
+to hit it.
+
+*Do not have playback.* Rejected above.
+
+**What the exception is, precisely.** One file, two imports, named in `AGENTS.md` §3's table
+and in `DesignSystemInvariantTests.featureFrameworkExceptions`. Two further tests keep that
+table honest, because an exception list is where rules quietly stop applying: one fails when
+an entry names a file that no longer exists, and one fails when an entry grants an import its
+file does not have. Both were verified by breaking them.
+
+**Alternatives rejected.** *The exception table without the two extra tests* — an entry whose
+file has been deleted keeps its hole open for whatever comes next, and nobody remembers
+granting it. That is already the failure this project's own `AGENTS.md` §3 table suffered,
+which is why the table was extended there at all: it listed two files for most of the
+project's life while six imported a capture framework, and it read as broken when it was
+merely stale. *An `AVAsset` on `PhotoLibraryService`* — it drags AVFoundation into every
+consumer of the protocol, is not `Sendable`, and its `url` for a library asset is an
+implementation detail rather than a promise. `PhotoLibraryService.btsClipFile(for:)` returns a
+`URL` instead.
+
+**Reversal trigger.** If playback ever needs a second AVFoundation type that is not a view —
+a custom `AVPlayerLayer`, an audio session, an export outside `LiveBTSRecorder` — this ADR
+stops being an exception and becomes the first line of a much bigger hole. At that point the
+right move is the `DesignSystem` wrapper, not a wider table.
+
+**What is deliberately still open.** Whether anyone wants to play a five-second clip twice.
+Mute is on by default because Memoree is a thing you open in a queue, in a lecture, and a
+clip that starts audible is the failure most likely to annoy.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

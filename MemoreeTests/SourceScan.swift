@@ -128,14 +128,60 @@ enum SourceScan {
             .enumerated()
             .compactMap { index, raw in
                 let full = String(raw)
-                let code = full
-                    .split(separator: "//", maxSplits: 1, omittingEmptySubsequences: false)
-                    .first
-                    .map(String.init)?
+                let code = full.strippingTrailingComment()
                     .trimmingCharacters(in: .whitespaces)
-                guard let code, !code.isEmpty else { return nil }
+                guard !code.isEmpty else { return nil }
                 return Line(number: index + 1, code: code, full: full)
             }
+    }
+
+    /// The line with any `//` comment removed.
+    ///
+    /// ## String literals are respected, and that is the whole subtlety
+    ///
+    /// The obvious implementation — `split(separator: "//").first` — truncates a
+    /// line at a `//` **inside a string**, and everything the author wrote after
+    /// the literal goes unexamined. A line reading `let path = "a/b"; URLSession
+    /// .shared` would pass a scan that thinks it is looking at `let path = "a`.
+    ///
+    /// A scan that can be blinded by a path string is a scan whose silence means
+    /// nothing, so quote state is tracked rather than guessed.
+    ///
+    /// ## It lives here rather than in one suite
+    ///
+    /// Two scanners needed it, and a private copy in each is how they drift — the
+    /// bug above is exactly the kind that only gets fixed in whichever file the
+    /// author happened to be reading.
+    static func strippingTrailingComment(_ line: String) -> String {
+        var inString = false
+        var previousWasEscape = false
+        var characters = Array(line)
+        var index = 0
+
+        while index < characters.count {
+            let character = characters[index]
+            if character == "\"", !previousWasEscape { inString.toggle() }
+            if !inString, character == "/",
+               index + 1 < characters.count, characters[index + 1] == "/" {
+                characters.removeSubrange(index...)
+                break
+            }
+            previousWasEscape = character == "\\" && !previousWasEscape
+            if character != "\\" { previousWasEscape = false }
+            index += 1
+        }
+        return String(characters)
+    }
+}
+
+/// Removes a trailing `//` comment from a line, string literals respected.
+///
+/// An extension rather than a method on `SourceScan` so the scanners can read
+/// `line.strippingTrailingComment()` where `line` is a `String` — which is how both
+/// of them think about the operation.
+extension String {
+    func strippingTrailingComment() -> String {
+        SourceScan.strippingTrailingComment(self)
     }
 }
 

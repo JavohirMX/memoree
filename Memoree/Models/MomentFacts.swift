@@ -35,7 +35,21 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
     let windowEndsAt: Date
 
     let retakeCount: Int
+
+    /// Whether this moment has a Behind-the-Scenes clip.
     let hasBTS: Bool
+
+    /// Where that clip was written, when it has one.
+    ///
+    /// **Carried beside `hasBTS` rather than instead of it, and that duplication is
+    /// the point.** `hasBTS` answers "does this moment have one", which is what a
+    /// cell's badge and the stats screen need and which is a `Bool` a screen can
+    /// hold. The identifier answers "where", which is what playback needs. Deriving
+    /// one from the other is impossible in the direction that matters — `true` with
+    /// no identifier is the ordinary "you deleted the clip in Photos" state, and
+    /// treating it as an error would show the user a red state for something they
+    /// did on purpose (ADR-008).
+    let btsAssetIdentifier: String?
 
     /// The two `PHAsset.localIdentifier`s the photographs were written under.
     ///
@@ -59,6 +73,7 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
         windowEndsAt: Date,
         retakeCount: Int,
         hasBTS: Bool,
+        btsAssetIdentifier: String? = nil,
         assets: SavedAssetPair? = nil
     ) {
         self.id = id
@@ -68,6 +83,7 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
         self.windowEndsAt = windowEndsAt
         self.retakeCount = retakeCount
         self.hasBTS = hasBTS
+        self.btsAssetIdentifier = btsAssetIdentifier
         self.assets = assets
     }
 

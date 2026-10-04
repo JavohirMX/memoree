@@ -30,6 +30,7 @@ struct MomentDetailView: View {
             ScrollView {
                 VStack(spacing: Theme.Spacing.xl) {
                     photograph
+                    behindTheScenes
                     metadata
                 }
                 .padding(.horizontal, Theme.Spacing.xl)
@@ -223,6 +224,23 @@ struct MomentDetailView: View {
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .accessibilityHidden(true)
+        }
+    }
+
+    // MARK: - Behind the Scenes
+
+    /// The clip, when this moment has one.
+    ///
+    /// **Below the photographs, and never replacing them.** The two photographs are
+    /// the moment (ADR-013); the clip is context. Putting it above them would make
+    /// a five-second video the subject of the screen, which inverts the product.
+    ///
+    /// **Hidden entirely when there is no clip**, rather than shown with an empty
+    /// frame — same reasoning as the retake row: a zero is not information.
+    @ViewBuilder
+    private var behindTheScenes: some View {
+        if moment.hasBTS {
+            BTSPlaybackView(assetIdentifier: moment.btsAssetIdentifier)
         }
     }
 

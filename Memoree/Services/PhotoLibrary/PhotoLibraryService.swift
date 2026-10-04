@@ -105,6 +105,37 @@ protocol PhotoLibraryService: Sendable {
     /// Original bytes for sharing out of the app.
     func data(for identifier: String) async throws -> Data
 
+    /// Writes a Behind-the-Scenes clip to a file this app controls, for playback.
+    ///
+    /// ## Why a file and not an `AVAsset`
+    ///
+    /// `PHImageManager.requestAVAsset(forVideo:)` would hand back an `AVAsset`,
+    /// which is exactly the wrong thing to put on a protocol that `Features/`
+    /// consumes: it drags AVFoundation across the layer boundary, it is not
+    /// `Sendable`, and its `url` for a library asset is an implementation detail
+    /// that is not guaranteed to be a readable path. `PHAssetResourceManager
+    /// .writeData(for:toFile:)` is the API that says what it does — give me this
+    /// resource's bytes, in this file — and a `URL` is something a view model can
+    /// hold, pass, and test.
+    ///
+    /// **A temp file, and that is not app storage.** The bytes already live in the
+    /// user's Photos library; this is a copy made so a player has something to
+    /// open, in the temporary directory, deleted by
+    /// `purgeBTSPlaybackFiles()`. `AGENTS.md` §2.4 forbids keeping image bytes in
+    /// app storage and this keeps none.
+    ///
+    /// - Throws: `LibraryError.assetMissing` when the user deleted the clip. That
+    ///   is a supported state, not an error the user caused (ADR-008).
+    func btsClipFile(for identifier: String) async throws -> URL
+
+    /// Deletes every file `btsClipFile(for:)` has written.
+    ///
+    /// **Called when playback stops**, not on a timer. A clip left in the temporary
+    /// directory is bytes the app wrote and nobody is reading, and the system would
+    /// eventually purge them — which is how a five-second video becomes
+    /// thirty megabytes of nothing over a year of moments.
+    func purgeBTSPlaybackFiles()
+
     // MARK: Albums
 
     /// Ensures the optional `Memoree` album exists and returns its identifier.

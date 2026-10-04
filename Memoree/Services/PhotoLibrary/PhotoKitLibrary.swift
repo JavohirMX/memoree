@@ -384,4 +384,77 @@ struct PhotoKitLibrary: PhotoLibraryService {
             }
         }
     }
+
+    // MARK: - Behind the Scenes playback
+
+    /// Where playable copies of BTS clips live.
+    ///
+    /// **Its own directory, not the recorder's.** The recorder writes the clips it
+    /// is about to hand to Photos and deletes them itself; this holds copies made
+    /// for a player, which have a different lifetime and a different owner. Two
+    /// directories means one can be swept without touching the other — a shared one
+    /// would make `purgeBTSPlaybackFiles` a race against an in-progress commit.
+    private static let playbackDirectory: URL = {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("memoree-bts-playback", isDirectory: true)
+    }()
+
+    /// A deterministic name, so replaying the same moment overwrites its own file
+    /// rather than accumulating one per play.
+    ///
+    /// **Not a hash.** The identifier is already filesystem-safe — it is a
+    /// `PHAsset.localIdentifier`, a UUID-shaped string — and a hash would only add
+    /// a collision question nobody needs answered.
+    private func playbackPath(for identifier: String) -> URL {
+        Self.playbackDirectory.appendingPathComponent("playback-\(identifier).mov")
+    }
+
+    func btsClipFile(for identifier: String) async throws -> URL {
+        guard let asset = PHAsset.fetchAssets(
+            withLocalIdentifiers: [identifier], options: nil
+        ).firstObject else {
+            // The user deleted the clip in Photos. Supported, not an error — see
+            // ADR-008 and `MomentFacts.btsAssetIdentifier`.
+            throw LibraryError.assetMissing(identifier)
+        }
+
+        guard let resource = PHAssetResource.assetResources(for: asset).first else {
+            throw LibraryError.assetMissing(identifier)
+        }
+
+        let destination = playbackPath(for: identifier)
+        try FileManager.default.createDirectory(
+            at: Self.playbackDirectory, withIntermediateDirectories: true
+        )
+
+        return try await withCheckedThrowingContinuation { continuation in
+            // **`options: nil` rather than `PHAssetResourceRequestOptions()` with
+            // `networkAccessAllowed = false`.** Unlike `PHImageRequestOptions`, this
+            // one has no `isNetworkAccessAllowed` — a resource write is a file copy
+            // out of what is already on this device, and an asset whose only copy is
+            // in iCloud is simply not on the device, which `assetMissing` reports.
+            PHAssetResourceManager.default().writeData(
+                for: resource,
+                toFile: destination,
+                options: nil,
+                completionHandler: { error in
+                    if let error {
+                        // **A half-written file is worse than none.** A player given
+                        // a truncated clip shows a frozen frame, which is the exact
+                        // failure this whole seam exists to avoid.
+                        try? FileManager.default.removeItem(at: destination)
+                        continuation.resume(throwing: LibraryError.writeFailed(
+                            error.localizedDescription
+                        ))
+                    } else {
+                        continuation.resume(returning: destination)
+                    }
+                }
+            )
+        }
+    }
+
+    func purgeBTSPlaybackFiles() {
+        try? FileManager.default.removeItem(at: Self.playbackDirectory)
+    }
 }

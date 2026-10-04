@@ -325,6 +325,16 @@ struct AlbumTests {
         func purgeImageCache() async {}
         func data(for identifier: String) async throws -> Data { Data() }
 
+        /// Playback has nothing to offer a double with no library behind it.
+        ///
+        /// **Throws rather than returning a path**, and the choice is the test's:
+        /// this type exists to fail library operations, and a playable clip would be
+        /// a library operation that succeeds.
+        func btsClipFile(for identifier: String) async throws -> URL {
+            throw LibraryError.assetMissing(identifier)
+        }
+        func purgeBTSPlaybackFiles() {}
+
         /// How many pairs were written.
         var savedPairCount: Int { countPairs }
 

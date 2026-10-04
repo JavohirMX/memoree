@@ -50,7 +50,12 @@ Support/      → imports nothing internal
   They publish state; the UI observes it.
 - **Every service is a protocol** with a production implementation and a test double. Services
   that cannot be faked are services that cannot be tested.
-- **`Features/` contains SwiftUI views and view models only.** No AVFoundation, no PhotoKit.
+- **`Features/` contains SwiftUI views and view models only.** No AVFoundation, no PhotoKit,
+  no AVKit.
+
+  One named exception, in the table below. `DesignSystemInvariantTests` enforces the rule and
+  keeps the table honest — it fails when an entry names a file that no longer exists, and when
+  an entry grants an import its file does not have.
 
 Targeted exceptions to "no SwiftUI in Services" — six files import a capture or Photos
 framework, and **none of them imports SwiftUI**:
@@ -69,6 +74,16 @@ their protocols name. **This list was two entries long for most of the project's
 it named only the first two files — so the rule read as broken when it was merely stale.
 A named-exception list that undercounts is worse than none: it sends the next reader to
 delete a legitimate import.
+
+And one in the other direction, from ADR-029:
+
+| File | Imports | Why |
+| --- | --- | --- |
+| `Features/BTS/BTSPlaybackView.swift` | `AVFoundation`, `AVKit` | Renders an `AVPlayer`. A view is presentation and a player is presentation; the view model beside it names neither framework. The exception is to the view, not the layer |
+
+`BTSPlaybackView` is the **only** file under `Features/` that may name a capture or media
+framework. A second one means the rule has not survived its exception, and
+`DesignSystemInvariantTests` will say so.
 
 ## 4. Naming
 

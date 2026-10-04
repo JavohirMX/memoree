@@ -473,6 +473,29 @@ struct DesignSystemInvariantTests {
         }
     }
 
+    /// The one file in `Features/` allowed to import AVFoundation or AVKit, and why.
+///
+/// **A named list, and it is one entry.** The first draft of this was a comment
+/// plus an `if` with the filename in it, which is an exception nobody can enumerate
+/// without reading the whole file. `AGENTS.md` §3 already learned this lesson about
+/// its own import table — it listed two files for most of the project's life while
+/// six imported a capture framework, and the table read as broken when it was merely
+/// stale.
+///
+/// ## Every entry must name a file that still exists
+///
+/// An exception whose file has been deleted is worse than no exception: it keeps
+/// the hole open for whatever gets created next, and nobody remembers granting it.
+/// `theStaleExceptionsAreEmpty` below fails the build in that case, so granting
+/// an exception means a reviewer sees it in a diff.
+private static let featureFrameworkExceptions: [String: [String]] = [
+    // ADR-029. `VideoPlayer` is AVKit's and `AVPlayer` is AVFoundation's, and a
+    // player needs both. The view model in the same file names neither — the
+    // exception is to the view, which is the only thing in `Features/` that was
+    // ever presentation of AVFoundation types.
+    "BTSPlaybackView.swift": ["import AVFoundation", "import AVKit"],
+]
+
     @Test("Features imports no PhotoKit and no AVFoundation")
     func featuresRespectTheLayering() throws {
         // `AGENTS.md` §3: "`Features/` contains SwiftUI views and view models
@@ -483,6 +506,12 @@ struct DesignSystemInvariantTests {
         // `Services` importing `SwiftUI` is the other half of the same rule and is
         // checked here too, because a service that can see a view is a service
         // that cannot be tested without one.
+        //
+        // **`AVKit` is in the forbidden set too.** Allowing `AVFoundation` and
+        // forbidding `AVKit` would be a rule with a hole the width of the file
+        // that found it, and `BTSPlaybackView` would have been allowed to import
+        // AVKit by default — the exception would have been recorded for the wrong
+        // framework and the right one would have gone unmentioned.
         var offences: [String] = []
 
         for file in try Self.swiftFiles() {
@@ -491,10 +520,16 @@ struct DesignSystemInvariantTests {
             let isService = path.contains("/Services/")
             guard isFeature || isService else { continue }
 
+            let allowed = Self.featureFrameworkExceptions[file.lastPathComponent] ?? []
+
             for line in try SourceScan.codeLines(of: file) {
                 if isFeature,
-                   line.code == "import Photos" || line.code == "import AVFoundation" {
-                    offences.append("\(file.lastPathComponent): \(line.code)")
+                   line.code == "import Photos"
+                    || line.code == "import AVFoundation"
+                    || line.code == "import AVKit" {
+                    if !allowed.contains(line.code) {
+                        offences.append("\(file.lastPathComponent): \(line.code)")
+                    }
                 }
                 if isService, line.code == "import SwiftUI" {
                     offences.append("\(file.lastPathComponent): \(line.code)")
@@ -506,5 +541,54 @@ struct DesignSystemInvariantTests {
             offences.isEmpty,
             "layering violations (AGENTS.md §3): \(offences.joined(separator: ", "))"
         )
+    }
+
+    @Test("Every layering exception names a file that exists")
+    func theStaleExceptionsAreEmpty() throws {
+        // **The failure mode an exception list has and a comment does not.** An
+        // exception whose file has been deleted keeps its hole open for whatever
+        // comes next, and nobody remembers granting it — so this fails when the
+        // list is longer than the reality rather than only when the reality breaks
+        // the rule.
+        let names = Set(try Self.swiftFiles().map { $0.lastPathComponent })
+        let stale = Self.featureFrameworkExceptions.keys.filter { !names.contains($0) }
+
+        #expect(
+            stale.isEmpty,
+            """
+            layering exceptions naming files that do not exist: \
+            \(stale.sorted().joined(separator: ", "))
+            Delete the exception, or restore the file — a hole with no file above \
+            it is the one that grows quietly.
+            """
+        )
+    }
+
+    @Test("Every layering exception is used")
+    func theExceptionsAreStillNeeded() throws {
+        // **The other direction.** An exception that grants two imports when only
+        // one is present is a permission that has quietly become broader, and
+        // widening it later would not look like anything.
+        //
+        // **A missing file is skipped rather than reported**, because
+        // `theStaleExceptionsAreEmpty` above is already reporting it. `SourceScan
+        // .file(named:)` uses `#require`, which records an `Issue` even when the
+        // caller swallows the throw — so going through it here made one stale
+        // entry fail two tests and the second said nothing the first had not.
+        // Matching against the file list directly keeps one failure per cause.
+        let files = try Self.swiftFiles()
+        var unused: [String] = []
+        for (name, imports) in Self.featureFrameworkExceptions {
+            guard let file = files.first(where: { $0.lastPathComponent == name }) else {
+                continue
+            }
+            let present = Set(try SourceScan.codeLines(of: file).map(\.code))
+            let unclaimed = imports.filter { !present.contains($0) }
+            if !unclaimed.isEmpty {
+                unused.append("\(name): \(unclaimed.joined(separator: ", "))")
+            }
+        }
+
+        #expect(unused.isEmpty, "layering exceptions granting unused imports: \(unused)")
     }
 }

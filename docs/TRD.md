@@ -464,6 +464,40 @@ first time, and degrade to a silent clip if denied rather than blocking the mome
 Because capture is sequential, the BTS file contains the rear stream up to the switch and
 nothing after. That is the correct and expected behaviour, not a bug.
 
+#### Ordering: the output is asked for before the session, the recording after
+
+`CaptureSessionController` attaches a movie output only to sessions configured **after**
+`wantsMovieOutput` is set, and re-attaching one to a live session means another
+`beginConfiguration` cycle on a subsystem this project has measured as fragile. So
+`CameraViewModel` calls `CapturePhotoService.enableMovieOutput()` *before* `startSession` and
+`BTSRecorder.startRecording()` *after* it, from two separate methods because one of them has a
+precondition the other cannot have.
+
+The failure when this is wrong is invisible. `LiveBTSRecorder` throws `outputUnavailable`,
+ADR-013's design swallows it, and the app shows BTS as on while recording nothing, forever.
+`InMemoryCaptureService`'s event log is what makes the order assertable at all.
+
+#### Discarding, and why `abandon()` exists
+
+A re-take, a start-over, and leaving the camera all discard the recording —
+`BTSRecorder.abandon()`, which cannot throw. `try? stopRecording()` followed by `discard` looks
+equivalent and is not: when the stop throws — which is what ADR-027's session rebuild causes —
+the recording's path is never handed back, so the bytes cannot be released *and* `isRecording`
+stays `true`, which makes every later `startRecording` throw `alreadyRecording`. Swallowed, the
+symptom is "BTS stopped working" with nothing to report.
+
+#### Playback
+
+`PhotoLibraryService.btsClipFile(for:)` writes the clip to a temporary file via
+`PHAssetResourceManager.writeData(for:toFile:)`, and `BTSPlaybackView` plays it with an
+`AVPlayer`. Play/pause and mute only — no scrubber, no volume, no full screen. Mute is on by
+default; Memoree is opened in queues and lectures.
+
+Playback is the one thing under `Features/` that imports AVFoundation or AVKit (ADR-029). The
+`NoNetworkingTests` scan is why the local read uses `FileManager.contents(atPath:)` rather than
+`Data(contentsOf:)`, and why both source scans strip comments: a guard that fires on prose gets
+worked around by deleting the prose.
+
 ## 6. Photos library
 
 ### 6.1 Permission

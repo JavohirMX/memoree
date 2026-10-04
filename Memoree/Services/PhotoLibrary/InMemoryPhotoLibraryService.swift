@@ -30,6 +30,7 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
         var prefetchedBatches: [[String]] = []
         var cancelledPrefetches: [CGSize] = []
         var purgeCount = 0
+        var playbackPurgeCount = 0
     }
 
     private let lock = NSLock()
@@ -59,6 +60,17 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
     var savedBackData: [Data] { lock.withLock { state.backData } }
     var savedFrontData: [Data] { lock.withLock { state.frontData } }
     var savedBTSCount: Int { lock.withLock { state.btsData.count } }
+    /// Identifiers the BTS writes were filed under, in order.
+    ///
+    /// **The identifiers, not just the count**, because a test that asserts "one
+    /// clip was written" cannot then read the identifier back — and the identifier
+    /// is the only thing a playback test has to work from.
+    var savedBTSIdentifiers: [String] { lock.withLock { state.storedBytes.keys
+        .filter { $0.hasPrefix("bts-") }
+        .sorted { lhs, rhs in
+            (Int(lhs.dropFirst(4)) ?? 0) < (Int(rhs.dropFirst(4)) ?? 0)
+        }
+    } }
     var createdAlbums: [String] { lock.withLock { state.albumCreations } }
     var didAttemptAlbumCreation: Bool { lock.withLock { state.albumCreationAttempted } }
     func albumMembers(named name: String) -> [String] { lock.withLock { state.albumMembers[name] ?? [] } }
@@ -72,6 +84,8 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
     var prefetchedBatches: [[String]] { lock.withLock { state.prefetchedBatches } }
     var cancelledPrefetchSizes: [CGSize] { lock.withLock { state.cancelledPrefetches } }
     var imageCachePurgeCount: Int { lock.withLock { state.purgeCount } }
+    /// How many times playable BTS copies were swept. See `purgeBTSPlaybackFiles`.
+    var btsPlaybackPurgeCount: Int { lock.withLock { state.playbackPurgeCount } }
 
     // MARK: - PhotoLibraryService
 
@@ -123,6 +137,45 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
             state.storedBytes[identifier] = data
             return identifier
         }
+    }
+
+    /// Writes a real, empty file at a real path.
+    ///
+    /// **A file, and not a fabricated URL, because the consumer opens it.** A
+    /// double returning a path that does not exist makes `AVPlayer` fail in a way
+    /// the view model would then have to distinguish from "you deleted the clip" —
+    /// which is the same lesson `InMemoryBTSRecorder.trim` learned the hard way,
+    /// in the other direction.
+    ///
+    /// The bytes are deliberately not the clip's own. Nothing in the view model
+    /// reads them; only a player does, and a player is never under test.
+    func btsClipFile(for identifier: String) async throws -> URL {
+        try lock.withLock {
+            guard let bytes = state.storedBytes[identifier] else {
+                throw LibraryError.assetMissing(identifier)
+            }
+            counter += 1
+            let url = Self.playbackDirectory
+                .appendingPathComponent("playback-\(counter).mov")
+            try FileManager.default.createDirectory(
+                at: Self.playbackDirectory, withIntermediateDirectories: true
+            )
+            try Data("playback-\(bytes.count)".utf8).write(to: url)
+            return url
+        }
+    }
+
+    private static let playbackDirectory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("memoree-bts-playback-tests", isDirectory: true)
+
+    /// Deletes what `btsClipFile` wrote, so a suite run leaves nothing behind.
+    static func clearPlaybackTestFiles() {
+        try? FileManager.default.removeItem(at: playbackDirectory)
+    }
+
+    func purgeBTSPlaybackFiles() {
+        lock.withLock { state.playbackPurgeCount += 1 }
+        Self.clearPlaybackTestFiles()
     }
 
     /// Decodes what it was given, so the read path returns real pixels.

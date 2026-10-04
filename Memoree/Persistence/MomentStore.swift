@@ -99,6 +99,7 @@ final class MomentStore {
                 windowEndsAt: moment.windowEndsAt,
                 retakeCount: moment.retakeCount,
                 hasBTS: moment.hasBTS,
+                btsAssetIdentifier: moment.btsAssetIdentifier,
                 assets: Self.assets(of: moment)
             )
         }
