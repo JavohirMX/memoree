@@ -161,15 +161,21 @@ The app works in airplane mode. That is not a limitation — it is the product.
 
 ## Status
 
-Pre-release. 395 tests in 46 suites on the simulator; two of them fail there by design, because a
+Pre-release. 434 tests in 50 suites on the simulator; two of them fail there by design, because a
 skipped device test that reports as passed is worse than a red suite.
 
 One exit criterion is unmet: the twenty-capture reliability gate on hardware, now at **19/20**
 with a capture-daemon death that reproduces on demand, has been investigated, and no longer ends
 the run — the capture path recovers from it once and the next attempt succeeds (ADR-027). The
-threshold has not been moved. Release readiness is Phase 11 and has not been done; the app icon
-has no artwork, which blocks submission outright. See `docs/IMPLEMENTATION_PLAN.md` for the
-current phase and its reasoning.
+threshold has not been moved. Release readiness is Phase 11 and has not been done. See
+`docs/IMPLEMENTATION_PLAN.md` for the current phase and its reasoning.
+
+The app icon is drawn by `Scripts/make-appicon.swift` rather than by hand, so that its geometry
+can be reviewed as code and follows the design system when the composite changes:
+
+```sh
+swift Scripts/make-appicon.swift
+```
 
 ## Licence
 

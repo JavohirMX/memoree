@@ -826,6 +826,22 @@ amber "Open Settings" button two sections below it. An invariant fails on any
 `String(format: "%02d:%02d")` were both in the app, on the screen that tells the user when to be
 ready and on the screen where they set their window. A user in the United States read a 24-hour
 clock while eight other screens said "11:00 AM". Both now use `.formatted(time: .shortened)`.
+
+**The app icon is generated, not drawn.** `Scripts/make-appicon.swift` renders it with CoreGraphics
+from `Theme`'s own numbers — the 3:4 frame, `Radius.inset` against `Size.insetStandard`, the
+composite's top-left overlap — and writes one opaque 1024 PNG. An icon is the one piece of this
+app's visual identity that no design system governs, and a hand-drawn PNG is a file nobody can
+review: no diff shows whether the inset moved. Three numbers in that script are deliberately *not*
+the app's values (corner radius 8% rather than 5%, stroke 5% of the frame's width, inset 34%
+rather than 27%) because the icon is judged at 60pt, where the app's values are correct but too
+small to read. The comments say which is which.
+
+`AppIconTests` exists because the `AppIcon.appiconset` directory had been in the repository since
+day one with a `Contents.json` naming **no file**, and every build and every test suite passed
+while the app could not be submitted. It also checks the icon is opaque — App Store Connect
+rejects an alpha channel, and `sips` adds one while resizing, which is how an icon that shipped
+in a build stops being shippable after somebody tidied it — and that `LaunchBackground` and
+`AccentColor` are the values this design system says they are.
 **`24:00` is the one exception and stays** — it means end-of-day, a boundary rather than an
 instant, so there is no honest `Date` for it and rendering it as `00:00` would put the end of a
 window before its start.
