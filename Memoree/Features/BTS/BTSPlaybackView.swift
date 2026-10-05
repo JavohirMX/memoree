@@ -75,6 +75,7 @@ struct BTSPlaybackView: View {
                 Image(systemName: "video.slash")
                     .scaledDisplayFont(Theme.Size.iconStandalone, weight: .regular)
                     .foregroundStyle(Theme.Color.textTertiary)
+                    .accessibilityHidden(true)
                 Text(model?.failure ?? "The clip is unavailable.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
@@ -120,6 +121,8 @@ struct BTSPlaybackView: View {
                     // nothing on a screen with one control on it.
                     Text(model.isPlaying ? "Pause" : "Play")
                         .font(Theme.Typography.metadata)
+                        .frame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.Color.textPrimary)
@@ -129,13 +132,14 @@ struct BTSPlaybackView: View {
                 } label: {
                     Text(model.isMuted ? "Unmute" : "Mute")
                         .font(Theme.Typography.metadata)
+                        .frame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget)
+                        .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Theme.Color.textSecondary)
 
                 Spacer()
             }
-            .accessibilityElement(children: .combine)
         }
     }
 

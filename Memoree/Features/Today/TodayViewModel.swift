@@ -41,6 +41,14 @@ final class TodayViewModel {
     /// first, not which one is prominent — that is a review-screen behaviour,
     /// and the review screen is the only place where both slots are photographs.
     private(set) var todayImages: (large: UIImage, inset: UIImage)?
+    private(set) var todayMoments: [MomentFacts] = []
+    private(set) var todayImagesMap: [UUID: (large: UIImage, inset: UIImage)] = [:]
+    private(set) var todayMissingMap: Set<UUID> = []
+
+    /// All moments for the feed, newest first.
+    private(set) var feedMoments: [MomentFacts] = []
+    private(set) var feedImagesMap: [UUID: (large: UIImage, inset: UIImage)] = [:]
+    private(set) var feedMissingMap: Set<UUID> = []
 
     /// Today's photographs are gone from Photos.
     ///
@@ -92,7 +100,14 @@ final class TodayViewModel {
         self.interval = environment.interval(for: today)
         // Compared against `today` explicitly rather than through `isToday`,
         // which asks the system clock. Same clock as everything else here.
-        self.todayMoment = environment.momentStore.facts().last { $0.day == today }
+        let allMoments = environment.momentStore.facts()
+            .sorted { $0.capturedAt > $1.capturedAt }
+        self.feedMoments = allMoments
+        let moments = allMoments
+            .filter { $0.day == today }
+            .sorted { $0.capturedAt < $1.capturedAt }
+        self.todayMoments = moments
+        self.todayMoment = moments.last
         self.summary = environment.momentStore.summary(today: today)
     }
 
@@ -190,7 +205,13 @@ final class TodayViewModel {
         // Day rollover: the window and moment both belong to a specific day.
         if today != DayIdentifier(date: now) {
             interval = environment.interval(for: today)
-            todayMoment = environment.momentStore.facts().last { $0.day == today }
+            let all = environment.momentStore.facts().sorted { $0.capturedAt > $1.capturedAt }
+            feedMoments = all
+            let moments = all
+                .filter { $0.day == today }
+                .sorted { $0.capturedAt < $1.capturedAt }
+            todayMoments = moments
+            todayMoment = moments.last
             summary = environment.momentStore.summary(today: today)
             Task { await loadTodayImages() }
         }
@@ -200,7 +221,15 @@ final class TodayViewModel {
     /// Full refresh: state, streak, notification diagnostics, and today's pair.
     func reload() async {
         refreshNow()
-        summary = environment.momentStore.summary(today: DayIdentifier(date: now))
+        let today = DayIdentifier(date: now)
+        let all = environment.momentStore.facts().sorted { $0.capturedAt > $1.capturedAt }
+        feedMoments = all
+        let moments = all
+            .filter { $0.day == today }
+            .sorted { $0.capturedAt < $1.capturedAt }
+        todayMoments = moments
+        todayMoment = moments.last
+        summary = environment.momentStore.summary(today: today)
         // Re-read on every reload, not only at construction: the Settings screen
         // can change the window while the Today screen exists underneath it, and
         // a stale value here would be a Settings screen that appears not to work.
@@ -213,40 +242,89 @@ final class TodayViewModel {
         await loadTodayImages()
     }
 
-    /// Streams today's two photographs back out of Photos.
-    ///
-    /// Awaited from `reload()` rather than fired off, so a caller that reloads
-    /// and immediately renders sees the photographs. The images are small — a
-    /// screen-sized downsample, not the original 3–5 MB — because the originals
-    /// are already on the device in the user's own library, and copying them
-    /// here would be a pointless use of memory (TRD §6.5, ADR-007).
+    /// Loads image pair lazily for a feed moment.
+    func loadImage(for moment: MomentFacts) async {
+        guard feedImagesMap[moment.id] == nil, !feedMissingMap.contains(moment.id) else { return }
+        guard let assets = moment.assets else { return }
+        let size = Self.compositeTargetSize
+        async let large = environment.photoLibrary.image(for: assets.back, targetSize: size)
+        async let inset = environment.photoLibrary.image(for: assets.front, targetSize: size)
+        let (largeImage, insetImage) = await (large, inset)
+        if let largeImage, let insetImage {
+            feedImagesMap[moment.id] = (large: largeImage, inset: insetImage)
+            todayImagesMap[moment.id] = (large: largeImage, inset: insetImage)
+        } else {
+            let backExists = await environment.photoLibrary.assetExists(assets.back)
+            let frontExists = await environment.photoLibrary.assetExists(assets.front)
+            if !(backExists && frontExists) {
+                feedMissingMap.insert(moment.id)
+                todayMissingMap.insert(moment.id)
+            }
+        }
+    }
+
+    /// User-friendly relative date header for feed items.
+    func relativeHeader(for moment: MomentFacts) -> String {
+        let calendar = Calendar.current
+        let time = moment.capturedAt.formatted(date: .omitted, time: .shortened)
+        if calendar.isDateInToday(moment.capturedAt) {
+            return "Today · \(time)"
+        } else if calendar.isDateInYesterday(moment.capturedAt) {
+            return "Yesterday · \(time)"
+        } else {
+            let dateStr = moment.capturedAt.formatted(.dateTime.month(.abbreviated).day())
+            return "\(dateStr) · \(time)"
+        }
+    }
+
+    /// Streams today's photographs back out of Photos.
     private func loadTodayImages() async {
-        guard let moment = todayMoment,
-              let back = moment.assets?.back,
-              let front = moment.assets?.front
-        else {
+        guard !todayMoments.isEmpty else {
             todayImages = nil
+            todayImagesMap = [:]
+            todayMissingMap = []
             todayMissingFromPhotos = false
             return
         }
 
         let size = Self.compositeTargetSize
-        async let large = environment.photoLibrary.image(for: back, targetSize: size)
-        async let inset = environment.photoLibrary.image(for: front, targetSize: size)
-        let (largeImage, insetImage) = await (large, inset)
+        var newImagesMap: [UUID: (large: UIImage, inset: UIImage)] = [:]
+        var newMissingMap = Set<UUID>()
 
-        if let largeImage, let insetImage {
-            todayImages = (large: largeImage, inset: insetImage)
+        for moment in todayMoments {
+            guard let assets = moment.assets else {
+                continue
+            }
+
+            async let large = environment.photoLibrary.image(for: assets.back, targetSize: size)
+            async let inset = environment.photoLibrary.image(for: assets.front, targetSize: size)
+            let (largeImage, insetImage) = await (large, inset)
+
+            if let largeImage, let insetImage {
+                newImagesMap[moment.id] = (large: largeImage, inset: insetImage)
+            } else {
+                let backExists = await environment.photoLibrary.assetExists(assets.back)
+                let frontExists = await environment.photoLibrary.assetExists(assets.front)
+                if !(backExists && frontExists) {
+                    newMissingMap.insert(moment.id)
+                }
+            }
+        }
+
+        todayImagesMap = newImagesMap
+        todayMissingMap = newMissingMap
+        for (k, v) in newImagesMap { feedImagesMap[k] = v }
+        feedMissingMap.formUnion(newMissingMap)
+
+        if let latestID = todayMoment?.id, let pair = newImagesMap[latestID] {
+            todayImages = pair
             todayMissingFromPhotos = false
+        } else if let latestID = todayMoment?.id, newMissingMap.contains(latestID) {
+            todayImages = nil
+            todayMissingFromPhotos = true
         } else {
             todayImages = nil
-            // Only call it missing if the assets are genuinely gone. A `nil`
-            // because a request has not resolved yet is a different claim, and a
-            // moment that still has its photographs must never be described as
-            // having lost them.
-            let backExists = await environment.photoLibrary.assetExists(back)
-            let frontExists = await environment.photoLibrary.assetExists(front)
-            todayMissingFromPhotos = !(backExists && frontExists)
+            todayMissingFromPhotos = false
         }
     }
 
@@ -256,10 +334,11 @@ final class TodayViewModel {
     /// iPhone SE and on a Pro Max without a second number to keep honest.
     private static var compositeTargetSize: CGSize {
         let scale = UIScreen.main.scale
+        let side = max(Theme.Size.detailImageWidth, Theme.Size.detailImageHeight)
         return CGSize(
-                width: Theme.Size.detailImageWidth * scale,
-                height: Theme.Size.detailImageHeight * scale
-            )
+            width: side * scale,
+            height: side * scale
+        )
     }
 
     private func refreshAuthorization() async -> Bool {

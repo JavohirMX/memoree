@@ -437,6 +437,12 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// thread safe despite the rest of the type being queue-confined.
     let previewSurface: AVCaptureVideoPreviewLayer
 
+    private var sessionObservers: [NSObjectProtocol] = []
+
+    deinit {
+        sessionObservers.forEach { NotificationCenter.default.removeObserver($0) }
+    }
+
     // MARK: - Init
 
     override init() {
@@ -452,6 +458,35 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         // block session configuration, or the wait it feeds would deadlock
         // against the swap that armed it.
         videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue(label: "capture.frames"))
+
+        sessionObservers = [
+            NotificationCenter.default.addObserver(
+                forName: AVCaptureSession.wasInterruptedNotification,
+                object: nil,
+                queue: nil
+            ) { [weak self] note in
+                guard let self else { return }
+                self.queue.async {
+                    guard (note.object as? AVCaptureSession) === self.session else { return }
+                    if self.state == .running {
+                        self.state = .interrupted
+                    }
+                }
+            },
+            NotificationCenter.default.addObserver(
+                forName: AVCaptureSession.interruptionEndedNotification,
+                object: nil,
+                queue: nil
+            ) { [weak self] note in
+                guard let self else { return }
+                self.queue.async {
+                    guard (note.object as? AVCaptureSession) === self.session else { return }
+                    if self.state == .interrupted {
+                        self.state = .running
+                    }
+                }
+            }
+        ]
     }
 
     // MARK: - Preview
@@ -526,6 +561,16 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             queue.async { [self] in
                 session.stopRunning()
                 state = .idle
+                if let wait = self.frameWait {
+                    self.frameWait = nil
+                    wait.continuation.resume(throwing: CaptureError.sessionReset)
+                }
+                if let photoWait = self.photoWait {
+                    let delegate = self.pendingPhotoDelegate
+                    self.photoWait = nil
+                    self.pendingPhotoDelegate = nil
+                    delegate?.cancel(with: CaptureError.sessionReset)
+                }
                 // **The coordinator and its observations are torn down with the
                 // session.** They hold the device, and the camera screen is a
                 // cover that opens and closes constantly — leaving a coordinator
@@ -549,6 +594,16 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             queue.async { [self] in
                 session.stopRunning()
                 rebuilds += 1
+                if let wait = self.frameWait {
+                    self.frameWait = nil
+                    wait.continuation.resume(throwing: CaptureError.sessionReset)
+                }
+                if let photoWait = self.photoWait {
+                    let delegate = self.pendingPhotoDelegate
+                    self.photoWait = nil
+                    self.pendingPhotoDelegate = nil
+                    delegate?.cancel(with: CaptureError.sessionReset)
+                }
                 // Detach the preview from the doomed session before dropping it,
                 // or the layer keeps a strong reference to a dead object.
                 previewSurface.session = nil
@@ -687,11 +742,10 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                     // deadline firing after a later capture began must not
                     // steal that one.
                     guard let wait = self.photoWait, wait.position == position else { return }
+                    let delegate = self.pendingPhotoDelegate
                     self.photoWait = nil
                     self.pendingPhotoDelegate = nil
-                    wait.continuation.resume(
-                        throwing: CaptureError.photoDataUnavailable(position)
-                    )
+                    delegate?.cancel(with: CaptureError.photoDataUnavailable(position))
                 }
             }
         }
@@ -819,7 +873,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             self.lastFrameAt = DispatchTime.now()
 
             guard let wait = self.frameWait, let input = self.activeInput else { return }
-            guard let expectedPort = input.ports.first else {
+            guard let expectedPort = input.ports.first(where: { $0.mediaType == .video }) ?? input.ports.first else {
                 self.frameWait = nil
                 self.record(self.snapshot(wait))
                 // **`noInputAvailable`, not `noDeliveredFrame` — unchanged.** An
@@ -1229,7 +1283,15 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         // unclamped write would be accepted by AVFoundation and produce a
         // rectangle of pixels.
         let ceiling = device.activeFormat.videoMaxZoomFactor
-        let requested = zoom.virtualDeviceZoomFactor
+        // A virtual dual-wide camera's 1.0 is its ultra-wide lens, so wide 1x sits
+        // at 2.0 (virtualDeviceZoomFactor). On front cameras and single-lens devices,
+        // 1.0 is already native 1x, so applying 2.0 was a 2x digital zoom crop.
+        let requested: CGFloat
+        if device.deviceType == .builtInDualWideCamera {
+            requested = zoom.virtualDeviceZoomFactor
+        } else {
+            requested = zoom.factor
+        }
         device.videoZoomFactor = min(max(requested, device.minAvailableVideoZoomFactor), ceiling)
     }
 
@@ -1402,6 +1464,10 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
            photoConnection.isVideoRotationAngleSupported(orientation.captureAngle) {
             photoConnection.videoRotationAngle = orientation.captureAngle
         }
+        if let movieConnection = movieOutput?.connection(with: .video),
+           movieConnection.isVideoRotationAngleSupported(orientation.captureAngle) {
+            movieConnection.videoRotationAngle = orientation.captureAngle
+        }
 
         appliedOrientation = orientation
     }
@@ -1489,9 +1555,14 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// wrong is instantly visible: a selfie that reads as a photograph of a
     /// photograph rather than a mirror.
     private func configureMirroring(for position: CameraPosition) {
-        guard let connection = photoOutput.connection(with: .video) else { return }
-        guard connection.isVideoMirroringSupported else { return }
-        connection.isVideoMirrored = (position == .front)
+        if let photoConnection = photoOutput.connection(with: .video),
+           photoConnection.isVideoMirroringSupported {
+            photoConnection.isVideoMirrored = (position == .front)
+        }
+        if let movieConnection = movieOutput?.connection(with: .video),
+           movieConnection.isVideoMirroringSupported {
+            movieConnection.isVideoMirrored = (position == .front)
+        }
     }
 
     // MARK: - Photo settings
@@ -1676,6 +1747,19 @@ private final class SingleShotPhotoDelegate: NSObject, AVCapturePhotoCaptureDele
             pixelHeight: Int(dimensions.height),
             position: position
         ))
+    }
+
+    /// Cancels the in-flight capture with an error, ensuring the continuation
+    /// is resumed exactly once even if the delegate callback races against it.
+    func cancel(with error: Error) {
+        lock.lock()
+        let alreadyResumed = hasResumed
+        hasResumed = true
+        lock.unlock()
+
+        guard !alreadyResumed else { return }
+        defer { completion() }
+        continuation.resume(throwing: error)
     }
 
     func photoOutput(

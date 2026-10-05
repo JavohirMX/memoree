@@ -39,9 +39,11 @@ final class MomentStore {
     /// The moment for a given day, if one exists.
     func moment(for day: DayIdentifier) -> Moment? {
         let target = day.rawValue
-        let descriptor = FetchDescriptor<Moment>(
-            predicate: #Predicate { $0.dayIdentifier == target && $0.deletedAt == nil }
+        var descriptor = FetchDescriptor<Moment>(
+            predicate: #Predicate { $0.dayIdentifier == target && $0.deletedAt == nil },
+            sortBy: [SortDescriptor(\.capturedAt, order: .reverse)]
         )
+        descriptor.fetchLimit = 1
         return try? context.fetch(descriptor).first
     }
 
@@ -154,12 +156,6 @@ final class MomentStore {
         note: String? = nil
     ) throws -> Moment {
         let lateness = interval.lateness(at: capturedAt)
-
-        // Replacing rather than inserting keeps the one-moment-per-day
-        // invariant true when a user re-captures after deleting.
-        if let existing = moment(for: day) {
-            context.delete(existing)
-        }
 
         let moment = Moment(
             dayIdentifier: day.rawValue,

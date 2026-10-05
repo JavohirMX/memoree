@@ -102,8 +102,12 @@ final class ArchiveThumbnailCache: @unchecked Sendable {
         manager: PHCachingImageManager,
         options: PHImageRequestOptions
     ) {
-        let assets = identifiers.compactMap { identifier in
-            PHAsset.fetchAssets(withLocalIdentifiers: [identifier], options: nil).firstObject
+        guard !identifiers.isEmpty else { return }
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: identifiers, options: nil)
+        var assets: [PHAsset] = []
+        assets.reserveCapacity(fetchResult.count)
+        fetchResult.enumerateObjects { asset, _, _ in
+            assets.append(asset)
         }
         guard !assets.isEmpty else { return }
 

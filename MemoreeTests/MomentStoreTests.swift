@@ -102,8 +102,8 @@ struct MomentStoreTests {
         #expect(try #require(store.moment(for: d)).isLate == false)
     }
 
-    @Test("One moment per day — re-capturing replaces rather than duplicates")
-    func oneMomentPerDay() throws {
+    @Test("Multiple moments per day — capturing again appends rather than clears")
+    func multipleMomentsPerDay() throws {
         let (store, _) = try makeStore()
         let d = try day("2026-09-30")
         let window = interval(d)
@@ -112,14 +112,14 @@ struct MomentStoreTests {
             try store.record(
                 day: d,
                 interval: window,
-                capturedAt: window.start.addingTimeInterval(10),
+                capturedAt: window.start.addingTimeInterval(Double(retakes * 10)),
                 retakeCount: retakes,
                 backAssetIdentifier: "back-\(retakes)",
                 frontAssetIdentifier: nil
             )
         }
 
-        #expect(store.allMoments.count == 1, "re-capture must replace, not insert")
+        #expect(store.allMoments.count == 5, "capture again must append and keep all captures")
         #expect(try #require(store.moment(for: d)).retakeCount == 4)
         #expect(store.moment(for: d)?.backAssetIdentifier == "back-4")
     }

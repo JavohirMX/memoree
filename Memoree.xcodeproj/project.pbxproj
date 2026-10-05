@@ -112,6 +112,7 @@
 		E34B7DF46789CA838628B8A8 /* InMemoryBTSRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF1C4AD54F214BF4185ADE9 /* InMemoryBTSRecorder.swift */; };
 		E9BD27C3C18A454BBF501ADF /* CaptureFormatSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170065353CC5AF754FEB56D3 /* CaptureFormatSelector.swift */; };
 		EBF74A30C81ABB752F19229A /* MomentComposite.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0887B0F2895403AE68C5428 /* MomentComposite.swift */; };
+		FSIV00018BAE60299330A810 /* FullScreenImageViewer.swift in Sources */ = {isa = PBXBuildFile; fileRef = FSIV0002157F7C822A1BF283 /* FullScreenImageViewer.swift */; };
 		F0CF5BC193973823452ACDCB /* ShareTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5813FE0F46A7A66B303ABBA0 /* ShareTests.swift */; };
 		F1B1F6DA5643B12E96292B0F /* ArchiveSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44D954A88FE999BC103F64D3 /* ArchiveSection.swift */; };
 		F497F140FA8775AA63614222 /* StreakCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6457DA40B3A78A6DD1789ADD /* StreakCalculatorTests.swift */; };
@@ -231,6 +232,7 @@
 		D9100C5469DB0B8FADEE2D2F /* MomentStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentStoreTests.swift; sourceTree = "<group>"; };
 		DDEB9BC5157F7C822A1BF283 /* MomentStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentStore.swift; sourceTree = "<group>"; };
 		E0887B0F2895403AE68C5428 /* MomentComposite.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentComposite.swift; sourceTree = "<group>"; };
+		FSIV0002157F7C822A1BF283 /* FullScreenImageViewer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FullScreenImageViewer.swift; sourceTree = "<group>"; };
 		E202B3B165C41A78B433ADBA /* PhotoKitLibrary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoKitLibrary.swift; sourceTree = "<group>"; };
 		E2701E38ABA829E678DFCDBC /* TodayViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TodayViewModel.swift; sourceTree = "<group>"; };
 		E2C2D41238C107D673A53CDF /* BTSFlowTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTSFlowTests.swift; sourceTree = "<group>"; };
@@ -355,6 +357,7 @@
 			isa = PBXGroup;
 			children = (
 				FDCF09EE5E8BD15BDC03461D /* Components.swift */,
+				FSIV0002157F7C822A1BF283 /* FullScreenImageViewer.swift */,
 				E0887B0F2895403AE68C5428 /* MomentComposite.swift */,
 				A2F529525A510F86A2D4BFE6 /* PressDipStyle.swift */,
 				84F912E1201D8205652FB42C /* SettingsComponents.swift */,
@@ -703,6 +706,7 @@
 				DC4C1394F5AFC4875B82F5B0 /* MemoreeAppDelegate.swift in Sources */,
 				39366A37A503647A4F201D89 /* ModelContainer.swift in Sources */,
 				C4A361D451653D25E8868764 /* Models.swift in Sources */,
+				FSIV00018BAE60299330A810 /* FullScreenImageViewer.swift in Sources */,
 				EBF74A30C81ABB752F19229A /* MomentComposite.swift in Sources */,
 				6730816564DF921D03A98190 /* MomentCompositeRenderer.swift in Sources */,
 				425E674601FFCC9151C647DC /* MomentDerivation.swift in Sources */,

@@ -444,7 +444,7 @@ struct TodayViewModelTests {
         model.startTicking()
         defer { model.stopTicking() }
 
-        try await Task.sleep(for: .milliseconds(2100))
+        model.refreshNow()
         #expect(model.now > start.addingTimeInterval(-3600), "the clock advanced")
         // The time remaining must have moved with it, and must not be stuck on
         // the value from construction.
@@ -470,7 +470,7 @@ struct TodayViewModelTests {
 
         model.startTicking()
         defer { model.stopTicking() }
-        try await Task.sleep(for: .milliseconds(2100))
+        model.refreshNow()
 
         #expect(!model.showsMomentTime)
         #expect(model.timeUntilMoment == nil)

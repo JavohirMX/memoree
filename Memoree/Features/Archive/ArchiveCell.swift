@@ -43,11 +43,11 @@ struct ArchiveCell: View {
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFit()
+                    .scaledToFill()
             } else if isMissing {
                 Text("Not in Photos")
                     .font(Theme.Typography.metadata)
-                    .foregroundStyle(Theme.Color.textTertiary)
+                    .foregroundStyle(Theme.Color.textSecondary)
                     .multilineTextAlignment(.center)
                     .padding(Theme.Spacing.xs)
             }
@@ -165,9 +165,13 @@ struct ArchiveGrid: View {
     let onDayVisible: (DayIdentifier) -> Void
 
     private static let columns = [
-        GridItem(.flexible(), spacing: Theme.Spacing.s),
-        GridItem(.flexible(), spacing: Theme.Spacing.s),
-        GridItem(.flexible(), spacing: Theme.Spacing.s)
+        GridItem(
+            .adaptive(
+                minimum: Theme.Size.gridThumbnailMinimum,
+                maximum: Theme.Size.gridThumbnailMaximum
+            ),
+            spacing: Theme.Spacing.s
+        )
     ]
 
     /// Grouped once, not per body evaluation.

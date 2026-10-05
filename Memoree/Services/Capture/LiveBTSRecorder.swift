@@ -229,11 +229,28 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
         // rather than creating a second one, and a delegate attached only at stop
         // time would receive nothing at all.
         let finished = await withCheckedContinuation { (c: CheckedContinuation<(TimeInterval?, Error?), Never>) in
+            let resumer = SafeContinuationResumer(continuation: c)
             controllerQueue.async {
-                self.lock.withLock { self.startDelegate?.onFinished = { duration, error in
-                    c.resume(returning: (duration, error))
-                } }
-                controller.movieFileOutput?.stopRecording()
+                let delegate = self.lock.withLock { self.startDelegate }
+                guard let delegate else {
+                    resumer.resume(duration: nil, error: BTSRecorderError.notRecording)
+                    return
+                }
+
+                delegate.onFinished = { duration, error in
+                    resumer.resume(duration: duration, error: error)
+                }
+
+                if let output = controller.movieFileOutput, output.isRecording {
+                    output.stopRecording()
+                } else {
+                    // Output is not actively recording (e.g. stopped when camera swapped inputs).
+                    // If didFinishRecordingTo already ran, onFinished was called immediately above.
+                    // Fallback timeout ensures we never hang if the callback was lost.
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+                        resumer.resume(duration: nil, error: BTSRecorderError.writeFailed("recording stopped prematurely"))
+                    }
+                }
             }
         }
 
@@ -362,7 +379,9 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
 
         lock.withLock {
             pending = nil
-            startDelegate?.holdsSelfUntilCallback = true
+            startDelegate?.fileToDeleteOnCompletion = open?.fileURL
+            startDelegate?.holdSelfUntilCallback()
+            startDelegate = nil
         }
         deactivateAudioSession()
         // **`controller` captured, not the output.** The output is not `Sendable`
@@ -371,12 +390,6 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
         // instead reads the output on the queue that owns it, which is where it
         // should have been read anyway.
         controllerQueue.async { controller.movieFileOutput?.stopRecording() }
-
-        // **Removed after the stop is issued, not before.** The callback will read
-        // `holdsSelfUntilCallback` and then release, so the field is nil the moment
-        // a later `startRecording` replaces it — and a recorder that never records
-        // again holds one small object for its lifetime.
-        if let open { try? FileManager.default.removeItem(at: open.fileURL) }
     }
 
     func clearTemporaryFiles() {
@@ -394,7 +407,7 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
     /// exists to make impossible.
     private static func export(source: URL, destination: URL, window: BTSTrim.Window) throws {
         let asset = AVURLAsset(url: source)
-        let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetHighestQuality)
+        let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough)
         guard let session else {
             throw BTSRecorderError.exportFailed("could not create an export session")
         }
@@ -470,37 +483,64 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
 /// The one mutable field is `onFinished`, written on the controller queue before
 /// `stopRecording()` and read once on the delegate's callback — the same
 /// hand-off shape the project already uses for `previewSurface`.
+/// Ensures a continuation is resumed exactly once and never hangs.
+/// All mutable state is confined to `lock` to guarantee continuation is resumed at most once.
+private final class SafeContinuationResumer: @unchecked Sendable {
+    private let lock = NSLock()
+    private var didResume = false
+    private let continuation: CheckedContinuation<(TimeInterval?, Error?), Never>
+
+    init(continuation: CheckedContinuation<(TimeInterval?, Error?), Never>) {
+        self.continuation = continuation
+    }
+
+    func resume(duration: TimeInterval?, error: Error?) {
+        let shouldResume = lock.withLock {
+            if !didResume {
+                didResume = true
+                return true
+            }
+            return false
+        }
+        if shouldResume {
+            continuation.resume(returning: (duration, error))
+        }
+    }
+}
+
 private final class MovieFileDelegate: NSObject, AVCaptureFileOutputRecordingDelegate,
                                       @unchecked Sendable {
 
-    /// Called when the output has finished writing, with the measured duration.
-    ///
-    /// **Set once, immediately before `stopRecording()`, and read once.**
-    /// `AVCaptureFileOutput.stopRecording` is `- (void)`: the delegate's
-    /// `didFinishRecordingTo:…error:` is the *only* channel through which a
-    /// duration or a write error arrives. My first version of this recorder had
-    /// the delegate empty on the grounds that `stopRecording`'s completion handler
-    /// carried the number; that API does not exist, and the compiler said so.
-    ///
-    /// **`nil` duration is a real possibility, not a formality** — a file that
-    /// failed to write has no duration — and the caller treats it as an error
-    /// rather than substituting a guess. A guessed duration produces a trim range
-    /// that is wrong by however much the guess was wrong, and the failure appears
-    /// as a clip of the wrong length rather than as an error.
-    var onFinished: ((TimeInterval?, Error?) -> Void)?
+    private let lock = NSLock()
+    private var _onFinished: ((TimeInterval?, Error?) -> Void)?
+    private var _finishedResult: (TimeInterval?, Error?)?
+    private var selfRetain: MovieFileDelegate?
 
-    /// Keeps this delegate alive across a stop its caller does not wait for.
-    ///
-    /// **Set by `LiveBTSRecorder.abandon` and cleared by the callback it is
-    /// waiting for.** `AVCaptureMovieFileOutput` holds its recording delegate
-    /// *unretained* — the same fact that makes the `LiveBTSRecorder` field
-    /// load-bearing — so a recorder that stops an output and immediately forgets
-    /// the delegate leaves the output with a dangling pointer it will dereference
-    /// when `didFinishRecordingTo` arrives.
-    ///
-    /// The cycle is deliberate and self-breaking: `abandon` has already deleted the
-    /// bytes by then, so the callback has nothing left to do except let go.
-    var holdsSelfUntilCallback = false
+    /// Called when the output has finished writing, with the measured duration.
+    /// Delivers cached result immediately if didFinishRecordingTo already ran.
+    var onFinished: ((TimeInterval?, Error?) -> Void)? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return _onFinished
+        }
+        set {
+            let pending: (TimeInterval?, Error?)? = lock.withLock {
+                _onFinished = newValue
+                return (newValue != nil) ? _finishedResult : nil
+            }
+            if let pending, let callback = newValue {
+                callback(pending.0, pending.1)
+            }
+        }
+    }
+
+    /// File to delete once AVFoundation completes writing, if abandoned.
+    var fileToDeleteOnCompletion: URL?
+
+    func holdSelfUntilCallback() {
+        lock.withLock { selfRetain = self }
+    }
 
     func fileOutput(
         _ output: AVCaptureFileOutput,
@@ -514,30 +554,24 @@ private final class MovieFileDelegate: NSObject, AVCaptureFileOutputRecordingDel
         from connections: [AVCaptureConnection],
         error: Error?
     ) {
-        // **`Task`, because reading an asset's duration is `async` from iOS 16 and
-        // this is a delegate callback with no suspension point of its own.**
-        //
-        // I first wrote this against the synchronous `asset.duration`, which is
-        // deprecated and warned. Suppressing that warning would have hidden it
-        // from the one place someone looks to find out why — and this comment is
-        // that place — so the modern API is used instead.
-        //
-        // **`onFinished` is captured before the `await`,** so a second callback
-        // cannot resume an already-settled continuation.
-        //
-        // **The self-retaining flag is cleared last, and nothing reads `self`
-        // after it.** The output holds this delegate *unretained*, so clearing the
-        // cycle here is what may deallocate this object — and a read of `self`
-        // after that store would be a use-after-free rather than a leak. The
-        // callback and the duration loader are therefore captured into locals
-        // first. An abandoned recording's callback has no `onFinished` at all, so
-        // this is the branch that has to reach the release, not just the one that
-        // reports a duration.
-        let callback = onFinished
-        holdsSelfUntilCallback = false
-        guard let callback else { return }
+        let toDelete = lock.withLock { () -> URL? in
+            let file = fileToDeleteOnCompletion
+            fileToDeleteOnCompletion = nil
+            selfRetain = nil
+            return file
+        }
+
+        if let toDelete {
+            try? FileManager.default.removeItem(at: toDelete)
+        }
+
         Task {
-            callback(await Self.duration(of: outputFileURL), error)
+            let dur = await Self.duration(of: outputFileURL)
+            let callback: ((TimeInterval?, Error?) -> Void)? = self.lock.withLock {
+                self._finishedResult = (dur, error)
+                return self._onFinished
+            }
+            callback?(dur, error)
         }
     }
 

@@ -440,4 +440,19 @@ struct SummaryTests {
         #expect(s.currentStreak == 0)
         #expect(s.longestStreak == 0)
     }
+
+    @Test("Multiple captures on the same day preserve on-time streak")
+    func multipleCapturesOnSameDayPreserveStreak() throws {
+        let today = try #require(DayIdentifier(string: "2026-09-30", calendar: calendar))
+        let facts = makeFacts([
+            Row("2026-09-29", onTime: true, hour: 14),
+            Row("2026-09-30", onTime: true, hour: 12),
+            Row("2026-09-30", onTime: false, hour: 16), // Bonus moment captured later off-window
+        ])
+        let s = StreakCalculator.summary(facts: facts, today: today, calendar: calendar)
+        #expect(s.totalMoments == 3)
+        #expect(s.daysCaptured == 2)
+        #expect(s.currentStreak == 2, "Bonus off-window capture must never break an on-time day")
+        #expect(s.longestStreak == 2)
+    }
 }

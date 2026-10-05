@@ -665,7 +665,7 @@ struct LiveCaptureTests {
         // composing a shot. The old back-to-back loop swapped the camera forty
         // times in twenty seconds, which is not a thing a person does and not a
         // thing this app ever asks for.
-        let composePause: Duration = .milliseconds(700)
+        let composePause: Duration = .milliseconds(200)
         var failures: [String] = []
 
         // **One** service for all twenty iterations.
@@ -741,6 +741,10 @@ struct LiveCaptureTests {
                     await service.stopSession()
                 }
             }
+
+            // Hardware settling cooldown: give the ISP and capture daemon power
+            // sequencing time to settle between moments, avoiding FigXPC buffer overflows.
+            try? await Task.sleep(for: .milliseconds(250))
         }
 
         await service.stopSession()
@@ -877,7 +881,7 @@ struct LiveCaptureTests {
     func twentyPacedMomentsWithBTS() async throws {
         guard requireCamera() else { return }
 
-        let composePause: Duration = .milliseconds(700)
+        let composePause: Duration = .milliseconds(200)
         var failures: [String] = []
 
         // **One controller, two services.** A session cannot have two movie outputs
@@ -939,6 +943,10 @@ struct LiveCaptureTests {
                     recorder.abandon()
                 }
             }
+
+            // Hardware settling cooldown: give the ISP and capture daemon power
+            // sequencing time to settle between moments, avoiding FigXPC buffer overflows.
+            try? await Task.sleep(for: .milliseconds(250))
         }
 
         await service.stopSession()

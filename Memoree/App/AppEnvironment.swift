@@ -77,7 +77,7 @@ final class AppEnvironment {
     /// recorder, an injected one gets none unless the test injects a recorder too.
     var btsRecorder: BTSRecorder? {
         if let injected = injectedBTSRecorder { return injected }
-        guard _captureService == nil else { return nil }
+        guard !isInjectedCaptureService else { return nil }
         if let existing = _btsRecorder { return existing }
         let created = LiveBTSRecorder(controller: sessionController())
         _btsRecorder = created
@@ -86,6 +86,7 @@ final class AppEnvironment {
 
     private var _btsRecorder: LiveBTSRecorder?
     private var injectedBTSRecorder: BTSRecorder?
+    private let isInjectedCaptureService: Bool
 
     /// Sweeps BTS temporary files left by a crash.
     ///
@@ -125,6 +126,7 @@ final class AppEnvironment {
         self.notificationService = notificationService
             ?? UserNotificationService(scheduler: self.momentScheduler)
         self.photoLibrary = photoLibrary ?? PhotoKitLibrary()
+        self.isInjectedCaptureService = captureService != nil
         self._captureService = captureService
         self.injectedBTSRecorder = btsRecorder
         self.haptics = haptics ?? SystemHapticFeedback()

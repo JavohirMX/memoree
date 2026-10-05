@@ -39,6 +39,12 @@ struct CameraView: View {
         .onAppear {
             holdTheScreenAwake(true)
         }
+        .task(id: model.phase) {
+            if model.phase == .saved {
+                try? await Task.sleep(nanoseconds: 1_200_000_000)
+                onDismiss()
+            }
+        }
     }
 
     // MARK: - Keeping the screen awake
@@ -80,6 +86,8 @@ struct CameraView: View {
             saved
         case .review:
             review(model)
+        case .working where model.isCommitting:
+            review(model)
         case .idle, .starting, .working, .shooting:
             live(model)
         }
@@ -89,17 +97,8 @@ struct CameraView: View {
     private func live(_ model: CameraViewModel) -> some View {
         VStack(spacing: 0) {
             previewWithInset(model)
-                // **The way out, which used to be the swipe gesture.**
-                //
-                // The camera was a full-screen cover with a shutter at the bottom
-                // and nothing else, so the only route back was an edge swipe the
-                // app never claimed and iOS only honours from the very edge. There
-                // was no visible control, and a review state that *did* have a
-                // visible "Cancel" — so the exit appeared only once you had
-                // already committed to taking a photograph, which is the worst
-                // moment to discover whether you can leave.
-                .overlay(alignment: .topTrailing) {
-                    cancelButton
+                .overlay(alignment: .topLeading) {
+                    backButton
                         .padding(Theme.Spacing.m)
                 }
 
@@ -118,39 +117,21 @@ struct CameraView: View {
 
     // MARK: - Leaving
 
-    /// The camera's way out.
-    ///
-    /// **A labelled capsule, not a bare glyph.** A lone `chevron.down` in the
-    /// top corner is the platform idiom and it is also easy to miss — especially
-    /// here, where the preview behind it can be any colour and a white glyph on
-    /// white is invisible. The black fill solves that: the control has the same
-    /// appearance over a bright sky and over a dark room.
-    ///
-    /// It borrows `PrimaryButton(.outlined)`'s shape on purpose — 1pt white
-    /// border, black interior — so it reads as part of the app rather than as
-    /// iOS chrome that happened to be on top. It is smaller than a primary
-    /// control and never filled, because the shutter is the thing this screen
-    /// wants.
-    ///
-    /// **It discards whatever has been shot.** One photograph in the inset and
-    /// nothing recorded yet means cancelling loses it, which is the intended
-    /// reading: `onDismiss` writes no moment, so a half-finished capture leaves
-    /// no trace rather than a moment with one photograph in it.
-    private var cancelButton: some View {
+    /// The camera's way out: a top-left back arrow button.
+    private var backButton: some View {
         Button(action: onDismiss) {
-            Label("Cancel", systemImage: "chevron.down")
-                .font(Theme.Typography.metadata)
+            Image(systemName: "chevron.left")
+                .scaledDisplayFont(Theme.Size.headerIcon, weight: .semibold)
                 .foregroundStyle(Theme.Color.textPrimary)
-                .padding(.horizontal, Theme.Spacing.m)
-                .frame(minHeight: Theme.Size.tapTarget)
-                .background(Theme.Color.canvas)
-                .clipShape(Capsule())
+                .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                .background(Circle().fill(Theme.Color.canvas.opacity(0.6)))
                 .overlay {
-                    Capsule().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                    Circle().strokeBorder(Theme.Color.textSecondary.opacity(0.3), lineWidth: 1)
                 }
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Closes the camera. Anything you have shot is discarded")
+        .accessibilityLabel("Back")
+        .accessibilityHint("Closes the camera. Discards in-progress capture")
     }
 
     // MARK: - Tap to focus
@@ -244,19 +225,21 @@ struct CameraView: View {
             }
 
             focusRing
-
+        }
+        .overlay(alignment: .topTrailing) {
             if let inset = model.insetPhoto,
                let image = UIImage(data: inset.data) {
                 Image(uiImage: image)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: Theme.Size.insetStandard)
+                    .frame(width: Theme.Size.insetStandard, height: Theme.Size.insetStandard)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inset))
                     .overlay {
                         RoundedRectangle(cornerRadius: Theme.Radius.inset)
                             .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
                     }
                     .padding(Theme.Spacing.m)
+                    .accessibilityHidden(true)
                     .allowsHitTesting(false)
             }
         }
@@ -319,7 +302,9 @@ struct CameraView: View {
             Task { await model.chooseZoom(zoom) }
         } label: {
             Text(zoom.label)
-                .font(Theme.Typography.button)
+                .font(Theme.Typography.zoomLabel)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
                 .foregroundStyle(isSelected ? Theme.Color.onAccent : Theme.Color.textPrimary)
                 .frame(width: Theme.Size.zoomButton, height: Theme.Size.zoomButton)
                 .background {
@@ -343,36 +328,43 @@ struct CameraView: View {
     }
 
     private func shutterRow(_ model: CameraViewModel) -> some View {
-        VStack(spacing: Theme.Spacing.s) {
+        VStack(spacing: Theme.Spacing.m) {
+            zoomRow(model)
+
             HStack {
+                // Leading balance spacer to keep shutter centered
+                Color.clear
+                    .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+
                 Spacer()
 
                 shutterButton(model)
 
                 Spacer()
+
+                // Working camera flip button on the side
+                cameraFlipButton(model)
             }
+            .padding(.horizontal, Theme.Spacing.xl)
+        }
+        .padding(.vertical, Theme.Spacing.m)
+    }
 
-            zoomRow(model)
-
-            // Which camera they are composing with.
-            //
-            // **A glyph, not the words.** "Front camera" under the shutter is a
-            // sentence on a screen whose job is to show a viewfinder, and the
-            // stock camera uses a glyph here for the same reason. The words are
-            // still there for VoiceOver, which is where "Front camera" is
-            // actually useful.
-            //
-            // **It is not a button.** ADR-021 makes the opening camera random per
-            // moment, and a manual switch would be `removeInput`/`addInput` on a
-            // running session — the operation ADR-003 measured four times to kill
-            // the frame output. A control that looks pressable and is not is
-            // worse than a label.
+    private func cameraFlipButton(_ model: CameraViewModel) -> some View {
+        Button {
+            Task { await model.flipCamera() }
+        } label: {
             Image(systemName: "arrow.triangle.2.circlepath.camera")
                 .scaledDisplayFont(Theme.Size.headerIcon, weight: .regular)
-                .foregroundStyle(Theme.Color.textSecondary)
-                .accessibilityLabel(model.livePositionDescription)
+                .foregroundStyle(model.canFlipCamera ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+                .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                .background(Circle().fill(Theme.Color.surface.opacity(0.8)))
         }
-        .padding(.vertical, Theme.Spacing.xl)
+        .buttonStyle(.plain)
+        .disabled(!model.canFlipCamera)
+        .opacity(model.canFlipCamera ? 1 : 0.4)
+        .accessibilityLabel("Switch camera")
+        .accessibilityHint(model.livePositionDescription)
     }
 
     private func shutterButton(_ model: CameraViewModel) -> some View {
@@ -451,48 +443,44 @@ struct CameraView: View {
     /// with two meanings would make the common action unpredictable.
     private func reviewActions(_ model: CameraViewModel) -> some View {
         VStack(spacing: Theme.Spacing.m) {
-            PrimaryButton(title: "Save") {
+            PrimaryButton(title: model.isCommitting ? "Saving…" : "Save") {
                 Task { await model.commit() }
             }
+            .disabled(model.isCommitting)
 
-            // **Both controls get an explicit 44pt floor.**
-            //
-            // Their heights were coming from their fonts: a `.subheadline` label
-            // with no frame is ~20pt tall and a `.footnote` one is ~17pt, against
-            // Apple's 44pt minimum. On a screen held one-handed in the dark, at the
-            // exact moment a user is deciding whether to keep or discard a
-            // photograph, that is the worst place in the app for a 17pt target.
-            Menu {
-                ForEach(CameraPosition.allCases, id: \.self) { position in
-                    Button(position == .front ? "Reshoot front" : "Reshoot back") {
-                        Task { await model.reshoot(position) }
+            if !model.isCommitting {
+                Menu {
+                    ForEach(CameraPosition.allCases, id: \.self) { position in
+                        Button(position == .front ? "Reshoot front" : "Reshoot back") {
+                            Task { await model.reshoot(position) }
+                        }
                     }
-                }
-                // **Destructive, and separated.** It sits below the two routine
-                // reshoots in its own `Divider`-separated group, because "throw
-                // both photographs away" and "shoot that half again" are not the
-                // same kind of decision and one tap should not be ambiguous about
-                // which it will be.
-                Section {
-                    Button("Start over", role: .destructive) {
-                        Task { await model.startOver() }
+                    // **Destructive, and separated.** It sits below the two routine
+                    // reshoots in its own `Divider`-separated group, because "throw
+                    // both photographs away" and "shoot that half again" are not the
+                    // same kind of decision and one tap should not be ambiguous about
+                    // which it will be.
+                    Section {
+                        Button("Start over", role: .destructive) {
+                            Task { await model.startOver() }
+                        }
                     }
+                } label: {
+                    Text("Reshoot")
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: Theme.Size.tapTarget)
+                        .contentShape(.rect)
                 }
-            } label: {
-                Text("Reshoot")
-                    .font(Theme.Typography.body)
+
+                Button("Cancel") { onDismiss() }
+                    .font(Theme.Typography.metadata)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .frame(maxWidth: .infinity)
                     .frame(minHeight: Theme.Size.tapTarget)
                     .contentShape(.rect)
             }
-
-            Button("Cancel") { onDismiss() }
-                .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textTertiary)
-                .frame(maxWidth: .infinity)
-                .frame(minHeight: Theme.Size.tapTarget)
-                .contentShape(.rect)
         }
     }
 
@@ -535,11 +523,21 @@ struct CameraView: View {
                 .foregroundStyle(Theme.Color.textSecondary)
                 .multilineTextAlignment(.center)
 
-            // No retry offered: retrying cannot change a permission the user
-            // declined, and a button that always fails is a dead end
-            // (AGENTS.md §6).
-            PrimaryButton(title: "Back") { onDismiss() }
-                .padding(.top, Theme.Spacing.m)
+            VStack(spacing: Theme.Spacing.m) {
+                PrimaryButton(title: "Back") { onDismiss() }
+
+                Button("Open Settings") {
+                    if let url = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(url)
+                    }
+                }
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .frame(minHeight: Theme.Size.tapTarget)
+                .contentShape(.rect)
+                .accessibilityHint("Opens system Settings to enable camera access")
+            }
+            .padding(.top, Theme.Spacing.m)
         }
         .padding(Theme.Spacing.xl)
     }
@@ -565,6 +563,8 @@ struct CameraView: View {
                 Button("Back") { onDismiss() }
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
+                    .frame(minHeight: Theme.Size.tapTarget)
+                    .contentShape(.rect)
             }
             .padding(.top, Theme.Spacing.m)
         }

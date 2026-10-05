@@ -1411,6 +1411,52 @@ clip that starts audible is the failure most likely to annoy.
 
 ---
 
+## ADR-030 — Multiple captures per day and full landscape responsiveness
+
+**Status:** Accepted
+
+**Context.** Users testing on physical devices found:
+1. Re-capturing via "Capture again" cleared previous memory captures rather than appending them. Users should be able to take as many memories as they want in a day without losing earlier captures or resetting streaks.
+2. Home and Archive screens failed to display properly in landscape orientation (home menu cut off, archive detail showing half black screen without ability to swipe between moments).
+3. Tapping a photo on the home screen navigated to the archive grid rather than opening that specific moment's detail directly.
+4. An redundant prompt text ("Your photo is in your library") cluttered the captured state.
+
+**Decision.**
+1. **Multi-capture:** Remove unique constraint on `Moment.dayIdentifier`. Subsequent captures on the same day append rather than overwrite or soft-delete earlier captures. Streak calculations credit the day if at least one capture on that day is on-time; additional captures never penalize streaks.
+2. **Carousel & Direct Navigation:** The Today screen displays a carousel of today's captures with a `1/N` badge. Tapping any capture opens `MomentDetailView` directly.
+3. **Interactive Detail & Swapping:** In `MomentDetailView`, tapping the inset switches between front-large and rear-large views. Moments in the archive can be swiped horizontally via `TabView`.
+4. **Orientation Responsiveness:** Both Today screen and Archive detail views dynamically adapt between portrait and landscape orientations using `Theme.Size` tokens (`compositeLandscapeMaxHeight`, `detailLandscapeMaxHeight`), with adaptive columns in the archive grid.
+
+**Consequences.** The database preserves all memories taken by the user. Photos written to the user's library remain 100% add-only. All screens function smoothly in portrait and landscape.
+
+**Alternatives rejected.** Retaining the 1-moment-per-day restriction — frustrates users wanting to record spontaneous events throughout the same day.
+
+---
+
+## ADR-031 — Today Screen Feed, Native Camera Polish, Full-Screen Photo Inspector, and BTS Fix
+
+**Status:** Accepted · **Date:** 2026-10-04
+
+**Context.** Hardware testing and user feedback identified several friction points:
+1. **Home Feed:** Instead of a single capture button or single day carousel, users wanted a continuous feed of all memories, starting from the last two days, sorted by decreasing date.
+2. **Streak Header:** "Days in a row" and "best 4" text cluttered the header. Only the flame icon and streak count number were desired.
+3. **Camera UX:** Cancel button replaced with a top-leading back arrow; front camera at 1× was digitally cropped (2× factor bug); 0.5× zoom text overflowed its circular control; camera flip button was inactive; inset preview collided with top-left navigation.
+4. **Photo Inspection:** Users had no way to inspect high-resolution photographs up close with pinch/pan.
+5. **Behind the Scenes (BTS):** BTS video was not saving to Photos library even when enabled, due to an environment initialization race and default settings mismatch.
+6. **App Icon:** The app icon was an unstyled placeholder.
+
+**Decision.**
+1. **Memories Feed:** `TodayView` and `TodayViewModel` now feature a continuous vertical feed of all recorded memories sorted chronologically descending, with section headers for relative dates (e.g. "Today", "Yesterday", and formatted dates).
+2. **Minimal Streak:** `StreakDisplay` displays only `flame.fill` and the streak number.
+3. **Camera Precision:** Fixed `applyZoomOnDevice` in `CaptureSessionController` to ensure single/front cameras maintain their true 1× field-of-view; 0.5× zoom font token `Theme.Typography.zoomLabel` fits comfortably inside 34pt circles; camera flip button is fully operational beside the shutter; back arrow sits at top-leading.
+4. **Full-Screen Photo Inspector:** Tapping large photographs opens `FullScreenImageViewer` with interactive pinch-to-zoom (1× to 5×), double-tap zoom toggle, panning, and swipe-down dismiss.
+5. **BTS Video Persistence:** Fixed `AppEnvironment` to ensure `LiveBTSRecorder` is initialized properly on physical devices, and toggling BTS on enables `saveBTS` to automatically write the video to the Photos library.
+6. **App Icon:** Generated and installed an aperture-inspired, dark-themed 1024×1024 app icon.
+
+**Consequences.** All design system invariants pass cleanly, zero warnings, and full test suite passes.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

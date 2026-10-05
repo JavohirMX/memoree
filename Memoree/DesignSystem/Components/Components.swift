@@ -136,29 +136,14 @@ struct StreakDisplay: View {
     var longest: Int?
 
     var body: some View {
-        VStack(spacing: Theme.Spacing.xs) {
-            HStack(spacing: Theme.Spacing.xs) {
-                Image(systemName: "flame.fill")
-                    // Scales with the number beside it, for the same reason as the
-                    // Stats screen's flame: 20 at the default setting, and it does
-                    // not stay 20 while the streak's `.title2` becomes a wall.
-                    .scaledDisplayFont(20)
-                    .foregroundStyle(streak > 0 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
-                Text("\(streak)")
-                    .font(Theme.Typography.screenTitle)
-                    .monospacedDigit()
-                    .foregroundStyle(streak > 0 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
-            }
-
-            Text(streak == 1 ? "day in a row" : "days in a row")
-                .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textSecondary)
-
-            if let longest, longest > streak {
-                Text("best \(longest)")
-                    .font(Theme.Typography.retakePill)
-                    .foregroundStyle(Theme.Color.textTertiary)
-            }
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: "flame.fill")
+                .scaledDisplayFont(20)
+                .foregroundStyle(streak > 0 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+            Text("\(streak)")
+                .font(Theme.Typography.screenTitle)
+                .monospacedDigit()
+                .foregroundStyle(streak > 0 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
         }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(

@@ -45,6 +45,7 @@ struct OnboardingView: View {
         }
         .padding(.horizontal, Theme.Spacing.xl)
         .padding(.vertical, Theme.Spacing.xl)
+        .scrollableWhenItCannotFit()
     }
 
     // MARK: - Steps
@@ -98,6 +99,7 @@ struct OnboardingView: View {
                 .font(Theme.Typography.screenTitle)
                 .foregroundStyle(Theme.Color.textPrimary)
                 .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
 
             Text(body)
                 .font(Theme.Typography.body)
@@ -145,7 +147,7 @@ struct OnboardingView: View {
             // shipping a window picker without this line is how that came about.
             Text("Wider is more random. You can change this later in Settings.")
                 .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textTertiary)
+                .foregroundStyle(Theme.Color.textSecondary)
                 .multilineTextAlignment(.center)
         }
         .onAppear { draftWindow = environment.momentStore.settings().timeWindow }
@@ -164,6 +166,8 @@ struct OnboardingView: View {
                 Button("Not now") { advanceWithoutPermission() }
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
+                    .frame(minHeight: Theme.Size.tapTarget)
+                    .contentShape(.rect)
             }
         }
     }

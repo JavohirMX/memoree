@@ -93,6 +93,16 @@ struct PhotoKitLibrary: PhotoLibraryService {
         frontData: Data,
         location: PhotoLocation?
     ) async throws -> SavedAssetPair {
+        let status = authorizationStatus()
+        if status == .notDetermined {
+            let requested = await requestAuthorization()
+            guard requested == .authorized else {
+                throw LibraryError.authorizationDenied
+            }
+        } else if status == .denied || status == .restricted {
+            throw LibraryError.authorizationDenied
+        }
+
         let back = try PhotoMetadataInjector.applying(location: location, to: backData)
         let front = try PhotoMetadataInjector.applying(location: location, to: frontData)
 
@@ -135,7 +145,17 @@ struct PhotoKitLibrary: PhotoLibraryService {
     }
 
     func saveBTS(_ data: Data) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
+        let status = authorizationStatus()
+        if status == .notDetermined {
+            let requested = await requestAuthorization()
+            guard requested == .authorized else {
+                throw LibraryError.authorizationDenied
+            }
+        } else if status == .denied || status == .restricted {
+            throw LibraryError.authorizationDenied
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
             let created = PlaceholderBox()
 
             PHPhotoLibrary.shared().performChanges({

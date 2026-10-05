@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 /// Formats a duration as the `mm:ss` countdown Memoree displays.
 ///

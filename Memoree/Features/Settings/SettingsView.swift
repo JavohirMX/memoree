@@ -149,7 +149,7 @@ struct SettingsView: View {
 
             Text(didApply ? "Applied. Tomorrow onward." : "Wider is more random.")
                 .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textTertiary)
+                .foregroundStyle(Theme.Color.textSecondary)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .appAnimation(didApply)
@@ -380,6 +380,9 @@ struct SettingsView: View {
                             get: { btsEnabled },
                             set: { enabled in
                                 btsEnabled = enabled
+                                if enabled && !saveBTS {
+                                    saveBTS = true
+                                }
                                 applyBTSPreferences(
                                     enabled: enabled,
                                     save: enabled ? saveBTS : false
@@ -555,7 +558,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             Text("Diagnostics")
                 .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textTertiary)
+                .foregroundStyle(Theme.Color.textSecondary)
 
             MetadataRow(label: "Reminders queued", value: "\(pendingCount)")
 

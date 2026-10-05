@@ -64,6 +64,7 @@ struct MomentComposite: View {
     let inset: UIImage?
     var insetWidth: CGFloat = 108
     var onTapInset: (() -> Void)?
+    var onTapLarge: (() -> Void)?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -73,6 +74,8 @@ struct MomentComposite: View {
                     .scaledToFill()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTapLarge?() }
             } else {
                 Theme.Color.canvas
             }

@@ -201,9 +201,10 @@ local, with no migration pressure that would justify a dependency.
 date. This is the single most important modelling decision in the app: it means a moment is
 attached to the day the *user* experienced it, which is what a streak means to a human.
 
-**Uniqueness.** At most one accepted moment per `dayIdentifier`. Enforce in
-`MomentStore.record(_:)` with a fetch-and-check plus a SwiftData `#Unique` constraint on
-`dayIdentifier`. Re-posting after a delete updates the existing row rather than inserting.
+**Multi-capture (ADR-030).** Users can take multiple memories per day using "Capture again".
+`Moment.dayIdentifier` is non-unique so subsequent captures append rather than overwrite
+or soft-delete previous captures. Day records remain unique, and streak calculations count
+days with at least one qualifying on-time capture.
 
 ## 4. The moment scheduler
 

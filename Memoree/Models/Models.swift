@@ -14,10 +14,10 @@ final class Moment {
 
     /// The user-experienced local calendar day this moment belongs to.
     ///
-    /// At most one accepted moment per day; `MomentStore` enforces it. Naming
-    /// this `dayIdentifier` rather than `day` avoids colliding with SwiftData's
+    /// Multiple moments may belong to the same day; each is uniquely identified by `id`.
+    /// Naming this `dayIdentifier` rather than `day` avoids colliding with SwiftData's
     /// relationship vocabulary.
-    @Attribute(.unique) var dayIdentifier: String
+    var dayIdentifier: String
 
     /// The moment start that was scheduled for this day.
     var momentStart: Date

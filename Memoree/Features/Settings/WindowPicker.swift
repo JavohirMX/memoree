@@ -108,7 +108,12 @@ struct WindowPicker: View {
                     set: { onChange(Int($0.rounded())) }
                 ),
                 in: range,
-                step: Double(Self.stepMinutes)
+                step: Double(Self.stepMinutes),
+                onEditingChanged: { isEditing in
+                    if !isEditing {
+                        Task { await onCommit(window) }
+                    }
+                }
             )
             .tint(Theme.Color.textPrimary)
         }

@@ -155,7 +155,7 @@ final class CameraViewModel {
     /// and answering "re-arm the shutter" for a failed commit sends the user
     /// back to the camera with photographs already on disk. One boolean, and
     /// the retry rule stops needing case analysis.
-    private var isCommitting = false
+    private(set) var isCommitting = false
 
     /// When the most recent photograph was taken.
     ///
@@ -511,6 +511,27 @@ final class CameraViewModel {
                 // explicit action from the review screen.
                 phase = .shooting
             }
+        } catch {
+            phase = Self.phase(for: error)
+        }
+    }
+
+    /// Whether the user can manually flip which camera to shoot first.
+    var canFlipCamera: Bool {
+        phase == .shooting && captured.isEmpty
+    }
+
+    /// Manually toggles between the front and back cameras before capturing.
+    func flipCamera() async {
+        guard canFlipCamera else { return }
+        let target = livePosition.opposite
+        phase = .working
+        do {
+            try await service.switchCamera(to: target)
+            livePosition = target
+            firstPosition = target
+            phase = .shooting
+            haptics.cameraSwitched()
         } catch {
             phase = Self.phase(for: error)
         }

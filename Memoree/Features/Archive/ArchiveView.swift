@@ -107,8 +107,12 @@ struct ArchiveView: View {
             // the detail to show it, and dismissing the detail to answer a
             // question about the moment you are looking at is backwards.
             .sheet(item: $selected) { moment in
-                MomentDetailView(moment: moment, onDelete: { isConfirmingDelete = true })
-                    .environment(environment)
+                MomentDetailView(
+                    moment: moment,
+                    moments: model.moments,
+                    onDelete: { isConfirmingDelete = true }
+                )
+                .environment(environment)
             }
         }
     }

@@ -31,7 +31,7 @@ struct CameraHostView: View {
                 haptics: environment.haptics,
                 // **`nil` when BTS is off or there is no real session**, and both
                 // are ordinary. See `AppEnvironment.btsRecorder`.
-                btsRecorder: environment.btsRecorder,
+                btsRecorder: environment.momentStore.settings().btsEnabled ? environment.btsRecorder : nil,
                 // A closure rather than a value, so a length changed in Settings
                 // while the camera is open applies to the moment being composed.
                 clipDuration: {

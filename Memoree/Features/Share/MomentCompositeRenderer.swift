@@ -84,7 +84,7 @@ enum MomentCompositeRenderer {
         // identical, so nothing that used to be correct changes.
         let size = back.size
         let format = UIGraphicsImageRendererFormat.default()
-        format.scale = back.scale
+        format.scale = 1.0
         format.opaque = true
 
         let renderer = UIGraphicsImageRenderer(size: size, format: format)

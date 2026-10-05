@@ -236,8 +236,7 @@ final class ArchiveViewModel {
     /// memory the camera will want next. One screen's worth at 2x.
     static var detailTargetSize: CGSize {
         let scale = UIScreen.main.scale
-        let width = UIScreen.main.bounds.width
-        let height = width * 4.0 / 3.0
-        return CGSize(width: (width * scale).rounded(), height: (height * scale).rounded())
+        let side = max(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
+        return CGSize(width: (side * scale).rounded(), height: (side * scale).rounded())
     }
 }

@@ -46,7 +46,7 @@ struct VoiceOverTests {
         // "this file taps it *and* says it is a button" rather than a count.
         let interactive: [(file: String, handler: String)] = [
             ("CameraView.swift", "onTapInset: { model.swapProminent() }"),
-            ("TodayView.swift", ".onTapGesture { openArchive() }"),
+            ("TodayView.swift", ".onTapGesture { openDetail(for: moment) }"),
         ]
         for entry in interactive {
             let source = try String(

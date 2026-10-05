@@ -239,10 +239,10 @@ struct MomentCommitTests {
         #expect(harness.store.summary(today: today).currentStreak == 1)
     }
 
-    // MARK: - One moment per day
+    // MARK: - Multi-capture per day
 
-    @Test("Re-capturing replaces the day rather than adding a second moment")
-    func recaptureReplacesTheDay() async throws {
+    @Test("Re-capturing adds a second moment rather than clearing the day")
+    func recaptureAppendsMomentForDay() async throws {
         let harness = try makeHarness()
         let base = try #require(DayIdentifier(string: "2026-09-30")?.date)
             .addingTimeInterval(14 * 3600 + 30)
@@ -261,13 +261,9 @@ struct MomentCommitTests {
         await second.shutterPressed()
         await second.commit()
 
-        // One row, not two. Two rows for one day would double-count the streak
-        // and render a duplicate cell in the archive (ADR-011: unlimited
-        // retakes, one moment per day).
-        #expect(harness.store.allMoments.count == 1)
-        // Two pairs in Photos. Add-only authorisation cannot delete the first,
-        // which is why the Today screen says so before the re-capture tap
-        // rather than after it.
+        // Two moments preserved for the day.
+        #expect(harness.store.allMoments.count == 2)
+        // Two pairs in Photos.
         #expect(harness.library.savedPairCount == 2)
     }
 

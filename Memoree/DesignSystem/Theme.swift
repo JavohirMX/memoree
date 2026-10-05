@@ -159,12 +159,29 @@ enum Theme {
         /// pushing the shutter off the bottom.
         static let todayCompositeMaxHeight: CGFloat = 360
 
+        /// The largest the Today screen's composite is drawn in landscape orientation.
+        static let compositeLandscapeMaxHeight: CGFloat = 240
+
         /// The full-size photograph the archive detail requests, in points at 1×.
         ///
         /// A downsample on purpose (TRD §6.5): the original 3–5 MB stays in the
         /// user's library and is never copied into memory to fill a screen.
         static let detailImageWidth: CGFloat = 520
         static let detailImageHeight: CGFloat = 693
+
+        /// The largest the archive detail photograph is drawn in landscape orientation.
+        static let detailLandscapeMaxHeight: CGFloat = 280
+
+        /// The minimum and maximum item widths for the adaptive archive grid.
+        static let gridThumbnailMinimum: CGFloat = 105
+        static let gridThumbnailMaximum: CGFloat = 160
+
+        /// The width of the navigation and action column on the Today screen in landscape.
+        static let todayLandscapeSidebarWidth: CGFloat = 220
+
+        /// The clearance needed at the bottom of the feed scroll view so content
+        /// is not obscured by the floating shutter button.
+        static let feedBottomClearance: CGFloat = 96
     }
 
     // MARK: - Radius
@@ -231,6 +248,9 @@ enum Theme {
         /// accessibility size — so it is a text style rather than a literal, and
         /// it is a caption *style* rather than a small custom size.
         static let retakePill = Font.system(.caption2).weight(.semibold)
+
+        /// 11 rounded semibold. Magnification labels inside the camera's zoom buttons.
+        static let zoomLabel = Font.system(.caption2, design: .rounded).weight(.semibold)
 
         /// The Today countdown: 64 at the default setting.
         ///
