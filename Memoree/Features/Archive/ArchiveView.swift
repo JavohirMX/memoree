@@ -17,6 +17,7 @@ struct ArchiveView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var model: ArchiveViewModel?
+    @State private var viewMode: ArchiveViewMode = .grid
 
     /// The moment being opened, held by the view rather than the view model.
     ///
@@ -95,13 +96,29 @@ struct ArchiveView: View {
         if model.moments.isEmpty {
             empty
         } else {
-            ArchiveGrid(
-                moments: model.moments,
-                images: model.images,
-                missing: model.missing,
-                onOpen: { selected = $0 },
-                onDayVisible: { model.noteVisible(day: $0) }
-            )
+            VStack(spacing: 0) {
+                summaryHeader(model.moments)
+                Divider()
+                    .overlay(Theme.Color.divider)
+
+                if viewMode == .grid {
+                    ArchiveGrid(
+                        moments: model.moments,
+                        images: model.images,
+                        missing: model.missing,
+                        onOpen: { selected = $0 },
+                        onDayVisible: { model.noteVisible(day: $0) }
+                    )
+                } else {
+                    ArchiveCalendarView(
+                        moments: model.moments,
+                        images: model.images,
+                        missing: model.missing,
+                        onOpen: { selected = $0 },
+                        onDayVisible: { model.noteVisible(day: $0) }
+                    )
+                }
+            }
             // Two sheets, stacked, and the inner one is the delete confirmation.
             // A confirmation presented *over* the detail would have to dismiss
             // the detail to show it, and dismissing the detail to answer a
@@ -117,6 +134,83 @@ struct ArchiveView: View {
         }
     }
 
+    // MARK: - Summary Header
+
+    private func summaryHeader(_ moments: [MomentFacts]) -> some View {
+        let count = moments.count
+        let countString = "\(count) \(count == 1 ? "moment" : "moments")"
+        let spanString = dateSpan(for: moments)
+
+        return HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                Text(countString)
+                    .font(Theme.Typography.screenTitle)
+                    .foregroundStyle(Theme.Color.textPrimary)
+                if let spanString {
+                    Text(spanString)
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+            }
+            Spacer(minLength: Theme.Spacing.m)
+            viewModePicker
+        }
+        .padding(.horizontal, Theme.Spacing.m)
+        .padding(.top, Theme.Spacing.s)
+        .padding(.bottom, Theme.Spacing.m)
+    }
+
+    private func dateSpan(for moments: [MomentFacts]) -> String? {
+        guard let newest = moments.first?.capturedAt,
+              let oldest = moments.last?.capturedAt else { return nil }
+        let start = oldest.formatted(.dateTime.month(.abbreviated).year())
+        let end = newest.formatted(.dateTime.month(.abbreviated).year())
+        return start == end ? start : "\(start) – \(end)"
+    }
+
+    private var viewModePicker: some View {
+        HStack(spacing: 0) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    viewMode = .grid
+                }
+            } label: {
+                Image(systemName: "square.grid.3x3")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(viewMode == .grid ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+                    .padding(.horizontal, Theme.Spacing.m)
+                    .padding(.vertical, Theme.Spacing.s)
+                    .background(viewMode == .grid ? Theme.Color.divider : Color.clear)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Grid view")
+
+            Button {
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    viewMode = .calendar
+                }
+            } label: {
+                Image(systemName: "calendar")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(viewMode == .calendar ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+                    .padding(.horizontal, Theme.Spacing.m)
+                    .padding(.vertical, Theme.Spacing.s)
+                    .background(viewMode == .calendar ? Theme.Color.divider : Color.clear)
+                    .clipShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Calendar view")
+        }
+        .padding(Theme.Spacing.xs)
+        .background(Theme.Color.surface)
+        .clipShape(Capsule())
+        .overlay {
+            Capsule()
+                .strokeBorder(Theme.Color.divider, lineWidth: 1)
+        }
+    }
+
     /// Nothing captured yet.
     ///
     /// Reached only on a fresh install, because the archive button is disabled
@@ -125,6 +219,10 @@ struct ArchiveView: View {
     /// apologising for being empty.
     private var empty: some View {
         VStack(spacing: Theme.Spacing.l) {
+            Image(systemName: "photo.stack")
+                .scaledDisplayFont(Theme.Size.iconStandalone, weight: .regular)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .accessibilityHidden(true)
             Text("Nothing yet")
                 .font(Theme.Typography.screenTitle)
                 .foregroundStyle(Theme.Color.textPrimary)
@@ -159,4 +257,12 @@ struct ArchiveView: View {
             // will be asked again on the next launch.
         }
     }
+}
+
+/// The viewing modes for the archive.
+enum ArchiveViewMode: String, CaseIterable, Identifiable {
+    case grid
+    case calendar
+
+    var id: String { rawValue }
 }

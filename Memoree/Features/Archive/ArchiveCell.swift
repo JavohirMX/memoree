@@ -61,6 +61,7 @@ struct ArchiveCell: View {
                 .strokeBorder(Theme.Color.divider, lineWidth: 1)
         }
         .overlay(alignment: .topLeading) { dayBadge }
+        .overlay(alignment: .topTrailing) { btsBadge }
         // One label per cell, composed rather than read image by image. A grid
         // of 500 unlabelled images is 500 VoiceOver stops that all say
         // "image", which is the same dead end as a button that does nothing.
@@ -101,6 +102,22 @@ struct ArchiveCell: View {
             .accessibilityHidden(true)
     }
 
+    /// Behind-the-Scenes indicator, top-right.
+    @ViewBuilder
+    private var btsBadge: some View {
+        if moment.hasBTS {
+            Image(systemName: "video.fill")
+                .font(Theme.Typography.retakePill)
+                .foregroundStyle(Theme.Color.textPrimary)
+                .padding(.horizontal, Theme.Spacing.xs)
+                .padding(.vertical, 2)
+                .background(Theme.Color.canvas.opacity(0.6))
+                .clipShape(Capsule())
+                .padding(Theme.Spacing.xs)
+                .accessibilityHidden(true)
+        }
+    }
+
     /// "Photograph from 30 September, 4:12 in the afternoon."
     ///
     /// Written out rather than as a date string because VoiceOver reads `30/09/26`
@@ -112,7 +129,11 @@ struct ArchiveCell: View {
         let day = moment.day.date.formatted(.dateTime.day().month(.wide).year())
         let time = moment.capturedAt.formatted(date: .omitted, time: .shortened)
         let base = "Photograph from \(day), \(time)"
-        return isMissing ? "\(base). No longer in your photo library." : base
+        var text = isMissing ? "\(base). No longer in your photo library." : base
+        if moment.hasBTS {
+            text += ". Includes Behind the Scenes video."
+        }
+        return text
     }
 }
 
@@ -211,7 +232,7 @@ struct ArchiveGrid: View {
                 isMissing: missing.contains(moment.id)
             )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressDip)
         .onAppear { onDayVisible(moment.day) }
     }
 
@@ -226,13 +247,19 @@ struct ArchiveGrid: View {
     /// `metadata` rather than `body`: it is a label for what is below it, not
     /// content, and it must not out-shout the photographs it introduces.
     private func header(for section: ArchiveSection) -> some View {
-        Text(section.title)
-            .font(Theme.Typography.metadata)
-            .foregroundStyle(Theme.Color.textSecondary)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Theme.Spacing.m)
-            .padding(.vertical, Theme.Spacing.s)
-            .background(Theme.Color.canvas)
-            .accessibilityAddTraits(.isHeader)
+        HStack {
+            Text(section.title)
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textPrimary)
+            Spacer()
+            Text(section.countDescription)
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textSecondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, Theme.Spacing.m)
+        .padding(.vertical, Theme.Spacing.s)
+        .background(Theme.Color.canvas)
+        .accessibilityAddTraits(.isHeader)
     }
 }

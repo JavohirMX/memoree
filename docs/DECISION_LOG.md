@@ -1507,6 +1507,34 @@ Investigation found:
 
 ---
 
+## ADR-034 — Dual Grid and Calendar viewing modes with collection statistics and tactile feedback in Archive
+
+**Status:** Accepted
+
+**Context.** The Archive screen presented captured memories solely as an unannotated 3-column photo grid. Users could not see their monthly consistency at a glance (BeReal's signature Memories calendar), lacked tactile interaction feedback on grid cells, had no overview of total memories and timespan, and had no media indicator for Behind-the-Scenes (BTS) video captures.
+
+**Decision.**
+1. **Dual Viewing Modes**: Introduce a frictionless toggle between the 3-column chronological **Photo Grid** and a 7-column **Monthly Calendar View** (`ArchiveCalendarView`).
+2. **Monthly Calendar Grids**: Render monthly calendar matrices mapping days to photo thumbnails, day numbers, empty past days, and future days using `ArchiveSection.calendarDays()`, reusing the exact same thumbnail streaming pipeline and memory cache.
+3. **Tactile Interaction**: Equip all archive thumbnail buttons with `PressDipStyle` spring-press feedback.
+4. **Behind the Scenes Badges**: Display discreet `video.fill` indicator pills on cells with BTS video clips, and announce their presence via VoiceOver.
+5. **Collection Summary Header**: Present total moments and capture date span (`42 moments · Jun – Oct 2026`) in an understated header atop the screen.
+6. **Month Section Counts**: Augment section headers with moment counts (`September 2026 · 18 moments`).
+7. **Refined Empty State**: Display a tasteful `photo.stack` icon and thoughtful explanation respecting the app's offline, camera-roll-first philosophy.
+
+**Consequences.**
+- Delivers an elevated, delightful Memories experience while retaining 100% adherence to pure black `#000000` canvas, token typography/spacing, and zero network calls.
+- Full VoiceOver and accessibility compliance confirmed.
+
+**Alternatives rejected.**
+- Replacing the grid entirely with a calendar view — loses fast vertical browsing across large archives.
+- Introducing third-party calendar libraries — violates non-negotiable Rule 3 (Apple frameworks only).
+
+**Reversal trigger.**
+If users report preferring only a single view mode, the view switcher can be made configurable or reverted without touching the data store or cache layer.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

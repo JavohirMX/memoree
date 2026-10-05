@@ -614,11 +614,19 @@ is not an instant, so it sorts lexicographically; a `Date` has to be manufacture
 `dateComponents` that silently fill in day and hour from the calendar's defaults. Both fail later
 than they fail here.
 
-The grid itself is a `ScrollView` of `Section`s in a `LazyVStack(pinnedViews: .sectionHeaders)`,
-each section holding its own `LazyVGrid`. **Pinned headers must have an opaque background** —
-these cells are full-bleed photographs, so a transparent header always has something showing
-through the text. Each cell also carries a day-of-month badge, because the month header cannot
-answer "which one was last Tuesday".
+The screen offers a **dual-view toggle**:
+1. **Photo Grid**: A `ScrollView` of `Section`s in a `LazyVStack(pinnedViews: .sectionHeaders)`,
+   each section holding its own `LazyVGrid`. **Pinned headers must have an opaque background** —
+   these cells are full-bleed photographs, so a transparent header always has something showing
+   through the text. Headers report both the month name and the count of moments (`section.countDescription`).
+   Each cell carries a day-of-month badge on the top-left, a discreet Behind-the-Scenes (`video.fill`)
+   badge on the top-right when `hasBTS` is true, and tactile spring feedback on tap (`PressDipStyle`).
+2. **Monthly Calendar View (`ArchiveCalendarView`)**: A 7-column monthly calendar layout mapping
+   days to photo thumbnails or subtle empty day slots, derived purely from `ArchiveSection.calendarDays()`.
+   Captures can be opened with the same tactile feedback, sharing the exact same thumbnail streaming pipeline.
+
+An understated **collection summary header** at the top displays total moment count and the chronological
+date span (e.g. `48 moments · Jun 2026 – Oct 2026`).
 
 ## 7. Streaks
 

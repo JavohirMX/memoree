@@ -63,6 +63,88 @@ struct ArchiveSection: Identifiable, Sendable, Hashable {
         guard let monthStart else { return "\(key.year)-\(String(format: "%02d", key.month))" }
         return monthStart.formatted(.dateTime.month(.wide).year())
     }
+
+    /// "1 moment" or "18 moments".
+    var countDescription: String {
+        let count = moments.count
+        return "\(count) \(count == 1 ? "moment" : "moments")"
+    }
+
+    /// Derives the 7-column calendar cells for this month.
+    func calendarDays(calendar: Calendar = .current, now: Date = Date()) -> [CalendarDayItem] {
+        var startComponents = DateComponents()
+        startComponents.year = key.year
+        startComponents.month = key.month
+        startComponents.day = 1
+        startComponents.hour = 12
+        guard let start = calendar.date(from: startComponents),
+              let dayRange = calendar.range(of: .day, in: .month, for: start) else {
+            return []
+        }
+
+        let firstWeekday = calendar.component(.weekday, from: start)
+        let calendarFirstWeekday = calendar.firstWeekday
+        let leadingBlanks = (firstWeekday - calendarFirstWeekday + 7) % 7
+
+        var items: [CalendarDayItem] = []
+        items.reserveCapacity(leadingBlanks + dayRange.count)
+
+        for i in 0..<leadingBlanks {
+            items.append(CalendarDayItem(
+                id: "\(key.year)-\(key.month)-blank-\(i)",
+                dayNumber: nil,
+                date: nil,
+                dayIdentifier: nil,
+                moment: nil,
+                isFuture: false
+            ))
+        }
+
+        let momentsByDay = Dictionary(grouping: moments, by: \.day)
+        let startOfDayNow = calendar.startOfDay(for: now)
+
+        for day in dayRange {
+            var components = DateComponents()
+            components.year = key.year
+            components.month = key.month
+            components.day = day
+            components.hour = 12
+            guard let dayDate = calendar.date(from: components) else { continue }
+            let dayId = DayIdentifier(date: dayDate, calendar: calendar)
+            let moment = momentsByDay[dayId]?.first
+            let isFuture = calendar.startOfDay(for: dayDate) > startOfDayNow
+
+            items.append(CalendarDayItem(
+                id: dayId.rawValue,
+                dayNumber: day,
+                date: dayDate,
+                dayIdentifier: dayId,
+                moment: moment,
+                isFuture: isFuture
+            ))
+        }
+
+        return items
+    }
+}
+
+/// A single item in the 7-column monthly calendar grid.
+struct CalendarDayItem: Identifiable, Sendable, Hashable {
+    /// Unique identifier for SwiftUI ForEach.
+    let id: String
+    /// Day of the month (1...31), or nil for leading blank slots.
+    let dayNumber: Int?
+    /// Date at noon on this day, or nil for blanks.
+    let date: Date?
+    /// Canonical DayIdentifier, or nil for blanks.
+    let dayIdentifier: DayIdentifier?
+    /// The moment captured on this day, if one exists.
+    let moment: MomentFacts?
+    /// Whether this day is in the future relative to now.
+    let isFuture: Bool
+
+    var isBlank: Bool { dayNumber == nil }
+    var hasMoment: Bool { moment != nil }
 }
 
 /// A year and a month, as the calendar sees them.

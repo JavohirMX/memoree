@@ -255,4 +255,64 @@ struct ArchiveSectionTests {
         let section = ArchiveSection(key: MonthKey(year: 0, month: 1), moments: [])
         #expect(!section.title.isEmpty)
     }
+
+    // MARK: - Calendar Days & Count Descriptions
+
+    @Test("Count description pluralises correctly")
+    func countDescriptionPluralisation() {
+        let empty = ArchiveSection(key: MonthKey(year: 2026, month: 9), moments: [])
+        #expect(empty.countDescription == "0 moments")
+
+        let single = ArchiveSection(key: MonthKey(year: 2026, month: 9), moments: [
+            moment("2026-09-10T12:00:00Z")
+        ])
+        #expect(single.countDescription == "1 moment")
+
+        let multiple = ArchiveSection(key: MonthKey(year: 2026, month: 9), moments: [
+            moment("2026-09-10T12:00:00Z"),
+            moment("2026-09-15T12:00:00Z")
+        ])
+        #expect(multiple.countDescription == "2 moments")
+    }
+
+    @Test("Calendar days generates correct blanks, month days, and associates moments")
+    func calendarDaysLayoutAndAssociation() {
+        let cal = calendar("UTC")
+        let m1 = moment("2026-09-15T12:00:00Z")
+        let section = ArchiveSection(key: MonthKey(year: 2026, month: 9), moments: [m1])
+
+        // September 2026 starts on a Tuesday.
+        // If calendar starts on Sunday (weekday 1), Tuesday is weekday 3 -> 2 leading blanks.
+        let now = cal.date(from: DateComponents(year: 2026, month: 9, day: 20, hour: 12))!
+        let items = section.calendarDays(calendar: cal, now: now)
+
+        let blanks = items.filter(\.isBlank)
+        let days = items.filter { !$0.isBlank }
+
+        #expect(days.count == 30, "September has 30 days")
+        #expect(blanks.count == 2, "September 2026 starts on Tuesday -> 2 blanks before Sunday")
+
+        // Check moment association
+        let day15 = days.first(where: { $0.dayNumber == 15 })
+        #expect(day15?.moment?.id == m1.id)
+        #expect(day15?.hasMoment == true)
+        #expect(day15?.isFuture == false)
+
+        // Check future day detection (day 25 is after day 20 now)
+        let day25 = days.first(where: { $0.dayNumber == 25 })
+        #expect(day25?.hasMoment == false)
+        #expect(day25?.isFuture == true)
+    }
+
+    @Test("Calendar days handles leap year February correctly")
+    func calendarDaysLeapYear() {
+        let cal = calendar("UTC")
+        let leapFeb = ArchiveSection(key: MonthKey(year: 2024, month: 2), moments: [])
+        let leapDays = leapFeb.calendarDays(calendar: cal).filter { !$0.isBlank }
+        #expect(leapDays.count == 29, "2024 is a leap year with 29 days in Feb")
+
+        let nonLeapFeb = ArchiveSection(key: MonthKey(year: 2025, month: 2), moments: [])
+        let nonLeapDays = nonLeapFeb.calendarDays(calendar: cal).filter { !$0.isBlank }
+        #expect(nonLeapDays.count == 28, "2025 is a non-leap year with 28 days in Feb")
+    }
 }
