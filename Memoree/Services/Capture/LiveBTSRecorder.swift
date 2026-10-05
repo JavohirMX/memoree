@@ -247,7 +247,7 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
                     // Output is not actively recording (e.g. stopped when camera swapped inputs).
                     // If didFinishRecordingTo already ran, onFinished was called immediately above.
                     // Fallback timeout ensures we never hang if the callback was lost.
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
                         resumer.resume(duration: nil, error: BTSRecorderError.writeFailed("recording stopped prematurely"))
                     }
                 }
@@ -270,8 +270,16 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
         // `nil` clip and the caller could not tell "too short to keep" from
         // "never recorded" — the two failures have nothing in common, and the
         // second is the product's fault rather than the user's timing.
+        //
+        // However, AVFoundation sets a non-nil error when recording finishes due to
+        // session interruption or maximum duration reached. Inspecting
+        // `AVErrorRecordingSuccessfullyFinishedKey` distinguishes a successful stop
+        // from an actual failure.
         if let error = finished.1 {
-            throw BTSRecorderError.writeFailed(error.localizedDescription)
+            let success = (error as NSError).userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool ?? false
+            if !success {
+                throw BTSRecorderError.writeFailed(error.localizedDescription)
+            }
         }
 
         deactivateAudioSession()

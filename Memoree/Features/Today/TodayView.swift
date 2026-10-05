@@ -22,6 +22,7 @@ struct TodayView: View {
     @State private var carouselIndex = 0
     @State private var fullScreenImage: UIImage?
     @State private var flippedMoments: Set<UUID> = []
+    @State private var playingBTSMoment: MomentFacts?
 
     var body: some View {
         // The lifecycle modifiers hang off the outermost container, never off
@@ -68,6 +69,30 @@ struct TodayView: View {
                     Task { await self.model?.reload() }
                 }
             )
+            .environment(environment)
+            .presentationDetents([.large])
+        }
+        .sheet(item: $playingBTSMoment) { moment in
+            NavigationStack {
+                VStack(spacing: Theme.Spacing.l) {
+                    BTSPlaybackView(assetIdentifier: moment.btsAssetIdentifier)
+                        .padding(.horizontal, Theme.Spacing.l)
+                        .padding(.top, Theme.Spacing.m)
+                    Spacer()
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .background(CanvasBackground())
+                .navigationTitle("Behind the Scenes")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button("Done") {
+                            playingBTSMoment = nil
+                        }
+                        .foregroundStyle(Theme.Color.textPrimary)
+                    }
+                }
+            }
             .environment(environment)
             .presentationDetents([.large])
         }
@@ -165,11 +190,7 @@ struct TodayView: View {
             VStack(spacing: Theme.Spacing.m) {
                 header(model)
                 Spacer()
-                if model.showsMomentTime,
-                   let remaining = model.timeUntilMoment,
-                   remaining > 0 {
-                    CountdownDisplay(text: CountdownFormatter.string(fromSeconds: remaining))
-                }
+
                 footer(model)
                 Spacer()
                 floatingShutterButton(model)
@@ -201,11 +222,7 @@ struct TodayView: View {
                 primaryState(model)
             }
 
-            if model.showsMomentTime,
-               let remaining = model.timeUntilMoment,
-               remaining > 0 {
-                CountdownDisplay(text: CountdownFormatter.string(fromSeconds: remaining))
-            }
+
 
             Spacer()
 
@@ -223,12 +240,7 @@ struct TodayView: View {
                     feedCard(for: moment, in: model)
                 }
 
-                if model.showsMomentTime,
-                   let remaining = model.timeUntilMoment,
-                   remaining > 0 {
-                    CountdownDisplay(text: CountdownFormatter.string(fromSeconds: remaining))
-                        .padding(.vertical, Theme.Spacing.m)
-                }
+
 
                 footer(model)
                     .padding(.bottom, Theme.Spacing.m)
@@ -242,12 +254,28 @@ struct TodayView: View {
     @ViewBuilder
     private func feedCard(for moment: MomentFacts, in model: TodayViewModel) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            HStack {
+            HStack(spacing: Theme.Spacing.s) {
                 Text(model.relativeHeader(for: moment))
                     .font(Theme.Typography.metadata)
                     .foregroundStyle(Theme.Color.textSecondary)
 
                 Spacer()
+
+                if moment.hasBTS {
+                    Button {
+                        playingBTSMoment = moment
+                    } label: {
+                        Label("BTS", systemImage: "play.fill")
+                            .font(Theme.Typography.retakePill)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                            .padding(.horizontal, Theme.Spacing.s)
+                            .padding(.vertical, Theme.Spacing.xs)
+                            .background(Theme.Color.divider)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Play Behind the Scenes clip")
+                }
 
                 if moment.retakeCount > 0 {
                     Text("\(moment.retakeCount) \(moment.retakeCount == 1 ? "retake" : "retakes")")
@@ -288,6 +316,13 @@ struct TodayView: View {
                 }
                 .contentShape(Rectangle())
                 .contextMenu {
+                    if moment.hasBTS {
+                        Button {
+                            playingBTSMoment = moment
+                        } label: {
+                            Label("Play Behind the Scenes", systemImage: "play.circle")
+                        }
+                    }
                     Button {
                         openDetail(for: moment)
                     } label: {
@@ -479,6 +514,20 @@ struct TodayView: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { openDetail(for: moment) }
+            .contextMenu {
+                if moment.hasBTS {
+                    Button {
+                        playingBTSMoment = moment
+                    } label: {
+                        Label("Play Behind the Scenes", systemImage: "play.circle")
+                    }
+                }
+                Button {
+                    openDetail(for: moment)
+                } label: {
+                    Label("View in Archive", systemImage: "photo.stack")
+                }
+            }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(CompositeAccessibility.label)
             .accessibilityAddTraits(.isButton)

@@ -263,7 +263,7 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
             // Mirrors the real library's one check that matters: every identifier
             // has to resolve to an asset that exists. Adding a phantom would
             // silently produce an album with a hole in it.
-            let known = Set(state.pairs.flatMap { [$0.back, $0.front] })
+            let known = Set(state.pairs.flatMap { [$0.back, $0.front] }).union(state.storedBytes.keys)
             let missing = identifiers.filter { !known.contains($0) }
             guard missing.isEmpty else {
                 throw LibraryError.assetMissing("one or more assets did not resolve")

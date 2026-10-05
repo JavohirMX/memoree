@@ -44,7 +44,6 @@ struct CurrentStreakTests {
     private func streak(_ rows: [(String, Bool)], today: String) throws -> Int {
         let f = facts(rows)
         return StreakCalculator.currentStreak(
-            onTimeDays: StreakCalculator.onTimeDays(from: f),
             capturedDays: StreakCalculator.capturedDays(from: f),
             today: try day(today),
             calendar: calendar
@@ -109,42 +108,32 @@ struct CurrentStreakTests {
         ) == 1)
     }
 
-    // MARK: - ADR-023: an off-window day is transparent
+    // MARK: - Every capture counts toward streak
 
-    // These four replaced tests that asserted the opposite. They were not
-    // deleted: a test that pins the old behaviour is a plausible account of how
-    // a superseded rule stayed in the codebase, and replacing them with the new
-    // rule is what makes the reversal visible in the diff.
-
-    @Test("An off-window day does not grow the streak, and does not reset it")
-    func offWindowDayIsTransparent() throws {
-        // Today off-window, yesterday on time -> 1. Neither 0 (it reset) nor 2
-        // (it counted). This is the whole of ADR-023 in one assertion.
-        #expect(try streak([("2026-09-30", false), ("2026-09-29", true)], today: "2026-09-30") == 1)
+    @Test("An off-window day counts toward the streak")
+    func offWindowDayCounts() throws {
+        // Both days captured -> streak of 2.
+        #expect(try streak([("2026-09-30", false), ("2026-09-29", true)], today: "2026-09-30") == 2)
     }
 
-    @Test("An off-window day alone, with no run behind it, is zero")
-    func offWindowDayAloneIsZero() throws {
-        // Zero because there is nothing to count — not zero because it broke
-        // something. The distinction matters and only the second reading would
-        // survive a later reversal.
-        #expect(try streak([("2026-09-30", false)], today: "2026-09-30") == 0)
+    @Test("An off-window day alone is a streak of one")
+    func offWindowDayAloneIsOne() throws {
+        // Any capture counts -> streak of 1.
+        #expect(try streak([("2026-09-30", false)], today: "2026-09-30") == 1)
     }
 
-    @Test("Consecutive off-window days are skipped, not ended")
+    @Test("Consecutive off-window days accumulate in streak")
     func consecutiveOffWindow() throws {
         #expect(try streak([
             ("2026-09-30", false), ("2026-09-29", false), ("2026-09-28", true)
-        ], today: "2026-09-30") == 1)
+        ], today: "2026-09-30") == 3)
     }
 
-    @Test("An off-window day in the past is skipped and the run continues")
-    func offWindowDayInPastIsSkipped() throws {
-        // Today, yesterday and the day before on time, with an off-window day
-        // wedged between two of them -> 3, not 1.
+    @Test("An off-window day in the past counts and the run continues")
+    func offWindowDayInPastCounts() throws {
         #expect(try streak([
             ("2026-09-30", true), ("2026-09-29", false), ("2026-09-28", true)
-        ], today: "2026-09-30") == 2)
+        ], today: "2026-09-30") == 3)
     }
 
     @Test("A day with no moment at all still ends the run")
@@ -398,16 +387,8 @@ struct SummaryTests {
 
         #expect(s.totalMoments == 4)
         #expect(s.daysCaptured == 4)
-        #expect(s.lateMoments == 1)
-        // The 27th was off-window, so it is skipped rather than ending the run:
-        // the 28th, 29th and 30th all count (ADR-023).
-        #expect(s.currentStreak == 3)
-        // `longestStreak` counts days with *any* moment, so the off-window 27th
-        // is inside the best run and it spans all four days. Under the old rule
-        // this would have been 3 — and with `currentStreak` skipping, a best of 3
-        // beside a current of 3 is a number that never says anything.
+        #expect(s.currentStreak == 4)
         #expect(s.longestStreak == 4)
-        #expect(s.onTimePercentage == 0.75)
         #expect(s.averageRetakes == 1.5)    // (0+1+2+3)/4
         #expect(s.btsCount == 2)
     }
@@ -434,7 +415,6 @@ struct SummaryTests {
     func noDivisionByZero() throws {
         let today = try #require(DayIdentifier(string: "2026-09-30", calendar: calendar))
         let s = StreakCalculator.summary(facts: [], today: today, calendar: calendar)
-        #expect(s.onTimePercentage == 0)
         #expect(s.averageRetakes == 0)
         #expect(s.busiestHour == nil)
         #expect(s.currentStreak == 0)

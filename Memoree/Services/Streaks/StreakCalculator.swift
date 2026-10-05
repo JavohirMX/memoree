@@ -20,33 +20,22 @@ enum StreakCalculator {
 
     // MARK: - Current streak
 
-    /// Consecutive on-time days, counting backwards from today, skipping
-    /// off-window days and stopping at the first day with no moment at all.
+    /// Consecutive days with a moment captured, counting backwards from today,
+    /// stopping at the first day with no moment at all.
     ///
-    /// Three cases for today, and conflating any two of them is the bug this
-    /// function exists to avoid:
-    ///
-    /// 1. **Captured today** — start the walk at today. On-time counts, and
-    ///    off-window is skipped, because both are days you showed up and neither
-    ///    is a failure (ADR-023).
+    /// Two cases for today:
+    /// 1. **Captured today** — start the walk at today. Any capture counts.
     /// 2. **No moment today** — nothing has failed yet, so walk back from
     ///    yesterday and leave the streak standing (ADR-010).
-    ///
-    /// The version this replaced returned `0` outright for a late today. That
-    /// was ADR-009, and it made a two-minute daily lottery the price of a
-    /// number rather than a reason to keep one.
     static func currentStreak(
-        onTimeDays: Set<DayIdentifier>,
         capturedDays: Set<DayIdentifier>,
         today: DayIdentifier,
         calendar: Calendar = .current
     ) -> Int {
         // An unposted *today* is not a miss (ADR-010), so the walk starts at
-        // yesterday rather than ending immediately. This has to be handled
-        // before the loop, not inside it: today is the one day whose emptiness
-        // means nothing, and special-casing it mid-loop is how it gets lost.
+        // yesterday rather than ending immediately.
         let cursor: DayIdentifier
-        if onTimeDays.contains(today) || capturedDays.contains(today) {
+        if capturedDays.contains(today) {
             cursor = today
         } else {
             cursor = today.offset(by: -1, calendar: calendar)
@@ -55,22 +44,10 @@ enum StreakCalculator {
         var streak = 0
         var day = cursor
 
-        // Walk back. An on-time day counts. An off-window day is **skipped** —
-        // transparent, neither counted nor an ending. A day with no moment at
-        // all ends the walk (ADR-023).
-        //
-        // The distinction this draws is the whole of ADR-023: capture is
-        // permitted at any time, so a day without a photograph is a genuine
-        // miss, while a day photographed outside the two-minute window is a day
-        // you showed up and it simply does not count. The earlier version
-        // returned 0 outright for a late today, which is ADR-009 — superseded.
-        while true {
-            if onTimeDays.contains(day) {
-                streak += 1
-            } else if !capturedDays.contains(day) {
-                break
-            }
-
+        // Walk back. Any day with a moment counts.
+        // A day with no moment at all ends the walk.
+        while capturedDays.contains(day) {
+            streak += 1
             let previous = day.offset(by: -1, calendar: calendar)
             // Defensive: a malformed calendar could return the same day
             // forever. Bail rather than spin.
@@ -78,6 +55,17 @@ enum StreakCalculator {
             day = previous
         }
         return streak
+    }
+
+    /// Overload preserving backwards compatibility where callers pass onTimeDays.
+    /// Any moment captured counts toward the streak.
+    static func currentStreak(
+        onTimeDays: Set<DayIdentifier>,
+        capturedDays: Set<DayIdentifier>,
+        today: DayIdentifier,
+        calendar: Calendar = .current
+    ) -> Int {
+        currentStreak(capturedDays: capturedDays, today: today, calendar: calendar)
     }
 
     // MARK: - Longest streak
@@ -147,21 +135,13 @@ enum StreakCalculator {
     ) -> StreakSummary {
         guard !facts.isEmpty else { return .empty }
 
-        var onTimeDays = Set<DayIdentifier>()
         var capturedDays = Set<DayIdentifier>()
         var hourCounts = [Int: Int]()
         var retakeTotal = 0
         var btsCount = 0
-        var lateMoments = 0
 
         for fact in facts {
             capturedDays.insert(fact.day)
-            if fact.isOnTime {
-                onTimeDays.insert(fact.day)
-            } else {
-                lateMoments += 1
-            }
-
             retakeTotal += fact.retakeCount
             if fact.hasBTS { btsCount += 1 }
 
@@ -170,7 +150,6 @@ enum StreakCalculator {
         }
 
         let total = facts.count
-        let onTimeCount = onTimeDays.count
 
         // Ties resolve to the earlier hour, which is stable and unsurprising.
         let busiest = hourCounts
@@ -180,13 +159,11 @@ enum StreakCalculator {
 
         return StreakSummary(
             currentStreak: currentStreak(
-                onTimeDays: onTimeDays, capturedDays: capturedDays,
+                capturedDays: capturedDays,
                 today: today, calendar: calendar),
             longestStreak: longestStreak(capturedDays: capturedDays, calendar: calendar),
             daysCaptured: capturedDays.count,
             totalMoments: total,
-            lateMoments: lateMoments,
-            onTimePercentage: Double(onTimeCount) / Double(total),
             averageRetakes: Double(retakeTotal) / Double(total),
             btsCount: btsCount,
             busiestHour: busiest,

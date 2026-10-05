@@ -105,11 +105,6 @@ struct StatsView: View {
         VStack(spacing: Theme.Spacing.s) {
             MetadataRow(label: "Photographs", value: "\(model.summary.totalMoments)")
 
-            // The one place the window's significance is visible at all. See the
-            // view model's note on why it is phrased as a count and not a
-            // percentage.
-            MetadataRow(label: "Timing", value: model.onTimeDescription)
-
             MetadataRow(label: "Days photographed", value: model.daysCapturedDescription)
             MetadataRow(label: "Longest run", value: model.longestStreakDescription)
 

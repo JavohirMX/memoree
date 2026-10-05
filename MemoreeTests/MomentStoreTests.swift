@@ -216,15 +216,8 @@ struct MomentStoreTests {
         }
 
         let s = store.summary(today: today)
-        // Was: currentStreak == 0, "late today breaks the run" — ADR-009, now
-        // superseded by ADR-023. An off-window day is transparent: it does not
-        // grow the streak and it does not end it, so the two on-time days
-        // before it still count and the streak is 2.
-        #expect(s.currentStreak == 2, "an off-window day is skipped, not an ending")
-        // `longestStreak` counts days with any moment, so all three days are in
-        // the best run.
+        #expect(s.currentStreak == 3, "any capture counts toward the streak")
         #expect(s.longestStreak == 3)
-        #expect(s.lateMoments == 1)
     }
 
     @Test("Day records persist and are reused")

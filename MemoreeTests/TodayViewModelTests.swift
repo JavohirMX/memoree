@@ -257,7 +257,7 @@ struct TodayViewModelTests {
         #expect(model.streak == 1)
     }
 
-    @Test("An off-window moment is a first-class entry that grows nothing")
+    @Test("An off-window moment is a first-class entry that counts toward the streak")
     func capturedOffWindowState() async throws {
         let (now, start) = try dayAndStart()
         let harness = try makeHarness(now: now, momentStart: start)
@@ -269,28 +269,13 @@ struct TodayViewModelTests {
         let model = makeModel(harness, at: start.addingTimeInterval(1800))
         await model.reload()
 
-        // The screen is told exactly one thing: you captured today. It is not
-        // told whether that counted, because `MomentState.captured` does not
-        // know — and neither, now, can any view.
+        // The screen is told exactly one thing: you captured today.
         #expect(model.state.isCaptured, "an off-window moment is an entry, not a failure")
-        #expect(model.streak == 0, "and it does not grow the streak (ADR-023)")
-        // The distinction is still recorded, and still computed honestly — it is
-        // simply not on this screen.
-        #expect(model.summary.lateMoments == 1)
+        #expect(model.streak == 1, "any capture counts toward streak")
     }
 
     @Test("The screen cannot tell an on-time moment from an off-window one")
     func theScreenCannotSeeLateness() async throws {
-        // Two harnesses with identical capture behaviour — same day, same
-        // photographs, same shutter — differing only in *when* the shutter
-        // fired. Every value the Today screen reads is the same. This is
-        // ADR-023 decision 3 asserted at the view-model boundary, where the old
-        // badge was actually rendered.
-        //
-        // Same day on purpose. Using two different days would have made the
-        // photographs differ, and then the assertion would pass for the wrong
-        // reason: it would be testing "two days look alike" rather than "an
-        // on-time moment looks like an off-window one".
         let (now, start) = try dayAndStart()
         let today = DayIdentifier(date: now)
 
@@ -313,8 +298,6 @@ struct TodayViewModelTests {
         // Preconditions, so a failure below cannot be a false alarm.
         #expect(onTimeModel.todayMoment?.isOnTime == true)
         #expect(offWindowModel.todayMoment?.isOnTime == false)
-        #expect(onTimeModel.summary.lateMoments == 0)
-        #expect(offWindowModel.summary.lateMoments == 1)
 
         // And the screen cannot tell them apart.
         #expect(onTimeModel.state == offWindowModel.state)
@@ -323,9 +306,9 @@ struct TodayViewModelTests {
         #expect(offWindowModel.todayImages != nil)
         #expect(onTimeModel.todayMissingFromPhotos == offWindowModel.todayMissingFromPhotos)
 
-        // The only difference, and it is a number rather than a message.
+        // Both count toward the streak.
         #expect(onTimeModel.streak == 1)
-        #expect(offWindowModel.streak == 0)
+        #expect(offWindowModel.streak == 1)
     }
 
     // MARK: - Reading the photographs back

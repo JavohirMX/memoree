@@ -67,15 +67,6 @@ final class StatsViewModel {
     /// (ADR-015, and the app's entire premise). A screen whose job is to report
     /// has no business editorialising.
 
-    /// "7 of 12 on time" — never a percentage on its own.
-    ///
-    /// `83%` is a grade. `7 of 12` is a count of photographs, which is what the
-    /// user actually did, and it does not imply a threshold they were being
-    /// measured against.
-    var onTimeDescription: String {
-        let onTime = summary.totalMoments - summary.lateMoments
-        return "\(onTime) of \(summary.totalMoments) on time"
-    }
 
     /// "3 days" / "1 day"
     var currentStreakDescription: String {

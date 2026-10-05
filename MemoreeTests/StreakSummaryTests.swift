@@ -45,13 +45,8 @@ struct StreakSummaryTests {
 
     // MARK: - Fields nothing asserted on until now
 
-    @Test("On-time percentage counts moments, not days")
-    func onTimePercentageCountsMoments() throws {
-        // There is one moment per day by invariant, so "percentage of days" and
-        // "percentage of moments" are the same number today. They are separate
-        // fields anyway, and this pins that `onTimePercentage` is derived from
-        // the moment count rather than from `onTimeDays.count` — which would be
-        // the same value and would silently diverge the day the invariant moves.
+    @Test("Summary counts moments and days captured")
+    func summaryCountsMoments() throws {
         let summary = StreakCalculator.summary(
             facts: [
                 try facts("2026-09-28"),
@@ -64,8 +59,8 @@ struct StreakSummaryTests {
         )
 
         #expect(summary.totalMoments == 4)
-        #expect(summary.lateMoments == 2)
-        #expect(abs(summary.onTimePercentage - 0.5) < 0.0001)
+        #expect(summary.daysCaptured == 4)
+        #expect(summary.currentStreak == 4)
     }
 
     @Test("Average retakes is the mean, and is zero rather than NaN with no history")
@@ -76,7 +71,6 @@ struct StreakSummaryTests {
             calendar: calendar
         )
         #expect(empty.averageRetakes == 0, "not NaN, and not a crash")
-        #expect(empty.onTimePercentage == 0)
 
         let some = StreakCalculator.summary(
             facts: [
@@ -134,11 +128,8 @@ struct StreakSummaryTests {
         )
 
         #expect(summary.daysCaptured == 5)
-        #expect(summary.lateMoments == 2)
         #expect(summary.missedDays == 0, "no day was empty")
-        // And the streak survived both off-window days, because the walk skips
-        // them rather than stopping.
-        #expect(summary.currentStreak == 3, "three on-time days, two skipped")
+        #expect(summary.currentStreak == 5, "all five captured days count toward streak")
     }
 
     @Test("The summary never reports a longest below the current streak")

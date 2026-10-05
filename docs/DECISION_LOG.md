@@ -1457,6 +1457,56 @@ clip that starts audible is the failure most likely to annoy.
 
 ---
 
+## ADR-032 — Every Captured Memory Counts Toward Streaks; Complete Removal of Countdown Displays and Timing Stats
+
+**Status:** Accepted · **Date:** 2026-10-05 · **Supersedes streak qualification in ADR-023 and countdown display in ADR-024**
+
+**Context.**
+1. **Streak Qualification:** ADR-023 allowed captures at any time, but only counted in-window captures toward streaks (skipping off-window days). Users found this counterintuitive: capturing a memory should count toward maintaining a daily memory habit regardless of the exact time captured. If you take a memory on a day, you showed up, and that day should increment your streak.
+2. **Timing & Lateness on Stats Screen:** The stats screen displayed a "Timing" row ("X of Y on time") which retained an artificial judgment on whether captures occurred within the arbitrary two-minute window.
+3. **Countdown Timers on Today Screen:** Even when notifications were off, countdown timers to the daily moment displayed on the Today screen (in landscape, empty state, and feed). This added anxiety and urgency contradictory to the app's quiet, personal memory journaling experience.
+
+**Decision.**
+1. **Every Capture Counts Toward Streak:** `StreakCalculator.currentStreak` now counts consecutive captured days walking backwards from today (or yesterday if today has not been captured yet). An uncaptured day breaks the streak. Any memory captured on a day counts toward the streak.
+2. **Drop On-Time / Late Metrics:** Removed `lateMoments` and `onTimePercentage` from `StreakSummary`. Removed the `Timing` row from `StatsView` and `onTimeDescription` from `StatsViewModel`. The Stats screen focuses purely on total photographs, streaks, days photographed, retakes, BTS clips, and busiest hour.
+3. **Remove Home Screen Countdown:** Completely removed `CountdownDisplay` from `TodayView`. The spontaneous daily notification serves as a random reminder, without ticking countdown clocks on the home screen.
+
+**Consequences.**
+- Streak arithmetic is simpler, more intuitive, and fully deterministic.
+- UI is calmer, cleaner, and completely free of arbitrary lateness penalties or timer pressure.
+- All tests pass with zero warnings, and design system invariants are maintained.
+
+**Alternatives rejected.**
+- Retaining on-time streak requirements — creates confusion where users take photos daily but see streaks break or pause due to arbitrary timing windows.
+
+---
+
+## ADR-033 — Reliable Behind the Scenes recording, Photos library saving, and Home feed playback
+
+**Status:** Accepted
+
+**Context.** Users reported that Behind the Scenes (BTS) videos were never saved to Apple Photos or their gallery, were missing from the "Memoree" album, and could not be played from the Home feed.
+
+Investigation found:
+1. When camera swapping switched inputs from rear to front, the session stop triggered `fileOutput(_:didFinishRecordingTo:error:)` with an interruption error (`AVError.sessionWasInterrupted`), but `AVErrorRecordingSuccessfullyFinishedKey` was `true`. `LiveBTSRecorder` unconditionally treated any non-nil error as a write failure, discarding valid recordings every time.
+2. PhotoKit's `btsClipFile(for:)` used raw `PHAsset.localIdentifier` values, which contain slashes (`/`) on iOS devices (e.g. `UUID/L0/001`), producing invalid nested paths that failed extraction.
+3. `PhotoKitLibrary.saveBTS` relied on raw Data resource creation without UTI, which is fragile on iOS.
+4. `CameraViewModel.fileIntoAlbumIfAsked()` only added photo pairs and neglected saved BTS video assets.
+5. Feed cards on the Home screen had no BTS badge or playback interaction.
+
+**Decision.**
+1. In `LiveBTSRecorder`, inspect `AVErrorRecordingSuccessfullyFinishedKey` on interruption errors so completed recordings are preserved and trimmed.
+2. In `PhotoKitLibrary`, save BTS videos via temporary `.mov` files with `PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL:)`. Sanitize `localIdentifier` slashes to underscores in playback temporary file paths.
+3. In `CameraViewModel`, include `writtenBTS` in `addAssets` to ensure BTS videos are filed into the "Memoree" album alongside the photo pair.
+4. In `TodayView`, add a BTS header pill button and a "Play Behind the Scenes" context menu action on feed cards, presenting `BTSPlaybackView` in a sheet without violating the "no AVFoundation in Features views except BTSPlaybackView" architectural boundary.
+
+**Consequences.**
+- BTS clips are reliably captured, trimmed, saved to the Photos library, and added to the "Memoree" album.
+- Users can view and play BTS clips directly from both the Home feed and Archive detail.
+- Architecture rules and design system invariants are preserved; all unit tests pass with zero warnings.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:
@@ -1476,11 +1526,11 @@ A decision log that only records deletions is misleading. These were kept on pur
 
 | Kept | Why |
 | --- | --- |
-| ~~Random daily window~~ | **Struck by ADR-023.** This was listed as *the mechanic* — "without it there is no reason for the app to exist." The window now decides when the phone interrupts you; capture is permitted at any time, and only in-window photographs grow the streak. What remains is one unretouched photograph per day, which is a smaller claim than the one this table used to make. |
-| ~~Two-minute duration~~ | **Struck by ADR-023**, with the gate. It no longer bounds anything — it does not close a shutter, and nothing is lost when it elapses. It survives only as the width of the streak-qualifying window, and as the notification's arrival time. |
-| ~~The countdown~~ | **Struck by ADR-024.** Client-side `mm:ss` it was, and there was never a server countdown to copy. But after ADR-023 a number ticking at a deadline nobody had, above a rule where missing the window costs the streak, was actively untrue. What survives is a countdown to the *reminder*, shown only when notifications are off. |
+| ~~Random daily window~~ | **Struck by ADR-023 and ADR-032.** The window now decides solely when the phone notifies you as a spontaneous daily reminder. Capture is permitted at any time, and every captured memory counts toward the streak. |
+| ~~Two-minute duration~~ | **Struck by ADR-023**, with the gate. It no longer bounds anything — it does not close a shutter, and nothing is lost when it elapses. |
+| ~~The countdown~~ | **Struck by ADR-024 and ADR-032.** Completely removed from the home screen. The notification is the reminder; no ticking countdown is presented. |
 | Front + back framing | The whole point of the format. |
-| ~~The late marker~~ | **Struck by ADR-023.** "Truthfulness about when something happened matters more than a clean-looking grid" was a good argument while the window closed and missing it cost you. It stopped being true at the moment the window stopped costing anything: an off-window photograph is now indistinguishable from an on-time one, on every screen, and the streak simply does not move. The distinction survives in `StreakSummary.onTimePercentage` and `lateMoments` — an honest aggregate, rather than a badge on the photograph itself. |
+| ~~The late marker~~ | **Struck by ADR-023 and ADR-032.** Any memory captured counts toward the streak, and timing/lateness metrics are completely dropped from streak summary and stats. |
 | 3:4 portrait geometry | Matches the camera roll and BeReal's own published spec. |
 | Black canvas, white type, one amber accent | A genuinely excellent design system for a photograph-first app. The amber lost its two original jobs and is now reserved for a declined permission (ADR-025). |
 | No filters, no library upload | The authenticity guarantee, preserved. |

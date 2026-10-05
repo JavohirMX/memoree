@@ -96,33 +96,6 @@ struct StatsViewModelTests {
 
     // MARK: - Phrasing
 
-    @Test("Timing is a count of photographs, never a percentage")
-    func timingIsACount() throws {
-        // `"83%"` reads as a grade and implies a passing mark. `"7 of 12"` is
-        // what the user actually did.
-        let harness = try makeHarness(now: Self.reference)
-        for offset in 1...7 { try record(harness, daysAgo: offset) }
-        for offset in 8...12 { try record(harness, daysAgo: offset, onTime: false) }
-
-        let model = makeModel(harness)
-        model.load()
-
-        #expect(model.onTimeDescription == "7 of 12 on time")
-        #expect(!model.onTimeDescription.contains("%"))
-    }
-
-    @Test("Timing of everything, and of nothing, is still a sentence")
-    func timingEdgeCases() throws {
-        let harness = try makeHarness(now: Self.reference)
-        let model = makeModel(harness)
-        model.load()
-        #expect(model.onTimeDescription == "0 of 0 on time",
-                "not empty — the row is hidden by `isEmpty`, not by a blank string")
-
-        try record(harness, daysAgo: 1, onTime: false)
-        model.load()
-        #expect(model.onTimeDescription == "0 of 1 on time")
-    }
 
     @Test("Day counts are pluralised, and one is singular")
     func pluralisation() throws {

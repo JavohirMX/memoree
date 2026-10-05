@@ -123,17 +123,6 @@ struct StreakSummary: Sendable, Equatable {
     /// Stats screen does not have to infer it.
     let totalMoments: Int
 
-    /// Off-window moments — captured, saved, archived, and skipped by the walk.
-    ///
-    /// Not displayed anywhere yet. It exists because it is the honest aggregate
-    /// behind `onTimePercentage`, and because the per-moment late marker was
-    /// removed on purpose (ADR-023) — so this is where the distinction between
-    /// on-time and off-window is allowed to be visible, if it ever is.
-    let lateMoments: Int
-
-    /// On-time moments as a percentage of all moments. 0 when there are none.
-    let onTimePercentage: Double
-
     /// Mean retakes across all moments. 0 when there are none.
     let averageRetakes: Double
 
@@ -151,21 +140,17 @@ struct StreakSummary: Sendable, Equatable {
 
     static let empty = StreakSummary(
         currentStreak: 0, longestStreak: 0, daysCaptured: 0, totalMoments: 0,
-        lateMoments: 0, onTimePercentage: 0, averageRetakes: 0, btsCount: 0,
-        busiestHour: nil, missedDays: 0
+        averageRetakes: 0, btsCount: 0, busiestHour: nil, missedDays: 0
     )
 
     init(
         currentStreak: Int, longestStreak: Int, daysCaptured: Int, totalMoments: Int,
-        lateMoments: Int, onTimePercentage: Double, averageRetakes: Double,
-        btsCount: Int, busiestHour: Int?, missedDays: Int
+        averageRetakes: Double, btsCount: Int, busiestHour: Int?, missedDays: Int
     ) {
         self.currentStreak = currentStreak
         self.longestStreak = longestStreak
         self.daysCaptured = daysCaptured
         self.totalMoments = totalMoments
-        self.lateMoments = lateMoments
-        self.onTimePercentage = onTimePercentage
         self.averageRetakes = averageRetakes
         self.btsCount = btsCount
         self.busiestHour = busiestHour

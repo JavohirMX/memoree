@@ -62,7 +62,8 @@ struct BTSFlowTests {
         bts: InMemoryBTSRecorder? = nil,
         saveBTS: Bool = true,
         clipDuration: TimeInterval = BTSTrim.defaultClipDuration,
-        library: InMemoryPhotoLibraryService = InMemoryPhotoLibraryService()
+        library: InMemoryPhotoLibraryService = InMemoryPhotoLibraryService(),
+        shouldFileIntoAlbum: Bool = false
     ) -> Fixture {
         library.setAuthorization(.authorized)
         let box = RecordBox()
@@ -72,7 +73,7 @@ struct BTSFlowTests {
             btsRecorder: bts,
             clipDuration: { clipDuration },
             record: { capture in try box.record(capture) },
-            shouldFileIntoAlbum: { false },
+            shouldFileIntoAlbum: { shouldFileIntoAlbum },
             shouldSaveBTS: { saveBTS },
             chooseFirstCamera: { .back }
         )
@@ -490,6 +491,18 @@ struct BTSFlowTests {
         #expect(fixture.library.savedBTSCount == 0, "nothing written to the library")
         #expect(fixture.box.recorded?.bts == nil,
                 "and the moment does not claim a clip the library does not have")
+    }
+
+    @Test("When filing into album is enabled, BTS is filed alongside the photo pair")
+    func btsIsFiledIntoAlbumWhenEnabled() async throws {
+        let bts = InMemoryBTSRecorder()
+        let fixture = makeModel(bts: bts, saveBTS: true, shouldFileIntoAlbum: true)
+
+        await fixture.captureAndCommit()
+
+        #expect(fixture.library.savedBTSCount == 1)
+        let members = fixture.library.albumMembers(named: CameraViewModel.albumName)
+        #expect(members.count == 3, "both photos and the BTS clip are added to the album")
     }
 }
 

@@ -195,15 +195,10 @@ struct MomentCommitTests {
         #expect(moment.dayIdentifier == today.rawValue)
         #expect(moment.isLate)
         #expect(moment.lateBy == 180, "14:05 against a window closing at 14:02")
-        // A late day is still a real day. It is archived and badged; it just
-        // does not grow the streak (ADR-009).
+        // A late day is still a real day. It is archived, and under ADR-032
+        // any capture counts toward the streak.
         #expect(harness.store.allMoments.count == 1)
-        // **Today specifically**, so the zero can only come from the lateness:
-        // the moment is on today, so the walk starts at today rather than a day
-        // back, and only the on-time check can stop it.
-        #expect(harness.store.summary(today: today).currentStreak == 0)
-        // And the control: the same history with the moment counted as on time
-        // does grow the streak, so the assertion above is about lateness.
+        #expect(harness.store.summary(today: today).currentStreak == 1)
         #expect(harness.store.summary(today: today).daysCaptured == 1)
     }
 

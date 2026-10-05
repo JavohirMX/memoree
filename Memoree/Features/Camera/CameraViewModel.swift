@@ -701,8 +701,12 @@ final class CameraViewModel {
         else { return }
 
         do {
+            var assetsToFile = [assets.back, assets.front]
+            if let writtenBTS {
+                assetsToFile.append(writtenBTS)
+            }
             try await photoLibrary.addAssets(
-                [assets.back, assets.front],
+                assetsToFile,
                 toAlbumNamed: Self.albumName
             )
         } catch {

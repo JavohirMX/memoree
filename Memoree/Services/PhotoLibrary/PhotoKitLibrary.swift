@@ -155,17 +155,25 @@ struct PhotoKitLibrary: PhotoLibraryService {
             throw LibraryError.authorizationDenied
         }
 
+        let tempURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("\(UUID().uuidString).mov")
+        do {
+            try data.write(to: tempURL)
+        } catch {
+            throw LibraryError.writeFailed(error.localizedDescription)
+        }
+
         return try await withCheckedThrowingContinuation { continuation in
             let created = PlaceholderBox()
 
             PHPhotoLibrary.shared().performChanges({
-                let request = PHAssetCreationRequest.forAsset()
-                request.addResource(with: .video, data: data, options: nil)
+                let request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: tempURL)
                 created.set(
-                    back: request.placeholderForCreatedAsset?.localIdentifier,
+                    back: request?.placeholderForCreatedAsset?.localIdentifier,
                     front: nil
                 )
             }, completionHandler: { success, error in
+                try? FileManager.default.removeItem(at: tempURL)
                 guard success, let identifier = created.back else {
                     continuation.resume(throwing: LibraryError.writeFailed(
                         error?.localizedDescription ?? "unknown"
@@ -426,7 +434,8 @@ struct PhotoKitLibrary: PhotoLibraryService {
     /// `PHAsset.localIdentifier`, a UUID-shaped string — and a hash would only add
     /// a collision question nobody needs answered.
     private func playbackPath(for identifier: String) -> URL {
-        Self.playbackDirectory.appendingPathComponent("playback-\(identifier).mov")
+        let safeIdentifier = identifier.replacingOccurrences(of: "/", with: "_")
+        return Self.playbackDirectory.appendingPathComponent("playback-\(safeIdentifier).mov")
     }
 
     func btsClipFile(for identifier: String) async throws -> URL {

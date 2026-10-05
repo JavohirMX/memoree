@@ -487,12 +487,19 @@ the recording's path is never handed back, so the bytes cannot be released *and*
 stays `true`, which makes every later `startRecording` throw `alreadyRecording`. Swallowed, the
 symptom is "BTS stopped working" with nothing to report.
 
-#### Playback
+#### Playback and Photos Library Storage
 
-`PhotoLibraryService.btsClipFile(for:)` writes the clip to a temporary file via
-`PHAssetResourceManager.writeData(for:toFile:)`, and `BTSPlaybackView` plays it with an
-`AVPlayer`. Play/pause and mute only — no scrubber, no volume, no full screen. Mute is on by
-default; Memoree is opened in queues and lectures.
+When writing the BTS clip to Photos, `PhotoKitLibrary.saveBTS` writes to a temporary file URL and
+uses `PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL:)` to guarantee valid asset
+creation. When saving to the user's `Memoree` album, the saved BTS video asset is filed alongside
+the photo pair.
+
+`PhotoLibraryService.btsClipFile(for:)` sanitizes the `PHAsset.localIdentifier` (substituting `/` with
+`_` to prevent invalid nested filesystem paths) and writes the clip to a temporary file via
+`PHAssetResourceManager.writeData(for:toFile:)`. `BTSPlaybackView` plays it with an `AVPlayer`.
+Playback is reachable from both the Archive's Moment Detail view and directly from the Home feed
+cards via a BTS header pill button and the card's context menu. Play/pause and mute only — no scrubber,
+no volume, no full screen. Mute is on by default; Memoree is opened in queues and lectures.
 
 Playback is the one thing under `Features/` that imports AVFoundation or AVKit (ADR-029). The
 `NoNetworkingTests` scan is why the local read uses `FileManager.contents(atPath:)` rather than
@@ -624,20 +631,18 @@ behind the calculator's back, and `Moment` is not `Sendable` while `Set<DayIdent
 
 ```swift
 enum StreakCalculator {
-    /// Consecutive days with an on-time moment, walking back from today.
+    /// Consecutive days with a captured moment, walking back from today.
     ///
-    /// Three cases for today, and conflating any two is the bug this exists to avoid:
-    ///   1. on-time today -> count it
-    ///   2. late today    -> return 0; the run is already broken (ADR-009)
-    ///   3. nothing today -> walk from yesterday; the run stands (ADR-010)
+    /// Two cases for today:
+    ///   1. captured today -> count it
+    ///   2. nothing today  -> walk from yesterday; the run stands (ADR-010)
     static func currentStreak(
-        onTimeDays: Set<DayIdentifier>,
         capturedDays: Set<DayIdentifier>,
         today: DayIdentifier,
         calendar: Calendar
     ) -> Int
 
-    static func longestStreak(onTimeDays: Set<DayIdentifier>, calendar: Calendar) -> Int
+    static func longestStreak(capturedDays: Set<DayIdentifier>, calendar: Calendar) -> Int
 
     static func missedDays(capturedDays: Set<DayIdentifier>, today: DayIdentifier, calendar: Calendar) -> Int
 
@@ -651,9 +656,9 @@ archive, and the recompute is microseconds over a few thousand rows.
 
 Three rules that are easy to get wrong and are therefore pinned by tests:
 
-1. **A late-only day breaks the streak.** The day is archived and badged, but it does not let
-   an older run survive underneath it (ADR-009). Returning `1` here — by walking back to a
-   yesterday that *was* on time — is the specific failure mode the tests guard against.
+1. **Every capture counts toward the streak.** Any memory captured on a day counts toward the
+   streak, regardless of whether it occurred inside or outside the notification window (ADR-032).
+   Only a day with **no moment at all** breaks the streak.
 2. **The streak does not break until the day has actually passed.** An unposted *today* is not
    a miss, whatever time it is. Otherwise the streak visibly resets every morning and rebuilds
    by evening (ADR-010).
