@@ -1556,6 +1556,27 @@ If users report preferring only a single view mode, the view switcher can be mad
 
 ---
 
+## ADR-036 — Pressure-Free Spontaneous Notification Prompts and Streak-Saver Evening Reminders
+
+**Status:** Accepted · **Date:** 2026-10-06 · **Supersedes ADR-006** regarding notification copy and single daily prompt
+
+**Context.** In BeReal and ADR-006, notification copy was static and anxiety-inducing: *"It's time. You have 2 minutes to capture a moment."* However, per ADR-023 and ADR-032, Memoree removed time limits, countdowns, and lateness penalties. A rigid 2-minute deadline in notification copy contradicted the calm, personal nature of the app. Furthermore, if a user got busy during the day and missed the spontaneous alert, their streak could break without any warning before midnight.
+
+**Decision.**
+1. **Pressure-Free, Varied Daily Prompts**: Replace static copy with playful, encouraging prompts deterministically chosen for each calendar day (e.g., *"What are you up to right now? 👀"*, *"Time to make a Memoree 📸"*, *"Pause for a second ✨"*). All references to time limits or deadlines are permanently removed.
+2. **Evening Streak-Saver Reminders**: Schedule a gentle reminder at 21:00 (9:00 PM) local time for the upcoming 7 days: *"Keep your streak going! 🔥 You haven't captured a memory today yet. Take a moment before the day ends!"*
+3. **Automatic Cancellation**: When a user captures a moment today, today's pending streak-saver reminder is immediately canceled.
+4. **On by Default**: No extra settings clutter; active whenever notifications are authorized.
+5. **System Ceiling Invariant**: Maintains 45 moment days + 7 streak-saver days = 52 total requests, well under Apple's 64-request limit.
+
+**Consequences.**
+- The spontaneous moment remains a surprise, while the copy feels warm and encouraging rather than demanding.
+- Users are protected against inadvertently breaking their streak.
+- Memory capture immediately clears the evening reminder, eliminating annoyance.
+- System limits and pure value invariants verified by automated test suites.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

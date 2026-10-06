@@ -249,14 +249,13 @@ prevents a scheduled notification from being invalidated after the fact.
 
 ### 4.3 Scheduling notifications
 
-Horizon: **45 days**, comfortably inside the documented 64-request pending limit. Refill when
-`pendingNotificationRequests().count < 20`, checked on launch, on `scenePhase == .active`, and
-after any accepted moment.
+Horizon: **45 days** for spontaneous moments plus a **7-day rolling window** for evening streak-saver reminders, totaling ~52 requests comfortably inside the documented 64-request pending limit. Refill when `pendingNotificationRequests().count < 20`, checked on launch, on `scenePhase == .active`, and after any accepted moment.
 
 ```swift
+let prompt = MomentNotificationCopy.prompt(for: day)
 let content = UNMutableNotificationContent()
-content.title = "It's time"
-content.body  = "You have \(settings.windowDuration / 60) minutes to capture a moment."
+content.title = prompt.title
+content.body  = prompt.body
 content.sound = .default
 content.interruptionLevel = .active
 
@@ -270,6 +269,10 @@ try await center.add(UNNotificationRequest(
     content: content, trigger: trigger))
 ```
 
+**Pressure-free copy.** Per ADR-023, ADR-032, and ADR-036, moment captures carry no artificial time limit. Copy avoids phrases like "2 minutes left" and instead deterministically rotates playful, encouraging prompts (e.g. "What are you up to right now? 👀", "Time to make a Memoree 📸") keyed to each day's identifier.
+
+**Streak-saver reminders.** If a user has not captured a moment by 21:00 local time, a secondary reminder fires: *"Keep your streak going! 🔥 You haven't captured a memory today yet. Take a moment before the day ends!"* As soon as a moment is captured on a day, its pending streak-saver reminder is immediately canceled.
+
 **Why wall-clock components rather than a time interval.** A `UNTimeIntervalNotificationTrigger`
 fires 45 × 86400 seconds after scheduling — which drifts against DST and against the device
 traveling between timezones. `UNCalendarNotificationTrigger` with explicit components resolves
@@ -277,13 +280,9 @@ against the *current* timezone at fire time, which is the correct semantic for "
 30 September". This is a real correctness decision, not a style preference.
 
 **DST.** If the resolved moment lands in a spring-forward gap, iOS fires at the first valid
-instant after the gap. If the gap swallows the two-minute window entirely (a 1-hour forward jump
-landing precisely on the minute), the moment is treated as missed and the day goes Late. Test
-this explicitly.
+instant after the gap. Calendar triggers resolve against the current timezone at trigger time.
 
-**Identifier discipline.** `moment.<dayIdentifier>`. On re-resolve, `removePendingNotificationRequests`
-with that identifier before re-adding. Never call `removeAllPendingNotificationRequests()` —
-it would also clear permission-related and future-scheduled items.
+**Identifier discipline.** `moment.<dayIdentifier>` for daily prompts and `streak.<dayIdentifier>` for evening reminders. On re-resolve, `removePendingNotificationRequests` with specific identifiers before re-adding. Never call `removeAllPendingNotificationRequests()` — it would also clear permission-related and future-scheduled items.
 
 ## 5. Capture
 

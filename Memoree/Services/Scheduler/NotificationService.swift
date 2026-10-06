@@ -4,14 +4,24 @@ import UserNotifications
 /// Schedules and maintains the rolling horizon of moment notifications.
 ///
 /// iOS caps an app at **64** pending local notification requests. Memoree keeps
-/// a 45-day horizon and refills whenever the pending count falls below 20,
-/// leaving headroom for a user who opens the app infrequently.
+/// a 45-day horizon for spontaneous moments and a 7-day rolling window for
+/// evening streak-saver reminders, refilling whenever the pending count falls
+/// below 20. Total requests (~52) leave headroom below iOS's 64 request ceiling.
 protocol NotificationService: Sendable {
 
     /// Ensures notifications are scheduled for every day in the horizon.
     ///
     /// Idempotent. Safe to call on every launch, foreground, and settings change.
-    func refreshHorizon(window: TimeWindow, windowDuration: TimeInterval) async throws
+    func refreshHorizon(
+        window: TimeWindow,
+        windowDuration: TimeInterval,
+        capturedDays: Set<DayIdentifier>
+    ) async throws
+
+    /// Cancels any scheduled evening streak-saver notification for the specified day.
+    ///
+    /// Called the instant the user captures a moment for today.
+    func cancelStreakSaver(for day: DayIdentifier) async
 
     /// Number of moment notifications currently pending.
     func pendingCount() async -> Int
@@ -34,6 +44,12 @@ protocol NotificationService: Sendable {
     /// deliberately does NOT call `removeAllPendingNotificationRequests()`,
     /// which would also clear items this app never scheduled.
     func clearAll() async
+}
+
+extension NotificationService {
+    func refreshHorizon(window: TimeWindow, windowDuration: TimeInterval) async throws {
+        try await refreshHorizon(window: window, windowDuration: windowDuration, capturedDays: [])
+    }
 }
 
 /// Mirrors `UNAuthorizationStatus` without leaking UserNotifications into the
@@ -82,16 +98,14 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
     /// buffer that absorbs infrequent launches.
     static let refillThreshold = 20
 
+    /// Days of evening streak-saver reminders kept scheduled.
+    static let streakHorizonDays = NotificationHorizonPlanner.defaultStreakHorizon
+
     /// The category every moment reminder carries.
     ///
     /// Internal rather than private because `MemoreeAppDelegate` registers it
     /// with the system centre at launch. It has no action buttons: the tap *is*
     /// the action (TRD §9).
-    ///
-    /// It was `"MEMORENT"` until this was renamed. Nothing referenced the
-    /// string but this file and the system centre, so the typo was invisible —
-    /// and would have stayed invisible, because a category identifier that no
-    /// code ever looks up is not required to be correct.
     static let categoryIdentifier = "MOMENT"
 
     // `@unchecked Sendable`: UNUserNotificationCenter is an Apple class that is
@@ -130,7 +144,11 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
 
     // MARK: - Horizon
 
-    func refreshHorizon(window: TimeWindow, windowDuration: TimeInterval) async throws {
+    func refreshHorizon(
+        window: TimeWindow,
+        windowDuration: TimeInterval,
+        capturedDays: Set<DayIdentifier>
+    ) async throws {
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus.asMemoree.willDeliver else {
             // Declined notifications are a supported state, not an error
@@ -140,8 +158,11 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
 
         let plan = NotificationHorizonPlanner.plan(
             horizon: Self.horizonDays,
+            streakHorizon: Self.streakHorizonDays,
             today: DayIdentifier(date: now()),
+            now: now(),
             existing: await pendingRequests().map(\.identifier),
+            capturedDays: capturedDays,
             momentStart: { day in
                 scheduler.momentStart(
                     for: day, window: window, windowDuration: windowDuration
@@ -151,7 +172,7 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
         guard !plan.isEmpty else { return }
 
         // Only the identifiers this app scheduled, and only the ones it is about
-        // to replace. Never `removeAllPendingNotificationRequests()`, which
+        // to replace or prune. Never `removeAllPendingNotificationRequests()`, which
         // would clear anything else the system is holding for us.
         center.removePendingNotificationRequests(
             withIdentifiers: plan.identifiersToRemove
@@ -159,9 +180,20 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
 
         for day in plan.daysToSchedule {
             guard let fireDate = plan.fireDates[day] else { continue }
-            let request = makeRequest(for: day, at: fireDate, windowDuration: windowDuration)
+            let request = makeRequest(for: day, at: fireDate)
             try await center.add(request)
         }
+
+        for day in plan.streakDaysToSchedule {
+            guard let fireDate = plan.streakFireDates[day] else { continue }
+            let request = makeStreakSaverRequest(for: day, at: fireDate)
+            try await center.add(request)
+        }
+    }
+
+    func cancelStreakSaver(for day: DayIdentifier) async {
+        let identifier = NotificationHorizonPlanner.streakIdentifier(for: day)
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
     }
 
     func pendingCount() async -> Int {
@@ -182,12 +214,12 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
 
     private func makeRequest(
         for day: DayIdentifier,
-        at start: Date,
-        windowDuration: TimeInterval
+        at start: Date
     ) -> UNNotificationRequest {
+        let prompt = MomentNotificationCopy.prompt(for: day)
         let content = UNMutableNotificationContent()
-        content.title = "It's time"
-        content.body = "You have \(Self.windowPhrase(windowDuration)) to capture a moment."
+        content.title = prompt.title
+        content.body = prompt.body
         content.sound = .default
         content.interruptionLevel = .active
         content.categoryIdentifier = Self.categoryIdentifier
@@ -210,10 +242,30 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
         )
     }
 
-    private static func windowPhrase(_ duration: TimeInterval) -> String {
-        let minutes = Int((duration / 60).rounded())
-        if minutes <= 1 { return "1 minute" }
-        return "\(minutes) minutes"
+    private func makeStreakSaverRequest(
+        for day: DayIdentifier,
+        at fireDate: Date
+    ) -> UNNotificationRequest {
+        let content = UNMutableNotificationContent()
+        content.title = MomentNotificationCopy.streakSaverPrompt.title
+        content.body = MomentNotificationCopy.streakSaverPrompt.body
+        content.sound = .default
+        content.interruptionLevel = .active
+        content.categoryIdentifier = Self.categoryIdentifier
+
+        var components = Calendar.current.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second],
+            from: fireDate
+        )
+        components.second = 0
+
+        let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: false)
+
+        return UNNotificationRequest(
+            identifier: NotificationHorizonPlanner.streakIdentifier(for: day),
+            content: content,
+            trigger: trigger
+        )
     }
 }
 

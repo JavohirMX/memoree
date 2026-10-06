@@ -19,6 +19,7 @@ final class InMemoryNotificationService: NotificationService, @unchecked Sendabl
     private struct State {
         var pending: [String] = []
         var refreshes: [Refresh] = []
+        var cancelledStreakSavers: [DayIdentifier] = []
         var clearCount = 0
         var failNextRefresh: SchedulerError?
         var requestAuthorizationResult = true
@@ -30,6 +31,7 @@ final class InMemoryNotificationService: NotificationService, @unchecked Sendabl
     struct Refresh: Equatable {
         let window: TimeWindow
         let windowDuration: TimeInterval
+        let capturedDays: Set<DayIdentifier>
     }
 
     private let lock = NSLock()
@@ -66,16 +68,33 @@ final class InMemoryNotificationService: NotificationService, @unchecked Sendabl
     var refreshCount: Int { lock.withLock { state.refreshes.count } }
     var clearCount: Int { lock.withLock { state.clearCount } }
     var lastRefresh: Refresh? { lock.withLock { state.refreshes.last } }
+    var cancelledStreakSavers: [DayIdentifier] { lock.withLock { state.cancelledStreakSavers } }
 
     // MARK: - NotificationService
 
-    func refreshHorizon(window: TimeWindow, windowDuration: TimeInterval) async throws {
+    func refreshHorizon(
+        window: TimeWindow,
+        windowDuration: TimeInterval,
+        capturedDays: Set<DayIdentifier>
+    ) async throws {
         try lock.withLock {
             if let failure = state.failNextRefresh {
                 state.failNextRefresh = nil
                 throw failure
             }
-            state.refreshes.append(Refresh(window: window, windowDuration: windowDuration))
+            state.refreshes.append(Refresh(
+                window: window,
+                windowDuration: windowDuration,
+                capturedDays: capturedDays
+            ))
+        }
+    }
+
+    func cancelStreakSaver(for day: DayIdentifier) async {
+        lock.withLock {
+            state.cancelledStreakSavers.append(day)
+            let streakId = NotificationHorizonPlanner.streakIdentifier(for: day)
+            state.pending.removeAll { $0 == streakId }
         }
     }
 

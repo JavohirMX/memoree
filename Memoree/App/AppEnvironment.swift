@@ -368,6 +368,9 @@ final class AppEnvironment {
                 hasBTS: capture.bts != nil,
                 btsAssetIdentifier: capture.bts?.assetIdentifier
             )
+            Task { [weak self] in
+                await self?.notificationService.cancelStreakSaver(for: day)
+            }
         }
     }
 
@@ -494,9 +497,11 @@ final class AppEnvironment {
             try? momentStore.saveDayRecord(day: day, momentStart: start)
         }
 
+        let capturedDays = Set(momentStore.allMoments.compactMap { DayIdentifier(string: $0.dayIdentifier) })
         try? await notificationService.refreshHorizon(
             window: window,
-            windowDuration: duration
+            windowDuration: duration,
+            capturedDays: capturedDays
         )
     }
 

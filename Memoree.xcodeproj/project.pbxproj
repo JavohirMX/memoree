@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AA1100112233445566778802 /* MomentNotificationCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1100112233445566778801 /* MomentNotificationCopy.swift */; };
+		AA1100112233445566778804 /* MomentNotificationCopyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA1100112233445566778803 /* MomentNotificationCopyTests.swift */; };
 		00AA7203DE2896E2681EE22F /* CameraHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4912B255E2F82A9D704B492C /* CameraHostView.swift */; };
 		0B692F9D1ADE2FFCC9899DE6 /* BTSTrim.swift in Sources */ = {isa = PBXBuildFile; fileRef = 943F7C673260A679764C52AA /* BTSTrim.swift */; };
 		14050F412238D071CC2F592B /* NotificationHorizonPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E5B5FF9F8E436DE91DF5E1 /* NotificationHorizonPlannerTests.swift */; };
@@ -135,6 +137,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AA1100112233445566778801 /* MomentNotificationCopy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentNotificationCopy.swift; sourceTree = "<group>"; };
+		AA1100112233445566778803 /* MomentNotificationCopyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentNotificationCopyTests.swift; sourceTree = "<group>"; };
 		00C62F5B957669B412C51A50 /* BTSPlaybackTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTSPlaybackTests.swift; sourceTree = "<group>"; };
 		0199319C81AC3B09C6F31596 /* MomentWindowChangeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentWindowChangeTests.swift; sourceTree = "<group>"; };
 		0419E1B7E777D5F8FD093B2A /* PhotoLibraryWritePathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PhotoLibraryWritePathTests.swift; sourceTree = "<group>"; };
@@ -429,6 +433,7 @@
 				0199319C81AC3B09C6F31596 /* MomentWindowChangeTests.swift */,
 				9634A6C3108A9A772B1AC4D2 /* NoNetworkingTests.swift */,
 				F5E5B5FF9F8E436DE91DF5E1 /* NotificationHorizonPlannerTests.swift */,
+				AA1100112233445566778803 /* MomentNotificationCopyTests.swift */,
 				41C850F72B4380ABB936E5E1 /* Phase0SmokeTests.swift */,
 				0419E1B7E777D5F8FD093B2A /* PhotoLibraryWritePathTests.swift */,
 				C035884EA3B2B9DB84A89A50 /* PhotoMetadataInjectorTests.swift */,
@@ -539,6 +544,7 @@
 				C40D78D181FFAE159925978D /* MomentScheduler.swift */,
 				3D1293D6EE70025CBA85DF7D /* NotificationHorizonPlanner.swift */,
 				9E6E755E1E0B16876C316A0B /* NotificationService.swift */,
+				AA1100112233445566778801 /* MomentNotificationCopy.swift */,
 			);
 			path = Scheduler;
 			sourceTree = "<group>";
@@ -676,6 +682,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A953353882546F0AA624A9BB /* AppEnvironment.swift in Sources */,
+				AA1100112233445566778802 /* MomentNotificationCopy.swift in Sources */,
 				A5C621261F6804631102A536 /* ArchiveCalendarView.swift in Sources */,
 				2DA25F576CC493E3C435E57F /* ArchiveCell.swift in Sources */,
 				F1B1F6DA5643B12E96292B0F /* ArchiveSection.swift in Sources */,
@@ -780,6 +787,7 @@
 				A1AE91B186C4DE1FE7FDCF6A /* MomentWindowChangeTests.swift in Sources */,
 				856494ADEBA6A7E29BC78667 /* NoNetworkingTests.swift in Sources */,
 				14050F412238D071CC2F592B /* NotificationHorizonPlannerTests.swift in Sources */,
+				AA1100112233445566778804 /* MomentNotificationCopyTests.swift in Sources */,
 				7804D3A3AE0077FF82EB24B8 /* Phase0SmokeTests.swift in Sources */,
 				7923012A47F591B2198DB9C6 /* PhotoLibraryWritePathTests.swift in Sources */,
 				B7AE3A2FCEF4174BD99795D4 /* PhotoMetadataInjectorTests.swift in Sources */,

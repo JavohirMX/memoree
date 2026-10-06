@@ -170,8 +170,9 @@ struct SettingsView: View {
             // rather than to imply it can be fixed here. It cannot (AGENTS.md §9).
             Text(remindersAuthorized
                 ? """
-                  Memoree will remind you once a day. Your phone does the \
-                  asking; nothing is sent anywhere.
+                  Memoree sends a spontaneous daily prompt, plus an evening \
+                  streak-saver if you haven't captured a memory yet. Your phone \
+                  does the asking; nothing is sent anywhere.
                   """
                 : """
                   Reminders are off, so Memoree cannot tell you when your \

@@ -27,6 +27,12 @@ enum NotificationHorizonPlanner {
         /// the trigger.
         let fireDates: [DayIdentifier: Date]
 
+        /// Days to schedule evening streak-saver reminders for (7-day rolling window).
+        let streakDaysToSchedule: [DayIdentifier]
+
+        /// Fire dates for the evening streak-saver reminders (21:00 local time).
+        let streakFireDates: [DayIdentifier: Date]
+
         /// Identifiers to remove before adding.
         ///
         /// Always exactly the ones about to be replaced, and never the empty
@@ -39,30 +45,55 @@ enum NotificationHorizonPlanner {
 
         /// Nothing to do. The horizon is already full.
         var isEmpty: Bool {
-            daysToSchedule.isEmpty && identifiersToRemove.isEmpty
+            daysToSchedule.isEmpty && streakDaysToSchedule.isEmpty && identifiersToRemove.isEmpty
         }
     }
 
-    /// The identifier Memoree gives a day's reminder.
+    /// The identifier Memoree gives a day's spontaneous reminder.
     static func identifier(for day: DayIdentifier) -> String {
         identifierPrefix + day.rawValue
     }
 
+    /// The identifier Memoree gives a day's evening streak-saver reminder.
+    static func streakIdentifier(for day: DayIdentifier) -> String {
+        streakIdentifierPrefix + day.rawValue
+    }
+
     private static let identifierPrefix = "moment."
+    private static let streakIdentifierPrefix = "streak."
+
+    /// Rolling window length for evening streak-saver reminders.
+    /// Kept bounded so 45 moments + 7 streak-savers = 52 requests (< 64 system limit).
+    static let defaultStreakHorizon = 7
+
+    /// 21:00 (9:00 PM) local time for the streak-saver notification.
+    static let streakReminderHour = 21
+
+    /// Computes 21:00 local time on the given calendar day.
+    static func streakFireDate(for day: DayIdentifier, calendar: Calendar = .current) -> Date {
+        calendar.date(bySettingHour: streakReminderHour, minute: 0, second: 0, of: day.date)
+            ?? day.date.addingTimeInterval(TimeInterval(streakReminderHour * 3600))
+    }
 
     /// Decides what to schedule.
     ///
     /// - Parameters:
-    ///   - horizon: How many days to keep scheduled. Memoree uses 45.
+    ///   - horizon: How many days of moments to keep scheduled. Memoree uses 45.
+    ///   - streakHorizon: How many days of streak savers to keep scheduled (default 7).
     ///   - today: The day to count from.
+    ///   - now: Current instant, to avoid scheduling reminders in the past.
     ///   - existing: Identifiers already pending, from the system centre.
+    ///   - capturedDays: Days that already have a captured moment, so streak savers are skipped/cleared.
     ///   - momentStart: Resolves a day to its moment time. Injected rather than
     ///     reached for, so the planner is pure and the scheduler stays the one
     ///     place the derivation lives.
     static func plan(
         horizon: Int,
+        streakHorizon: Int = 0,
         today: DayIdentifier,
+        now: Date? = nil,
         existing: [String],
+        capturedDays: Set<DayIdentifier> = [],
         momentStart: (DayIdentifier) -> Date
     ) -> Plan {
         let days = (0..<horizon).map { today.offset(by: $0) }
@@ -73,15 +104,42 @@ enum NotificationHorizonPlanner {
         // foreground is churn the system does not need.
         let missing = days.filter { !alreadyPending.contains(identifier(for: $0)) }
 
+        // Streak saver planning
+        let currentTime = now ?? today.date
+        let streakCandidates = (0..<streakHorizon).map { today.offset(by: $0) }
+        var streakToSchedule: [DayIdentifier] = []
+        var streakFireDates: [DayIdentifier: Date] = [:]
+        var streakToRemove: [String] = []
+
+        for day in streakCandidates {
+            let id = streakIdentifier(for: day)
+            let fireDate = streakFireDate(for: day)
+
+            // If day is already captured or streak time has already passed today,
+            // prune pending streak notification if one exists.
+            if capturedDays.contains(day) || fireDate <= currentTime {
+                if alreadyPending.contains(id) {
+                    streakToRemove.append(id)
+                }
+                continue
+            }
+
+            if !alreadyPending.contains(id) {
+                streakToSchedule.append(day)
+                streakFireDates[day] = fireDate
+                streakToRemove.append(id)
+            }
+        }
+
         return Plan(
             daysToSchedule: missing,
             fireDates: Dictionary(uniqueKeysWithValues: missing.map {
                 ($0, momentStart($0))
             }),
-            // Replace what we are about to re-add. Anything already pending and
-            // still wanted is left alone, so a horizon with 30 valid entries
-            // does not churn the other 30.
-            identifiersToRemove: missing.map(identifier(for:))
+            streakDaysToSchedule: streakToSchedule,
+            streakFireDates: streakFireDates,
+            // Replace what we are about to re-add, and prune any streak savers that are no longer needed.
+            identifiersToRemove: missing.map(identifier(for:)) + streakToRemove
         )
     }
 

@@ -259,4 +259,78 @@ struct NotificationHorizonPlannerTests {
             #expect(after == horizon, "\(count) pending ended up with \(after)")
         }
     }
+
+    // MARK: - Streak-saver reminders
+
+    @Test("Streak savers are scheduled for upcoming days at 21:00")
+    func streakSaversScheduled() {
+        let plan = NotificationHorizonPlanner.plan(
+            horizon: 45,
+            streakHorizon: 7,
+            today: today,
+            now: today.date, // midnight start of day
+            existing: [],
+            momentStart: start(of:)
+        )
+
+        #expect(plan.streakDaysToSchedule.count == 7)
+        #expect(plan.streakFireDates.count == 7)
+
+        for day in plan.streakDaysToSchedule {
+            let fireDate = plan.streakFireDates[day]
+            let expected = NotificationHorizonPlanner.streakFireDate(for: day)
+            #expect(fireDate == expected)
+            let hour = Calendar.current.component(.hour, from: try! #require(fireDate))
+            #expect(hour == 21)
+        }
+    }
+
+    @Test("Captured days are excluded from streak saver scheduling and pruned from pending")
+    func streakSaversExcludedForCapturedDays() {
+        let existingStreakId = NotificationHorizonPlanner.streakIdentifier(for: today)
+        let plan = NotificationHorizonPlanner.plan(
+            horizon: 45,
+            streakHorizon: 7,
+            today: today,
+            now: today.date,
+            existing: [existingStreakId],
+            capturedDays: [today],
+            momentStart: start(of:)
+        )
+
+        #expect(!plan.streakDaysToSchedule.contains(today))
+        #expect(plan.identifiersToRemove.contains(existingStreakId))
+    }
+
+    @Test("Total scheduled requests (moments + streak savers) stays well under the 64 cap")
+    func combinedRequestsUnderCap() {
+        let plan = NotificationHorizonPlanner.plan(
+            horizon: 45,
+            streakHorizon: 7,
+            today: today,
+            now: today.date,
+            existing: [],
+            momentStart: start(of:)
+        )
+
+        let totalNew = plan.daysToSchedule.count + plan.streakDaysToSchedule.count
+        #expect(totalNew == 52)
+        #expect(totalNew < UserNotificationService.systemPendingLimit)
+    }
+
+    @Test("Streak saver for today is skipped if current time is past 21:00")
+    func streakSaverPastTodaySkipped() {
+        let pastNinePM = today.date.addingTimeInterval(22 * 3600) // 22:00
+        let plan = NotificationHorizonPlanner.plan(
+            horizon: 45,
+            streakHorizon: 7,
+            today: today,
+            now: pastNinePM,
+            existing: [],
+            momentStart: start(of:)
+        )
+
+        #expect(!plan.streakDaysToSchedule.contains(today))
+        #expect(plan.streakDaysToSchedule.count == 6)
+    }
 }
