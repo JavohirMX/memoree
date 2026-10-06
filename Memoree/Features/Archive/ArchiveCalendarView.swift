@@ -110,12 +110,13 @@ struct ArchiveCalendarView: View {
             }
             .aspectRatio(1, contentMode: .fit)
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.thumbnail))
+            .clipShape(Circle())
             .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.thumbnail)
+                Circle()
                     .strokeBorder(Theme.Color.divider, lineWidth: 1)
             }
-            .overlay(alignment: .topLeading) {
+            .contentShape(Circle())
+            .overlay(alignment: .bottomTrailing) {
                 if let dayNumber = item.dayNumber {
                     Text("\(dayNumber)")
                         .font(Theme.Typography.retakePill)
@@ -163,7 +164,7 @@ struct ArchiveCalendarView: View {
             }
         }
         .aspectRatio(1, contentMode: .fit)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.thumbnail))
+        .clipShape(Circle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             item.isFuture

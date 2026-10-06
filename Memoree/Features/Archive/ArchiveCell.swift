@@ -43,7 +43,7 @@ struct ArchiveCell: View {
             if let image {
                 Image(uiImage: image)
                     .resizable()
-                    .scaledToFill()
+                    .scaledToFit()
             } else if isMissing {
                 Text("Not in Photos")
                     .font(Theme.Typography.metadata)
