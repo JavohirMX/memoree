@@ -177,12 +177,11 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
                     resumer.resume(duration: duration, error: error)
                 }
 
-                if let output = controller.movieFileOutput, output.isRecording {
+                if let output = controller.movieFileOutput {
                     output.stopRecording()
-                } else {
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
-                        resumer.resume(duration: nil, error: BTSRecorderError.writeFailed("stopped prematurely"))
-                    }
+                }
+                DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                    resumer.resume(duration: nil, error: nil)
                 }
             }
         }
@@ -271,80 +270,129 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
 
         let destination = Self.directory.appendingPathComponent("clip-\(UUID().uuidString).mov")
 
-        if recording.segmentURLs.count == 1 && segmentWindows.count == 1 {
-            let source = recording.segmentURLs[0]
+        // Single-segment direct export (fast, zero re-encode overhead)
+        if segmentWindows.count == 1 {
+            let segIndex = segmentWindows[0].index
+            let source = segIndex < recording.segmentURLs.count ? recording.segmentURLs[segIndex] : recording.segmentURLs[0]
             guard FileManager.default.fileExists(atPath: source.path) else {
                 throw BTSRecorderError.exportFailed("the recording is no longer on disk")
             }
-            let window = segmentWindows[0].window
-            let asset = AVURLAsset(url: source)
-            guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
-                throw BTSRecorderError.exportFailed("could not create an export session")
-            }
-            let scale = CMTimeScale(600)
-            session.outputURL = destination
-            session.outputFileType = .mov
-            session.timeRange = CMTimeRange(
-                start: CMTime(seconds: window.start, preferredTimescale: scale),
-                duration: CMTime(seconds: window.duration, preferredTimescale: scale)
-            )
-            return try await Self.runExport(session: session, destination: destination)
+            return try await Self.exportSingleSegment(source: source, window: segmentWindows[0].window, destination: destination)
         }
 
-        // Multi-segment composition stitching
-        let composition = AVMutableComposition()
-        guard let compositionVideoTrack = composition.addMutableTrack(
-            withMediaType: .video,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ) else {
-            throw BTSRecorderError.exportFailed("could not create composition video track")
+        // Multi-segment composition: load tracks from each segment
+        struct ValidSegment {
+            let url: URL
+            let asset: AVURLAsset
+            let videoTrack: AVAssetTrack
+            let window: BTSTrim.Window
         }
 
-        let compositionAudioTrack = recording.hasAudio ? composition.addMutableTrack(
-            withMediaType: .audio,
-            preferredTrackID: kCMPersistentTrackID_Invalid
-        ) : nil
-
-        var insertTime = CMTime.zero
-        let scale = CMTimeScale(600)
-        var primaryTransform: CGAffineTransform?
-
+        var validSegments: [ValidSegment] = []
         for segmentWindow in segmentWindows {
             guard segmentWindow.index < recording.segmentURLs.count else { continue }
             let sourceURL = recording.segmentURLs[segmentWindow.index]
             guard FileManager.default.fileExists(atPath: sourceURL.path) else { continue }
-
             let asset = AVURLAsset(url: sourceURL)
-            guard let videoTracks = try? await asset.loadTracks(withMediaType: .video),
-                  let sourceVideoTrack = videoTracks.first else { continue }
-
-            if primaryTransform == nil {
-                primaryTransform = try? await sourceVideoTrack.load(.preferredTransform)
+            if let videoTracks = try? await asset.loadTracks(withMediaType: .video),
+               let sourceVideoTrack = videoTracks.first {
+                validSegments.append(ValidSegment(
+                    url: sourceURL,
+                    asset: asset,
+                    videoTrack: sourceVideoTrack,
+                    window: segmentWindow.window
+                ))
             }
+        }
 
-            let startCM = CMTime(seconds: segmentWindow.window.start, preferredTimescale: scale)
-            let durationCM = CMTime(seconds: segmentWindow.window.duration, preferredTimescale: scale)
+        guard !validSegments.isEmpty else {
+            throw BTSRecorderError.exportFailed("no valid video segments to export")
+        }
+
+        if validSegments.count == 1 {
+            return try await Self.exportSingleSegment(
+                source: validSegments[0].url,
+                window: validSegments[0].window,
+                destination: destination
+            )
+        }
+
+        // Multi-track composition stitching
+        let composition = AVMutableComposition()
+        let scale = CMTimeScale(600)
+        var insertTime = CMTime.zero
+
+        let firstTrack = validSegments[0].videoTrack
+        let defaultRenderDimensions: (w: CGFloat, h: CGFloat) = (1080, 1440)
+        let naturalSize0 = (try? await firstTrack.load(.naturalSize)) ?? CGSize(width: defaultRenderDimensions.w, height: defaultRenderDimensions.h)
+        let transform0 = (try? await firstTrack.load(.preferredTransform)) ?? .identity
+        let rect0 = CGRect(origin: .zero, size: naturalSize0).applying(transform0)
+        let renderWidth = abs(rect0.width) > 0 ? abs(rect0.width) : defaultRenderDimensions.w
+        let renderHeight = abs(rect0.height) > 0 ? abs(rect0.height) : defaultRenderDimensions.h
+        let renderSize = CGSize(width: renderWidth, height: renderHeight)
+
+        var instructions: [AVMutableVideoCompositionInstruction] = []
+        let compAudioTrack = recording.hasAudio ? composition.addMutableTrack(
+            withMediaType: .audio,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) : nil
+        var hasValidAudio = false
+
+        for segment in validSegments {
+            guard let compTrack = composition.addMutableTrack(
+                withMediaType: .video,
+                preferredTrackID: kCMPersistentTrackID_Invalid
+            ) else { continue }
+
+            let durationCM = CMTime(seconds: segment.window.duration, preferredTimescale: scale)
+            let startCM = CMTime(seconds: segment.window.start, preferredTimescale: scale)
             let timeRange = CMTimeRange(start: startCM, duration: durationCM)
 
-            try compositionVideoTrack.insertTimeRange(timeRange, of: sourceVideoTrack, at: insertTime)
+            try compTrack.insertTimeRange(timeRange, of: segment.videoTrack, at: insertTime)
 
-            if let compositionAudioTrack {
-                if let audioTracks = try? await asset.loadTracks(withMediaType: .audio),
+            let trackTransform = (try? await segment.videoTrack.load(.preferredTransform)) ?? .identity
+            let trackNaturalSize = (try? await segment.videoTrack.load(.naturalSize)) ?? naturalSize0
+            let trackRect = CGRect(origin: .zero, size: trackNaturalSize).applying(trackTransform)
+            let trackWidth = abs(trackRect.width) > 0 ? abs(trackRect.width) : renderWidth
+            let trackHeight = abs(trackRect.height) > 0 ? abs(trackRect.height) : renderHeight
+            let scaleX = renderWidth / trackWidth
+            let scaleY = renderHeight / trackHeight
+            let finalTransform = trackTransform.concatenating(CGAffineTransform(scaleX: scaleX, y: scaleY))
+
+            let instruction = AVMutableVideoCompositionInstruction()
+            instruction.timeRange = CMTimeRange(start: insertTime, duration: durationCM)
+            let layerInstruction = AVMutableVideoCompositionLayerInstruction(assetTrack: compTrack)
+            layerInstruction.setTransform(finalTransform, at: insertTime)
+            instruction.layerInstructions = [layerInstruction]
+            instructions.append(instruction)
+
+            if let compAudioTrack {
+                if let audioTracks = try? await segment.asset.loadTracks(withMediaType: .audio),
                    let sourceAudioTrack = audioTracks.first {
-                    try? compositionAudioTrack.insertTimeRange(timeRange, of: sourceAudioTrack, at: insertTime)
+                    let audioDuration = (try? await sourceAudioTrack.load(.timeRange).duration) ?? durationCM
+                    let safeAudioDuration = min(durationCM, audioDuration)
+                    let audioRange = CMTimeRange(start: startCM, duration: safeAudioDuration)
+                    if (try? compAudioTrack.insertTimeRange(audioRange, of: sourceAudioTrack, at: insertTime)) != nil {
+                        hasValidAudio = true
+                    }
                 }
             }
 
             insertTime = CMTimeAdd(insertTime, durationCM)
         }
 
-        if let primaryTransform {
-            compositionVideoTrack.preferredTransform = primaryTransform
+        if let compAudioTrack, !hasValidAudio {
+            composition.removeTrack(compAudioTrack)
         }
 
-        guard insertTime > .zero else {
+        guard insertTime > .zero, !instructions.isEmpty else {
             throw BTSRecorderError.exportFailed("no valid video segments to export")
         }
+
+        let videoComposition = AVMutableVideoComposition()
+        videoComposition.renderSize = renderSize
+        videoComposition.frameDuration = CMTime(value: 1, timescale: 30)
+        videoComposition.instructions = instructions
 
         guard let session = AVAssetExportSession(
             asset: composition,
@@ -354,7 +402,36 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
         }
         session.outputURL = destination
         session.outputFileType = .mov
+        session.videoComposition = videoComposition
 
+        do {
+            return try await Self.runExport(session: session, destination: destination)
+        } catch {
+            // Safety net: if multi-segment composition export fails on device,
+            // fall back to exporting the primary segment with passthrough so BTS is never lost.
+            if let primary = validSegments.first {
+                return try await Self.exportSingleSegment(
+                    source: primary.url,
+                    window: primary.window,
+                    destination: destination
+                )
+            }
+            throw error
+        }
+    }
+
+    private static func exportSingleSegment(source: URL, window: BTSTrim.Window, destination: URL) async throws -> Data {
+        let asset = AVURLAsset(url: source)
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
+            throw BTSRecorderError.exportFailed("could not create an export session")
+        }
+        let scale = CMTimeScale(600)
+        session.outputURL = destination
+        session.outputFileType = .mov
+        session.timeRange = CMTimeRange(
+            start: CMTime(seconds: window.start, preferredTimescale: scale),
+            duration: CMTime(seconds: window.duration, preferredTimescale: scale)
+        )
         return try await Self.runExport(session: session, destination: destination)
     }
 

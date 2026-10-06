@@ -338,17 +338,7 @@ final class CameraViewModel {
             return CommittedBTS(data: bytes, hasAudio: recording.hasAudio)
 
         } catch {
-            // Nothing is reported — the photographs are the moment; a clip is a
-            // bonus (`ADR-013`).
-            //
-            // **But the recorder is abandoned anyway**, and that is not tidiness.
-            // `stopRecording` throws when the movie output has gone, which is what
-            // ADR-027's session rebuild does; the recorder would then hold
-            // `isRecording == true` for the life of the object and every later
-            // `startRecording` would throw `alreadyRecording`, silently swallowed,
-            // so one dead session an hour ago would cost every subsequent moment
-            // its clip. Clearing it here is the difference between losing one clip
-            // and losing all of them.
+            reportBTSFailure?("Behind the Scenes failed: \(error.localizedDescription)")
             btsRecorder.abandon()
             return nil
         }
