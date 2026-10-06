@@ -19,55 +19,35 @@ struct ArchiveCell: View {
     let isMissing: Bool
 
     var body: some View {
-        ZStack {
-            // **`scaledToFit`, not `scaledToFill`.**
-            //
-            // The cell's frame is a fixed 3:4 so the grid stays a grid, and the
-            // three alternatives for a landscape photograph inside it are:
-            // crop it, letterbox it, or make every row's height depend on the
-            // tallest cell in it.
-            //
-            // - **Crop** loses 44% of the picture. On the screen you use to
-            //   *find* a moment, a sideways photo reduced to a letterbox is a
-            //   photo you cannot recognise.
-            // - **Variable cell heights** make the rows ragged, and a ragged grid
-            //   is what Phase 6's fixed geometry was chosen to avoid.
-            // - **Letterboxing** keeps all of it, costs two thin bars, and the
-            //   bars are `surface` on a near-black canvas so they read as a mat
-            //   rather than as an error.
-            //
-            // For a portrait moment `fit` and `fill` are identical — same aspect,
-            // same frame — so **every photograph this app took before landscape
-            // existed renders exactly as it did.**
-            Theme.Color.surface
-            if let image {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-            } else if isMissing {
-                Text("Not in Photos")
-                    .font(Theme.Typography.metadata)
-                    .foregroundStyle(Theme.Color.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(Theme.Spacing.xs)
+        Color.clear
+            .aspectRatio(1, contentMode: .fit)
+            .overlay {
+                ZStack {
+                    Theme.Color.surface
+                    if let image {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else if isMissing {
+                        Text("Not in Photos")
+                            .font(Theme.Typography.metadata)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(Theme.Spacing.xs)
+                    }
+                    // Neither a spinner nor a black rectangle — see the type documentation.
+                }
             }
-            // Neither a spinner nor a black rectangle — see the type documentation.
-        }
-        .aspectRatio(3.0 / 4.0, contentMode: .fit)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.thumbnail))
-        .overlay {
-            RoundedRectangle(cornerRadius: Theme.Radius.thumbnail)
-                .strokeBorder(Theme.Color.divider, lineWidth: 1)
-        }
-        .overlay(alignment: .topLeading) { dayBadge }
-        .overlay(alignment: .topTrailing) { btsBadge }
-        // One label per cell, composed rather than read image by image. A grid
-        // of 500 unlabelled images is 500 VoiceOver stops that all say
-        // "image", which is the same dead end as a button that does nothing.
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Self.label(for: moment, isMissing: isMissing))
-        .accessibilityAddTraits(.isButton)
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.thumbnail))
+            .overlay(alignment: .topLeading) { dayBadge }
+            .overlay(alignment: .topTrailing) { btsBadge }
+            // One label per cell, composed rather than read image by image. A grid
+            // of 500 unlabelled images is 500 VoiceOver stops that all say
+            // "image", which is the same dead end as a button that does nothing.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Self.label(for: moment, isMissing: isMissing))
+            .accessibilityAddTraits(.isButton)
     }
 
     /// The day of the month, top-left, over the photograph.
@@ -185,15 +165,10 @@ struct ArchiveGrid: View {
     /// top would fire once and never again.
     let onDayVisible: (DayIdentifier) -> Void
 
-    private static let columns = [
-        GridItem(
-            .adaptive(
-                minimum: Theme.Size.gridThumbnailMinimum,
-                maximum: Theme.Size.gridThumbnailMaximum
-            ),
-            spacing: Theme.Spacing.s
-        )
-    ]
+    private static let columns = Array(
+        repeating: GridItem(.flexible(), spacing: Theme.Size.gridSpacing),
+        count: Theme.Size.gridColumns
+    )
 
     /// Grouped once, not per body evaluation.
     ///
@@ -206,12 +181,12 @@ struct ArchiveGrid: View {
             LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
                 ForEach(sections) { section in
                     Section {
-                        LazyVGrid(columns: Self.columns, spacing: Theme.Spacing.s) {
+                        LazyVGrid(columns: Self.columns, spacing: Theme.Size.gridSpacing) {
                             ForEach(section.moments) { moment in
                                 cell(moment)
                             }
                         }
-                        .padding(.horizontal, Theme.Spacing.m)
+                        .padding(.horizontal, Theme.Spacing.s)
                         .padding(.bottom, Theme.Spacing.xl)
                     } header: {
                         header(for: section)

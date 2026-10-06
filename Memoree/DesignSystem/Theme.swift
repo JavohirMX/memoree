@@ -176,6 +176,15 @@ enum Theme {
         static let gridThumbnailMinimum: CGFloat = 105
         static let gridThumbnailMaximum: CGFloat = 160
 
+        /// The gap between cells in the archive photo grid.
+        ///
+        /// Tight on purpose — the photographs are the content and the gap is
+        /// just enough to show the canvas between them. Half of `Spacing.xs`.
+        static let gridSpacing: CGFloat = 2
+
+        /// The number of columns in the archive photo grid.
+        static let gridColumns: Int = 3
+
         /// The width of the navigation and action column on the Today screen in landscape.
         static let todayLandscapeSidebarWidth: CGFloat = 220
 
