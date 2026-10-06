@@ -33,18 +33,15 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
 
     private let lock = NSLock()
 
-    /// The recording currently open. `nil` when nothing is being recorded.
-    private var pending: BTSRecording?
+    /// Tracks whether the recording session for this moment is currently open.
+    private var isSessionOpen = false
 
-    /// The delegate handed to `startRecording`, retained for the recording's life.
-    ///
-    /// **An `AVCaptureFileOutput` does not retain its recording delegate**, so
-    /// this is load-bearing rather than tidy — a local would be gone before the
-    /// output ever called back. `stopDelegate` is the separate object armed at
-    /// stop time, because `stopRecording` takes no delegate argument and the
-    /// finished-file callback belongs to whichever object was attached to the
-    /// *start*.
-    private var startDelegate: MovieFileDelegate?
+    /// The segment currently actively recording, if any.
+    private var activeFileURL: URL?
+    private var activeDelegate: MovieFileDelegate?
+
+    /// Completed segments with measured durations, in order.
+    private var completedSegments: [(fileURL: URL, duration: TimeInterval)] = []
 
     /// Settings handed to the output at `startRecording` time.
     ///
@@ -95,7 +92,7 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
     // MARK: - BTSRecorder
 
     var isRecording: Bool {
-        lock.withLock { pending != nil }
+        lock.withLock { isSessionOpen }
     }
 
     func microphoneStatus() -> MicrophoneAuthorizationStatus {
@@ -138,42 +135,11 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
             deactivateAudioSession()
         }
 
-        // The output has to exist before `startRecording(to:recordingDelegate:)`,
-        // and `enableMovieOutput` is what makes the controller attach one on the
-        // next `configureSession`. **It has to precede `startSession`** — this
-        // recorder is started after the camera screen is already open, so the
-        // honest sequence is that `CameraViewModel` calls `enableMovieOutput`
-        // during `start()`, and this call only records into it.
         try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
         let fileURL = Self.directory.appendingPathComponent("bts-\(UUID().uuidString).mov")
 
-        // **One delegate for the recording's whole life, retained here rather
-        // than as a local.** `startRecording(to:recordingDelegate:)` does not
-        // retain its delegate, so a local would be deallocated the moment this
-        // method returned and the output would call into nothing — a clip recorded
-        // with no way to learn its duration or that it failed. `stopRecording`
-        // installs its own delegate, so this field is the *start* delegate's and
-        // the two are distinct objects for distinct phases.
         let delegate = MovieFileDelegate()
-        lock.withLock { startDelegate = delegate }
 
-        // **Not `try`, and not a `do`/`catch`.** `startRecording(to:recordingDelegate:)`
-        // is annotated `throws` in the SDK but throws nothing in practice — it
-        // cannot, because there is no error to return and the delegate's
-        // `didFinishRecordingTo:…error:` is where a real failure arrives. Writing
-        // `try` here produced a compiler warning saying exactly that, and writing
-        // a `catch` produced a second saying the block was unreachable. Both were
-        // removed rather than suppressed.
-        //
-        // **The failure this cannot catch is caught downstream**: a recording that
-        // silently fails to write yields a file that does not exist, and `trim`
-        // refuses to export a missing source. So the error surfaces — one step
-        // later, from the operation that actually needed the bytes.
-        // **The output's existence is checked here, on this side of the hop**, rather
-        // than inside the closure. Inside, "no output" would have to resume the
-        // continuation with a *silent success*, and the caller would be told a
-        // recording had started when none had — which is how a dead subsystem
-        // presents itself as a working one.
         guard controller.movieFileOutput != nil else {
             throw BTSRecorderError.outputUnavailable
         }
@@ -188,55 +154,25 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
 
         lock.withLock {
             startedWithAudio = wantsAudio
-            pending = BTSRecording(
-                fileURL: fileURL,
-                // **Measured, not requested.** The recorder is stopped by the user,
-                // so the duration is whatever the session produced — which is the
-                // number the trim arithmetic has to be given.
-                recordedDuration: 0,
-                hasAudio: wantsAudio
-            )
+            isSessionOpen = true
+            completedSegments = []
+            activeFileURL = fileURL
+            activeDelegate = delegate
         }
     }
 
-    func stopRecording() async throws -> BTSRecording {
-        guard let controller else { throw BTSRecorderError.outputUnavailable }
+    func pauseRecording() async {
+        guard let controller, controller.movieFileOutput != nil else { return }
 
-        let open = lock.withLock { pending }
-        guard let open else { throw BTSRecorderError.notRecording }
-
-        // `stopRecording` is synchronous and reports the measured duration in its
-        // completion handler. Reading it from *there* rather than from the
-        // delegate is deliberate: it is the value the output itself measured, and a
-        // delegate callback would be a second path to the same fact that could only
-        // disagree with it.
-        //
-        // **Non-throwing, so the continuation cannot fail.** A missing output is
-        // reported before the hop, for the same reason `startRecording` checks it
-        // on this side: inside the closure, "no output" would have to resume with
-        // a value that looks like a real measurement.
-        guard controller.movieFileOutput != nil else {
-            throw BTSRecorderError.notRecording
+        let current = lock.withLock { () -> (URL, MovieFileDelegate)? in
+            guard let url = activeFileURL, let del = activeDelegate else { return nil }
+            return (url, del)
         }
+        guard let (fileURL, delegate) = current else { return }
 
-        // **`stopRecording()` takes no arguments — I wrote this against a memory of a
-        // completion handler and the compiler said otherwise.**
-        //
-        // `stopRecording` is `- (void)`. The duration and any write error arrive
-        // in the delegate's `didFinishRecordingTo:…error:`, on the *start*
-        // delegate — the one `startRecording` was given, because that is the
-        // recording the callback describes. So this arms the existing delegate
-        // rather than creating a second one, and a delegate attached only at stop
-        // time would receive nothing at all.
         let finished = await withCheckedContinuation { (c: CheckedContinuation<(TimeInterval?, Error?), Never>) in
             let resumer = SafeContinuationResumer(continuation: c)
             controllerQueue.async {
-                let delegate = self.lock.withLock { self.startDelegate }
-                guard let delegate else {
-                    resumer.resume(duration: nil, error: BTSRecorderError.notRecording)
-                    return
-                }
-
                 delegate.onFinished = { duration, error in
                     resumer.resume(duration: duration, error: error)
                 }
@@ -244,160 +180,224 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
                 if let output = controller.movieFileOutput, output.isRecording {
                     output.stopRecording()
                 } else {
-                    // Output is not actively recording (e.g. stopped when camera swapped inputs).
-                    // If didFinishRecordingTo already ran, onFinished was called immediately above.
-                    // Fallback timeout ensures we never hang if the callback was lost.
-                    DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) {
-                        resumer.resume(duration: nil, error: BTSRecorderError.writeFailed("recording stopped prematurely"))
+                    DispatchQueue.global().asyncAfter(deadline: .now() + 2.0) {
+                        resumer.resume(duration: nil, error: BTSRecorderError.writeFailed("stopped prematurely"))
                     }
                 }
             }
         }
 
-        lock.withLock { startDelegate = nil }
-
-        // **The delegate reports `nil` when it cannot measure a duration**, and
-        // the fallback is elapsed wall time rather than an invented number. A
-        // `BTSRecording` with a guessed duration would produce a trim range that
-        // is wrong by however much the guess was wrong, and the failure would
-        // appear as a clip of the wrong length rather than as an error.
-        guard let measured = finished.0 else {
-            throw BTSRecorderError.writeFailed("the recording reported no duration")
-        }
-
-        // A recording that failed is not a recording. **Reported rather than
-        // trimmed**, because `BTSTrim` would turn a zero-length recording into a
-        // `nil` clip and the caller could not tell "too short to keep" from
-        // "never recorded" — the two failures have nothing in common, and the
-        // second is the product's fault rather than the user's timing.
-        //
-        // However, AVFoundation sets a non-nil error when recording finishes due to
-        // session interruption or maximum duration reached. Inspecting
-        // `AVErrorRecordingSuccessfullyFinishedKey` distinguishes a successful stop
-        // from an actual failure.
-        if let error = finished.1 {
-            let success = (error as NSError).userInfo[AVErrorRecordingSuccessfullyFinishedKey] as? Bool ?? false
-            if !success {
-                throw BTSRecorderError.writeFailed(error.localizedDescription)
-            }
-        }
-
-        deactivateAudioSession()
-
-        // **`open` captured before the stop, and used after it.** The measured
-        // duration is the point of the stop call; the *file* it produced is the
-        // one that was open when the stop began. Reading `pending` again here
-        // would work today and break the moment a `discard` interleaves.
-        return lock.withLock {
-            pending = nil
-            return BTSRecording(
-                fileURL: open.fileURL,
-                recordedDuration: measured,
-                hasAudio: startedWithAudio
-            )
-        }
-    }
-
-    func trim(_ recording: BTSRecording, toSeconds clipDuration: TimeInterval) async throws -> Data? {
-        // The arithmetic is pure and lives in `BTSTrim`, so the `nil` case is
-        // decided before an export session is ever created. A recording shorter
-        // than the floor produces no clip and no error — the moment is photographs
-        // either way.
-        guard let window = BTSTrim.window(
-            recordedDuration: recording.recordedDuration,
-            clipDuration: clipDuration
-        ) else { return nil }
-
-        let source = recording.fileURL
-        guard FileManager.default.fileExists(atPath: source.path) else {
-            throw BTSRecorderError.exportFailed("the recording is no longer on disk")
-        }
-
-        let destination = Self.directory.appendingPathComponent("clip-\(UUID().uuidString).mov")
-
-        return try await withCheckedThrowingContinuation { (c: CheckedContinuation<Data, Error>) in
-            exportQueue.async {
-                do {
-                    try Self.export(source: source, destination: destination, window: window)
-                    // **Read and delete here, on the queue that produced the file.**
-                    // Handing the caller a URL meant it had to come back here to read
-                    // and unlink — and the one caller that did so put a temporary
-                    // directory read in `Features/`, which is where no file I/O
-                    // belongs (`AGENTS.md` §3).
-                    // **`FileManager.contents(atPath:)`, not `Data(contentsOf:)`.** The latter is
-                    // on `NoNetworkingTests`' forbidden list because it becomes an
-                    // HTTP fetch when handed an `http` URL; `contents(atPath:)` is a
-                    // path on this device or nothing, and there is no URL-shaped
-                    // way to reach the network through it.
-                    //
-                    // This is a file in a directory this type created a moment ago.
-                    // The distinction is not being pedantic about it — it is the
-                    // reason the symbol can stay banned outright rather than
-                    // carrying an exemption list, which is how a guard becomes a
-                    // list of things nobody reads again.
-                    guard let bytes = FileManager.default.contents(
-                        atPath: destination.path
-                    ) else {
-                        throw BTSRecorderError.exportFailed("the trimmed clip could not be read back")
-                    }
-                    try? FileManager.default.removeItem(at: destination)
-                    c.resume(returning: bytes)
-                } catch {
-                    try? FileManager.default.removeItem(at: destination)
-                    c.resume(throwing: BTSRecorderError.exportFailed(error.localizedDescription))
-                }
-            }
-        }
-    }
-
-    func discard(_ recording: BTSRecording) {
-        try? FileManager.default.removeItem(at: recording.fileURL)
-        // Locked because `discard` runs on whatever queue the caller's failure
-        // path happens to be on, and `pending` is the one field that says whether
-        // a recording is still the live one.
-        lock.withLock { if pending?.fileURL == recording.fileURL { pending = nil } }
-    }
-
-    func abandon() {
-        // **Stop first, then forget, and never the other way round.**
-        //
-        // `AVCaptureMovieFileOutput` does **not** retain its recording delegate, so
-        // dropping `startDelegate` before the stop is issued leaves the output
-        // holding an unretained pointer it will call the moment `stopRecording`
-        // completes. The bytes are being deleted either way, but a callback into
-        // freed memory is a crash and this is the one path where the recording was
-        // never ours to want back.
-        //
-        // The delegate keeps *itself* alive until that callback lands
-        // (`MovieFileDelegate.holdsSelfUntilCallback`), so the ordering costs
-        // nothing and needs no synchronisation here.
-        let open = lock.withLock { pending }
-        guard let controller, controller.movieFileOutput != nil else {
-            // **No output: the state is still cleared.** This is the case that used
-            // to wedge the recorder — a rebuilt session leaves `pending` set, and
-            // `isRecording` true forever.
-            lock.withLock {
-                pending = nil
-                startDelegate = nil
-            }
-            deactivateAudioSession()
-            if let open { try? FileManager.default.removeItem(at: open.fileURL) }
-            return
+        var measured = finished.0
+        if measured == nil || measured == 0 {
+            measured = await MovieFileDelegate.duration(of: fileURL)
         }
 
         lock.withLock {
-            pending = nil
-            startDelegate?.fileToDeleteOnCompletion = open?.fileURL
-            startDelegate?.holdSelfUntilCallback()
-            startDelegate = nil
+            activeFileURL = nil
+            activeDelegate = nil
+            if let duration = measured, duration > 0 {
+                completedSegments.append((fileURL: fileURL, duration: duration))
+            } else {
+                try? FileManager.default.removeItem(at: fileURL)
+            }
         }
+    }
+
+    func resumeRecording() async throws {
+        guard let controller else { throw BTSRecorderError.outputUnavailable }
+        guard isRecording else { throw BTSRecorderError.notRecording }
+
+        let alreadyRecording = lock.withLock { activeFileURL != nil }
+        guard !alreadyRecording else { return }
+
+        try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+        let fileURL = Self.directory.appendingPathComponent("bts-\(UUID().uuidString).mov")
+        let delegate = MovieFileDelegate()
+
+        guard controller.movieFileOutput != nil else {
+            throw BTSRecorderError.outputUnavailable
+        }
+
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            controllerQueue.async {
+                controller.movieFileOutput?
+                    .startRecording(to: fileURL, recordingDelegate: delegate)
+                c.resume()
+            }
+        }
+
+        lock.withLock {
+            activeFileURL = fileURL
+            activeDelegate = delegate
+        }
+    }
+
+    func stopRecording() async throws -> BTSRecording {
+        guard controller != nil else { throw BTSRecorderError.outputUnavailable }
+        guard isRecording else { throw BTSRecorderError.notRecording }
+
+        let hasActive = lock.withLock { activeFileURL != nil }
+        if hasActive {
+            await pauseRecording()
+        }
+
         deactivateAudioSession()
-        // **`controller` captured, not the output.** The output is not `Sendable`
-        // and the project's only sanctioned `@preconcurrency` import belongs to
-        // `CaptureSessionController` (`AGENTS.md` §3); capturing the controller
-        // instead reads the output on the queue that owns it, which is where it
-        // should have been read anyway.
-        controllerQueue.async { controller.movieFileOutput?.stopRecording() }
+
+        let (segments, hadAudio) = lock.withLock { () -> ([(fileURL: URL, duration: TimeInterval)], Bool) in
+            let segs = completedSegments
+            completedSegments = []
+            isSessionOpen = false
+            activeFileURL = nil
+            activeDelegate = nil
+            return (segs, startedWithAudio)
+        }
+
+        guard !segments.isEmpty else {
+            throw BTSRecorderError.writeFailed("no video segments recorded")
+        }
+
+        return BTSRecording(
+            segmentURLs: segments.map(\.fileURL),
+            segmentDurations: segments.map(\.duration),
+            hasAudio: hadAudio
+        )
+    }
+
+    func trim(_ recording: BTSRecording, toSeconds clipDuration: TimeInterval) async throws -> Data? {
+        guard let segmentWindows = BTSTrim.windows(
+            recordedDurations: recording.segmentDurations,
+            clipDuration: clipDuration
+        ), !segmentWindows.isEmpty else { return nil }
+
+        let destination = Self.directory.appendingPathComponent("clip-\(UUID().uuidString).mov")
+
+        if recording.segmentURLs.count == 1 && segmentWindows.count == 1 {
+            let source = recording.segmentURLs[0]
+            guard FileManager.default.fileExists(atPath: source.path) else {
+                throw BTSRecorderError.exportFailed("the recording is no longer on disk")
+            }
+            let window = segmentWindows[0].window
+            let asset = AVURLAsset(url: source)
+            guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough) else {
+                throw BTSRecorderError.exportFailed("could not create an export session")
+            }
+            let scale = CMTimeScale(600)
+            session.outputURL = destination
+            session.outputFileType = .mov
+            session.timeRange = CMTimeRange(
+                start: CMTime(seconds: window.start, preferredTimescale: scale),
+                duration: CMTime(seconds: window.duration, preferredTimescale: scale)
+            )
+            return try await Self.runExport(session: session, destination: destination)
+        }
+
+        // Multi-segment composition stitching
+        let composition = AVMutableComposition()
+        guard let compositionVideoTrack = composition.addMutableTrack(
+            withMediaType: .video,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) else {
+            throw BTSRecorderError.exportFailed("could not create composition video track")
+        }
+
+        let compositionAudioTrack = recording.hasAudio ? composition.addMutableTrack(
+            withMediaType: .audio,
+            preferredTrackID: kCMPersistentTrackID_Invalid
+        ) : nil
+
+        var insertTime = CMTime.zero
+        let scale = CMTimeScale(600)
+        var primaryTransform: CGAffineTransform?
+
+        for segmentWindow in segmentWindows {
+            guard segmentWindow.index < recording.segmentURLs.count else { continue }
+            let sourceURL = recording.segmentURLs[segmentWindow.index]
+            guard FileManager.default.fileExists(atPath: sourceURL.path) else { continue }
+
+            let asset = AVURLAsset(url: sourceURL)
+            guard let videoTracks = try? await asset.loadTracks(withMediaType: .video),
+                  let sourceVideoTrack = videoTracks.first else { continue }
+
+            if primaryTransform == nil {
+                primaryTransform = try? await sourceVideoTrack.load(.preferredTransform)
+            }
+
+            let startCM = CMTime(seconds: segmentWindow.window.start, preferredTimescale: scale)
+            let durationCM = CMTime(seconds: segmentWindow.window.duration, preferredTimescale: scale)
+            let timeRange = CMTimeRange(start: startCM, duration: durationCM)
+
+            try compositionVideoTrack.insertTimeRange(timeRange, of: sourceVideoTrack, at: insertTime)
+
+            if let compositionAudioTrack {
+                if let audioTracks = try? await asset.loadTracks(withMediaType: .audio),
+                   let sourceAudioTrack = audioTracks.first {
+                    try? compositionAudioTrack.insertTimeRange(timeRange, of: sourceAudioTrack, at: insertTime)
+                }
+            }
+
+            insertTime = CMTimeAdd(insertTime, durationCM)
+        }
+
+        if let primaryTransform {
+            compositionVideoTrack.preferredTransform = primaryTransform
+        }
+
+        guard insertTime > .zero else {
+            throw BTSRecorderError.exportFailed("no valid video segments to export")
+        }
+
+        guard let session = AVAssetExportSession(
+            asset: composition,
+            presetName: AVAssetExportPresetHighestQuality
+        ) else {
+            throw BTSRecorderError.exportFailed("could not create an export session for composition")
+        }
+        session.outputURL = destination
+        session.outputFileType = .mov
+
+        return try await Self.runExport(session: session, destination: destination)
+    }
+
+    func discard(_ recording: BTSRecording) {
+        for url in recording.segmentURLs {
+            try? FileManager.default.removeItem(at: url)
+        }
+        lock.withLock {
+            completedSegments.removeAll { seg in recording.segmentURLs.contains(seg.fileURL) }
+        }
+    }
+
+    func abandon() {
+        let (toStop, completed) = lock.withLock { () -> ((URL, MovieFileDelegate)?, [(fileURL: URL, duration: TimeInterval)]) in
+            let open = activeFileURL.flatMap { url in activeDelegate.map { (url, $0) } }
+            let completed = completedSegments
+            activeFileURL = nil
+            activeDelegate = nil
+            completedSegments = []
+            isSessionOpen = false
+            return (open, completed)
+        }
+
+        deactivateAudioSession()
+
+        for item in completed {
+            try? FileManager.default.removeItem(at: item.fileURL)
+        }
+
+        guard let controller, controller.movieFileOutput != nil else {
+            if let (url, _) = toStop {
+                try? FileManager.default.removeItem(at: url)
+            }
+            return
+        }
+
+        if let (url, delegate) = toStop {
+            delegate.fileToDeleteOnCompletion = url
+            delegate.holdSelfUntilCallback()
+            controllerQueue.async { [weak controller] in
+                controller?.movieFileOutput?.stopRecording()
+            }
+        }
     }
 
     func clearTemporaryFiles() {
@@ -406,46 +406,26 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
 
     // MARK: - Export
 
-    /// Trims with `AVAssetExportSession`, on `exportQueue`.
-    ///
-    /// **A `timeRange` in `CMTime`, and the window's `Double` is quantised here
-    /// rather than computed in CoreMedia.** `BTSTrim` says why: converting first
-    /// can hand the export session an inverted or empty range, which it rejects
-    /// with no error the caller can act on — the precise failure the `nil` return
-    /// exists to make impossible.
-    private static func export(source: URL, destination: URL, window: BTSTrim.Window) throws {
-        let asset = AVURLAsset(url: source)
-        let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPresetPassthrough)
-        guard let session else {
-            throw BTSRecorderError.exportFailed("could not create an export session")
+    private static func runExport(session: AVAssetExportSession, destination: URL) async throws -> Data {
+        await withCheckedContinuation { continuation in
+            session.exportAsynchronously {
+                continuation.resume()
+            }
         }
-
-        // **`CMTimeScale(600)`, CoreMedia's native rate, and not 1.**
-        //
-        // `BTSTrim`'s arithmetic is in `TimeInterval` and its own documentation
-        // says the plan is quantised at this boundary *on purpose*: converting
-        // first can hand the export session an inverted or empty range, which it
-        // rejects with no error the caller can act on. A scale of 600 means the
-        // quantisation is CoreMedia's own rather than something this file chose,
-        // so the boundary adds no error of its own.
-        let scale = CMTimeScale(600)
-        session.outputURL = destination
-        session.outputFileType = .mov
-        session.timeRange = CMTimeRange(
-            start: CMTime(seconds: window.start, preferredTimescale: scale),
-            duration: CMTime(seconds: window.duration, preferredTimescale: scale)
-        )
-
-        let semaphore = DispatchSemaphore(value: 0)
-        session.exportAsynchronously { semaphore.signal() }
-        semaphore.wait()
 
         switch session.status {
         case .completed:
-            return
+            guard let bytes = FileManager.default.contents(atPath: destination.path) else {
+                try? FileManager.default.removeItem(at: destination)
+                throw BTSRecorderError.exportFailed("the trimmed clip could not be read back")
+            }
+            try? FileManager.default.removeItem(at: destination)
+            return bytes
         case .cancelled, .failed:
+            try? FileManager.default.removeItem(at: destination)
             throw session.error ?? BTSRecorderError.exportFailed("the export did not complete")
         default:
+            try? FileManager.default.removeItem(at: destination)
             throw BTSRecorderError.exportFailed("the export ended in an unexpected state")
         }
     }
@@ -592,7 +572,7 @@ private final class MovieFileDelegate: NSObject, AVCaptureFileOutputRecordingDel
     ///
     /// **`nil` for an unreadable or zero-length asset**, and the caller treats that
     /// as an error rather than substituting a guess — see `onFinished`.
-    private static func duration(of url: URL) async -> TimeInterval? {
+    fileprivate static func duration(of url: URL) async -> TimeInterval? {
         let asset = AVURLAsset(url: url)
         guard let loaded = try? await asset.load(.duration) else { return nil }
         let seconds = CMTimeGetSeconds(loaded)

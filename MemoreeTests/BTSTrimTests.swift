@@ -202,4 +202,52 @@ struct BTSTrimTests {
         )
         #expect(window.duration == BTSTrim.minimumRecordedDuration)
     }
+
+    // MARK: - Multi-segment windows
+
+    @Test("Dual-camera recordings split the clip duration equally when both are long enough")
+    func multiSegmentEqualSplit() throws {
+        let windows = try #require(
+            BTSTrim.windows(recordedDurations: [10, 8], clipDuration: 6)
+        )
+        #expect(windows.count == 2)
+        #expect(windows[0].index == 0)
+        #expect(windows[0].window.start == 7) // 10 - 3
+        #expect(windows[0].window.duration == 3)
+
+        #expect(windows[1].index == 1)
+        #expect(windows[1].window.start == 5) // 8 - 3
+        #expect(windows[1].window.duration == 3)
+    }
+
+    @Test("A shorter segment lends its unused duration to the longer segment")
+    func multiSegmentBorrowing() throws {
+        let windows = try #require(
+            BTSTrim.windows(recordedDurations: [1, 10], clipDuration: 6)
+        )
+        #expect(windows.count == 2)
+        // Segment 0 only has 1s, so it keeps 1s (all of it)
+        #expect(windows[0].window.start == 0)
+        #expect(windows[0].window.duration == 1)
+        // Segment 1 borrows the remaining 2s, keeping 3 + 2 = 5s
+        #expect(windows[1].window.start == 5) // 10 - 5
+        #expect(windows[1].window.duration == 5)
+    }
+
+    @Test("Combined duration below the floor produces no windows")
+    func multiSegmentBelowFloorProducesNil() {
+        #expect(BTSTrim.windows(recordedDurations: [0.2, 0.2], clipDuration: 5) == nil)
+        #expect(BTSTrim.windows(recordedDurations: [], clipDuration: 5) == nil)
+        #expect(BTSTrim.windows(recordedDurations: [5, 5], clipDuration: 0) == nil)
+    }
+
+    @Test("A single segment produces identical window to single window calculation")
+    func singleSegmentMatches() throws {
+        let windows = try #require(
+            BTSTrim.windows(recordedDurations: [10], clipDuration: 5)
+        )
+        #expect(windows.count == 1)
+        #expect(windows[0].window.start == 5)
+        #expect(windows[0].window.duration == 5)
+    }
 }

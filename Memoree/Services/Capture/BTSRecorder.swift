@@ -52,7 +52,14 @@ protocol BTSRecorder: AnyObject, Sendable {
     /// first clip may already be the moment.
     func startRecording() async throws
 
-    /// Closes the open recording and hands back what was captured.
+    /// Pauses / closes the currently active camera segment before a camera swap
+    /// or entering review. The overall BTS session remains open.
+    func pauseRecording() async
+
+    /// Starts recording the next camera segment after a camera swap.
+    func resumeRecording() async throws
+
+    /// Closes the open recording and hands back what was captured across all segments.
     ///
     /// - Throws: when no recording is open.
     func stopRecording() async throws -> BTSRecording
@@ -107,31 +114,48 @@ protocol BTSRecorder: AnyObject, Sendable {
     func clearTemporaryFiles()
 }
 
-/// A closed recording, before trimming.
+extension BTSRecorder {
+    func pauseRecording() async {}
+    func resumeRecording() async throws {}
+}
+
+/// A closed recording across one or more camera segments, before trimming.
 ///
-/// A value type carrying a URL, not a class: it crosses queues, and the
+/// A value type carrying URLs, not a class: it crosses queues, and the
 /// `Sendable` requirement on the protocol means everything it hands out has to
-/// be too. Nothing is retained in app storage — this is a file in the temporary
+/// be too. Nothing is retained in app storage — these are files in the temporary
 /// directory, referenced, not copied.
 struct BTSRecording: Equatable, Hashable, Sendable {
 
-    /// The raw, untrimmed recording.
-    let fileURL: URL
+    /// The raw, untrimmed recordings across camera segments in chronological order.
+    let segmentURLs: [URL]
 
-    /// How long it actually ran, as measured by the recorder.
-    ///
-    /// **Measured rather than requested.** The recorder is stopped by the user,
-    /// so the duration is whatever the session produced — which can differ from
-    /// elapsed wall-clock time, and is the number the trim arithmetic has to be
-    /// given. Passing a clock reading instead would put a rounding difference
-    /// between the range asked for and the range available.
-    let recordedDuration: TimeInterval
+    /// Legacy / convenience single file URL. Points to the first segment.
+    var fileURL: URL { segmentURLs.first ?? URL(fileURLWithPath: "/dev/null") }
+
+    /// Durations of each segment as measured by the recorder.
+    let segmentDurations: [TimeInterval]
+
+    /// How long it actually ran in total across all segments.
+    var recordedDuration: TimeInterval { segmentDurations.reduce(0, +) }
 
     /// Whether the clip carries an audio track.
     ///
     /// False when the microphone was denied. Recorded rather than inferred so
     /// the export path can avoid asking for an audio session it cannot have.
     let hasAudio: Bool
+
+    init(fileURL: URL, recordedDuration: TimeInterval, hasAudio: Bool) {
+        self.segmentURLs = [fileURL]
+        self.segmentDurations = [recordedDuration]
+        self.hasAudio = hasAudio
+    }
+
+    init(segmentURLs: [URL], segmentDurations: [TimeInterval], hasAudio: Bool) {
+        self.segmentURLs = segmentURLs
+        self.segmentDurations = segmentDurations
+        self.hasAudio = hasAudio
+    }
 }
 
 /// Mirrors `AVAuthorizationStatus` for the microphone, matching

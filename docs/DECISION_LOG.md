@@ -332,7 +332,7 @@ treatment on a light canvas, and a light Memoree would not be Memoree.
 
 ## ADR-013 — Behind the Scenes: single continuous recording, trimmed
 
-**Status:** Accepted · **Decided to build 2026-10-03**, after the implementation plan flagged
+**Status:** Superseded by ADR-035 · **Decided to build 2026-10-03**, after the implementation plan flagged
 this as the phase most likely to be cut
 
 **Context.** BTS records the few seconds before the shutter. BeReal uses a rolling buffer with a
@@ -1532,6 +1532,27 @@ Investigation found:
 
 **Reversal trigger.**
 If users report preferring only a single view mode, the view switcher can be made configurable or reverted without touching the data store or cache layer.
+
+---
+
+## ADR-035 — Sequential dual-camera Behind the Scenes video recording and composition stitching
+
+**Status:** Accepted · **Supersedes ADR-013** regarding single-camera recording limitation
+
+**Context.** In BeReal and ADR-013, Behind-the-Scenes (BTS) video only recorded the opening camera (typically back or front) up to the shutter press, leaving the second camera completely unrepresented in the BTS clip. Users asked to record both cameras sequentially and combine them into a single video clip.
+
+**Decision.**
+1. **Sequential Dual-Camera Recording**: Record video segment 1 on camera 1 while composing and capturing photo 1. When the shutter switches cameras, cleanly pause segment 1, reconfigure the session to camera 2, and resume recording segment 2 until photo 2 is captured.
+2. **Review Pause**: Pause recording during review so user deliberation time is not captured.
+3. **End-to-End Composition Stitching**: At commit, stitch the segments end-to-end using `AVMutableComposition` (preserving video transforms and optional audio tracks).
+4. **Fair Duration Allocation with Borrowing**: `BTSTrim.windows` allocates target clip duration (default 5s) evenly across segments from their tails. If one segment is shorter than its share, the unused duration is lent to the other segment.
+5. **Single-Clip Optimization**: If only one segment was recorded or kept, fall back to direct single-clip passthrough export without composition overhead.
+6. **Robust Lifecycle**: Discard and abandon release all recorded segment files from disk. BTS export failures remain strictly swallowed per ADR-013, never jeopardizing the photo pair commit.
+
+**Consequences.**
+- Users obtain a rich, authentic BTS video showing both sides of the moment in sequence.
+- Zero third-party dependencies; uses standard `AVFoundation` composition and export APIs.
+- Swift 6 strict concurrency compliance maintained with zero compiler warnings.
 
 ---
 

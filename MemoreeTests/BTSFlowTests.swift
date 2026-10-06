@@ -351,7 +351,7 @@ struct BTSFlowTests {
         // is the same as BTS being off. Two shutter presses inside half a second
         // produces this, and it is not something to report as a problem.
         let bts = InMemoryBTSRecorder()
-        bts.stubRecordedDuration = BTSTrim.minimumRecordedDuration - 0.1
+        bts.stubRecordedDuration = (BTSTrim.minimumRecordedDuration - 0.1) / 2
         let fixture = makeModel(bts: bts)
 
         await fixture.captureAndCommit()
@@ -359,8 +359,8 @@ struct BTSFlowTests {
         #expect(fixture.model.phase == .saved)
         #expect(fixture.model.btsFailure == nil, "an ordinary absence is not a failure")
         #expect(fixture.library.savedBTSCount == 0)
-        #expect(bts.discardedURLs.count == 1,
-                "the untrimmed recording is discarded rather than left on disk")
+        #expect(bts.discardedURLs.count == 2,
+                "both segment files of the untrimmed recording are discarded rather than left on disk")
     }
 
     // MARK: - Discarding
@@ -378,7 +378,7 @@ struct BTSFlowTests {
         await fixture.model.reshoot(.back)
 
         #expect(bts.stoppedRecordings.count == 1, "the recording was closed")
-        #expect(bts.discardedURLs.count == 1, "and its bytes released")
+        #expect(bts.discardedURLs.count == 2, "and both segment files released")
     }
 
     @Test("Starting over abandons the recording")
@@ -392,7 +392,7 @@ struct BTSFlowTests {
         await fixture.model.startOver()
 
         #expect(bts.stoppedRecordings.count == 1)
-        #expect(bts.discardedURLs.count == 1)
+        #expect(bts.discardedURLs.count == 2)
     }
 
     @Test("Only the committed pair ever produces a clip")

@@ -442,28 +442,15 @@ separate assets.
 
 ### 5.7 Behind the Scenes
 
-BTS records **only the primary camera**, matching BeReal: *"Only the first camera you choose to
-capture your BeReal will be used to record your BTS video."*
+BTS records **both cameras sequentially** (ADR-035, superseding ADR-013's single-camera limit):
+the first camera is recorded while the user composes and shoots photo 1; during the camera swap,
+the recorder pauses the first segment, resumes on the second camera, and records the second
+segment until photo 2 is captured.
 
-v1 implementation: `AVCaptureMovieFileOutput` writing to a temporary file, started when the
-camera screen appears, stopped on commit, then trimmed to the last `btsDuration` seconds with
-`AVAssetExportSession(timeRange:)`. A continuous single-file recording is deliberately preferred
-over a segmented ring buffer here: the camera session lasts seconds, not minutes, so the
-temp-file write cost is trivial and the failure modes are far fewer.
-
-```swift
-let range = CMTimeRange(
-    start: asset.duration - CMTime(seconds: settings.btsDuration, preferredTimescale: 600),
-    duration: CMTime(seconds: settings.btsDuration, preferredTimescale: 600))
-```
-
-Guard the lower bound at zero — a fast capture can produce an asset shorter than `btsDuration`.
+At commit, the segments are stitched together end-to-end using `AVMutableComposition` and trimmed to the user-configured clip duration (default 5s, split evenly across segments with borrowing for shorter segments) via `AVAssetExportSession`. If only one camera was recorded or one segment is available, passthrough export is used.
 
 Audio requires the microphone permission. Request it lazily, only when BTS is enabled for the
 first time, and degrade to a silent clip if denied rather than blocking the moment.
-
-Because capture is sequential, the BTS file contains the rear stream up to the switch and
-nothing after. That is the correct and expected behaviour, not a bug.
 
 #### Ordering: the output is asked for before the session, the recording after
 

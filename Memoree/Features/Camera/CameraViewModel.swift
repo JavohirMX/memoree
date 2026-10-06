@@ -372,6 +372,28 @@ final class CameraViewModel {
         btsRecorder.abandon()
     }
 
+    /// Pauses recording the current camera segment prior to camera switch.
+    private func pauseBTSForSwitch() async {
+        guard let btsRecorder, btsRecorder.isRecording else { return }
+        await btsRecorder.pauseRecording()
+    }
+
+    /// Resumes recording the second camera segment after camera switch.
+    private func resumeBTSAfterSwitch() async {
+        guard let btsRecorder, btsRecorder.isRecording else { return }
+        do {
+            try await btsRecorder.resumeRecording()
+        } catch {
+            // Swallowed per ADR-013: BTS failure never costs the moment.
+        }
+    }
+
+    /// Pauses recording when entering review so user review time is not recorded.
+    private func pauseBTSForReview() async {
+        guard let btsRecorder, btsRecorder.isRecording else { return }
+        await btsRecorder.pauseRecording()
+    }
+
     // MARK: - Focus
 
     /// Moves focus and exposure to a point the user tapped on the preview.
@@ -488,14 +510,17 @@ final class CameraViewModel {
                 haptics.shutter()
 
                 if captured.count == CameraPosition.allCases.count {
+                    await pauseBTSForReview()
                     enterReview()
                 } else {
                     // Second press: bring up the camera they have not shot.
                     let next = CameraPosition.allCases.first { $0 != livePosition } ?? .front
                     phase = .working
+                    await pauseBTSForSwitch()
                     try await service.switchCamera(to: next)
                     livePosition = next
                     phase = .shooting
+                    await resumeBTSAfterSwitch()
                     // **No haptic for the switch.** One press photographs *and*
                     // swaps, so buzzing here would tell the user two things
                     // happened when they pressed once. A haptic describes what
@@ -526,11 +551,13 @@ final class CameraViewModel {
         guard canFlipCamera else { return }
         let target = livePosition.opposite
         phase = .working
+        abandonBTS()
         do {
             try await service.switchCamera(to: target)
             livePosition = target
             firstPosition = target
             phase = .shooting
+            await startBTSIfEnabled()
             haptics.cameraSwitched()
         } catch {
             phase = Self.phase(for: error)

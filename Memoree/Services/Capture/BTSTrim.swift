@@ -102,6 +102,67 @@ enum BTSTrim {
         return Window(start: recordedDuration - kept, duration: kept)
     }
 
+    /// A window to keep for a specific segment index in a multi-segment recording.
+    struct SegmentWindow: Equatable, Hashable, Sendable {
+        let index: Int
+        let window: Window
+    }
+
+    /// Computes windows to keep for multiple sequential recordings (e.g. dual cameras).
+    ///
+    /// Distributes `clipDuration` across recordings so both contribute to the final
+    /// stitched video. For dual cameras (2 recordings), aims to give each half of the target
+    /// duration from the tail of each recording. If one recording is shorter than half, the
+    /// remaining duration is allocated to the other recording.
+    static func windows(
+        recordedDurations: [TimeInterval],
+        clipDuration: TimeInterval
+    ) -> [SegmentWindow]? {
+        guard !recordedDurations.isEmpty else { return nil }
+
+        let validDurations = recordedDurations.map { max(0, $0) }
+        let totalRecorded = validDurations.reduce(0, +)
+        guard totalRecorded >= minimumRecordedDuration else { return nil }
+
+        let requested = max(0, clipDuration)
+        guard requested > 0 else { return nil }
+
+        let count = validDurations.count
+        if count == 1 {
+            if let single = window(recordedDuration: validDurations[0], clipDuration: requested) {
+                return [SegmentWindow(index: 0, window: single)]
+            }
+            return nil
+        }
+
+        // Target share per clip, split evenly across the segments
+        let sharePerClip = requested / Double(count)
+        var allocated = validDurations.map { min($0, sharePerClip) }
+
+        var remaining = max(0, requested - allocated.reduce(0, +))
+        if remaining > 0 {
+            for i in 0..<count {
+                let spare = validDurations[i] - allocated[i]
+                if spare > 0 {
+                    let borrow = min(spare, remaining)
+                    allocated[i] += borrow
+                    remaining -= borrow
+                    if remaining <= 0 { break }
+                }
+            }
+        }
+
+        var result: [SegmentWindow] = []
+        for (i, kept) in allocated.enumerated() {
+            guard kept > 0 else { continue }
+            let duration = validDurations[i]
+            let start = max(0, duration - kept)
+            result.append(SegmentWindow(index: i, window: Window(start: start, duration: kept)))
+        }
+
+        return result.isEmpty ? nil : result
+    }
+
     /// A user's requested clip duration, clamped into something meaningful.
     ///
     /// Applied on every read of the persisted setting rather than once at the

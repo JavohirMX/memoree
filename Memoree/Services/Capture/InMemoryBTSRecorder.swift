@@ -29,6 +29,10 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
         /// reported with, so a test can check what was trimmed from what.
         var started: [BTSRecording] = []
         var stopped: [BTSRecording] = []
+        /// Segments completed within the current recording session.
+        var segments: [BTSRecording] = []
+        var pauseCount = 0
+        var resumeCount = 0
         /// Durations asked for, in order — the assertion that a clip was
         /// trimmed to the configured length rather than to whatever was on hand.
         var trimmedTo: [TimeInterval] = []
@@ -36,7 +40,7 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
         var discarded: [URL] = []
         var clearTemporaryFilesCount = 0
         var authorizationRequests = 0
-        /// The recording currently open, if any.
+        /// The segment currently open, if any.
         var open: BTSRecording?
         var startFailure: BTSRecorderError?
         var stopFailure: BTSRecorderError?
@@ -74,6 +78,8 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
     var clearTemporaryFilesCalls: Int { lock.withLock { state.clearTemporaryFilesCount } }
     var authorizationRequestCount: Int { lock.withLock { state.authorizationRequests } }
     var isStillRecording: Bool { lock.withLock { state.isRecording } }
+    var pauseCount: Int { lock.withLock { state.pauseCount } }
+    var resumeCount: Int { lock.withLock { state.resumeCount } }
 
     // MARK: - BTSRecorder
 
@@ -111,8 +117,33 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
                 hasAudio: state.microphone == .authorized
             )
             state.isRecording = true
+            state.segments = []
             state.open = recording
             state.started.append(recording)
+        }
+    }
+
+    func pauseRecording() async {
+        lock.withLock {
+            state.pauseCount += 1
+            if let open = state.open {
+                state.segments.append(open)
+                state.open = nil
+            }
+        }
+    }
+
+    func resumeRecording() async throws {
+        try lock.withLock {
+            guard state.isRecording else { throw BTSRecorderError.notRecording }
+            state.resumeCount += 1
+            counter += 1
+            let recording = BTSRecording(
+                fileURL: URL(fileURLWithPath: "/tmp/memoree-bts-\(counter).mov"),
+                recordedDuration: stubRecordedDuration,
+                hasAudio: state.microphone == .authorized
+            )
+            state.open = recording
         }
     }
 
@@ -122,11 +153,24 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
                 state.stopFailure = nil
                 throw failure
             }
-            guard state.isRecording, let recording = state.open else {
+            guard state.isRecording else {
                 throw BTSRecorderError.notRecording
             }
+            if let open = state.open {
+                state.segments.append(open)
+                state.open = nil
+            }
+            guard !state.segments.isEmpty else {
+                throw BTSRecorderError.notRecording
+            }
+
             state.isRecording = false
-            state.open = nil
+            let recording = BTSRecording(
+                segmentURLs: state.segments.map(\.fileURL),
+                segmentDurations: state.segments.map(\.recordedDuration),
+                hasAudio: state.microphone == .authorized
+            )
+            state.segments = []
             state.stopped.append(recording)
             return recording
         }
@@ -139,29 +183,14 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
                 throw failure
             }
             state.trimmedTo.append(clipDuration)
-            guard let window = BTSTrim.window(
-                recordedDuration: recording.recordedDuration,
+            guard let windows = BTSTrim.windows(
+                recordedDurations: recording.segmentDurations,
                 clipDuration: clipDuration
-            ) else { return nil }
+            ), !windows.isEmpty else { return nil }
 
-            // **Bytes, and no file at all.**
-            //
-            // This wrote a real `.mov` into the temporary directory, on the
-            // reasoning that "a test that only cares about the decision should not
-            // need a writable directory". That was true until `CameraViewModel`
-            // started *reading the clip* at commit — and then every BTS test failed
-            // at once with `savedBTSCount == 0`, because the view model was handed
-            // a URL it could not open and correctly reported no clip. Writing an
-            // actual file fixed that failure and left a worse one behind: a suite
-            // that litters `/tmp` and a `clearTestFiles` helper that existed only to
-            // clean up after it.
-            //
-            // The protocol returns `Data` now, so the seam ends where the behaviour
-            // does. **A double that writes a file for a test to read is not a cheaper
-            // double — it is a second thing to go wrong**, and nothing in the view
-            // model cares what those bytes are.
             counter += 1
-            return Data("trimmed-\(window.start)-\(window.duration)-\(counter)".utf8)
+            let windowSummary = windows.map { "\($0.index):\($0.window.start)-\($0.window.duration)" }.joined(separator: "+")
+            return Data("trimmed-\(windowSummary)-\(counter)".utf8)
         }
     }
 
@@ -170,7 +199,11 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
     /// and that assertion is the whole point — whether the real implementation
     /// manages to unlink the file is not this type's behaviour to verify.
     func discard(_ recording: BTSRecording) {
-        lock.withLock { state.discarded.append(recording.fileURL) }
+        lock.withLock {
+            for url in recording.segmentURLs {
+                state.discarded.append(url)
+            }
+        }
     }
 
     /// Mirrors the real recorder: close, release the bytes, **and leave nothing
@@ -183,15 +216,30 @@ final class InMemoryBTSRecorder: BTSRecorder, @unchecked Sendable {
     /// implementation and quietly made the camera view model's abandon path
     /// untestable.
     func abandon() {
-        let open = lock.withLock { () -> BTSRecording? in
+        let toDiscard = lock.withLock { () -> [URL] in
             state.stopFailure = nil
-            let open = state.open
-            if let open { state.stopped.append(open) }
-            state.isRecording = false
+            var allSegments = state.segments
+            if let open = state.open {
+                allSegments.append(open)
+            }
+            state.segments = []
             state.open = nil
-            return open
+            state.isRecording = false
+
+            guard !allSegments.isEmpty else { return [] }
+            let recording = BTSRecording(
+                segmentURLs: allSegments.map(\.fileURL),
+                segmentDurations: allSegments.map(\.recordedDuration),
+                hasAudio: state.microphone == .authorized
+            )
+            state.stopped.append(recording)
+            return allSegments.map(\.fileURL)
         }
-        if let open { lock.withLock { state.discarded.append(open.fileURL) } }
+        lock.withLock {
+            for url in toDiscard {
+                state.discarded.append(url)
+            }
+        }
     }
 
     /// Counts the launch-time sweep of the real recorder's temporary directory.
