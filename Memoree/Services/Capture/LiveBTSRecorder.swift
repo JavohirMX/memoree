@@ -270,17 +270,7 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
 
         let destination = Self.directory.appendingPathComponent("clip-\(UUID().uuidString).mov")
 
-        // Single-segment direct export (fast, zero re-encode overhead)
-        if segmentWindows.count == 1 {
-            let segIndex = segmentWindows[0].index
-            let source = segIndex < recording.segmentURLs.count ? recording.segmentURLs[segIndex] : recording.segmentURLs[0]
-            guard FileManager.default.fileExists(atPath: source.path) else {
-                throw BTSRecorderError.exportFailed("the recording is no longer on disk")
-            }
-            return try await Self.exportSingleSegment(source: source, window: segmentWindows[0].window, destination: destination)
-        }
-
-        // Multi-segment composition: load tracks from each segment
+        // Multi-segment or single-segment composition: load tracks from each segment
         struct ValidSegment {
             let url: URL
             let asset: AVURLAsset
@@ -309,27 +299,16 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
             throw BTSRecorderError.exportFailed("no valid video segments to export")
         }
 
-        if validSegments.count == 1 {
-            return try await Self.exportSingleSegment(
-                source: validSegments[0].url,
-                window: validSegments[0].window,
-                destination: destination
-            )
-        }
+        // Standardized 3:4 portrait HD render dimensions (1080x1440)
+        // High-definition Retina crispness, fast export, and lightweight decode in AVPlayer.
+        let renderW = CGFloat(BTSTrim.renderWidth)
+        let renderH = CGFloat(BTSTrim.renderHeight)
+        let renderSize = CGSize(width: renderW, height: renderH)
 
-        // Multi-track composition stitching
+        // Composition stitching
         let composition = AVMutableComposition()
         let scale = CMTimeScale(600)
         var insertTime = CMTime.zero
-
-        let firstTrack = validSegments[0].videoTrack
-        let defaultRenderDimensions: (w: CGFloat, h: CGFloat) = (1080, 1440)
-        let naturalSize0 = (try? await firstTrack.load(.naturalSize)) ?? CGSize(width: defaultRenderDimensions.w, height: defaultRenderDimensions.h)
-        let transform0 = (try? await firstTrack.load(.preferredTransform)) ?? .identity
-        let rect0 = CGRect(origin: .zero, size: naturalSize0).applying(transform0)
-        let renderWidth = abs(rect0.width) > 0 ? abs(rect0.width) : defaultRenderDimensions.w
-        let renderHeight = abs(rect0.height) > 0 ? abs(rect0.height) : defaultRenderDimensions.h
-        let renderSize = CGSize(width: renderWidth, height: renderHeight)
 
         var instructions: [AVMutableVideoCompositionInstruction] = []
         let compAudioTrack = recording.hasAudio ? composition.addMutableTrack(
@@ -351,13 +330,21 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
             try compTrack.insertTimeRange(timeRange, of: segment.videoTrack, at: insertTime)
 
             let trackTransform = (try? await segment.videoTrack.load(.preferredTransform)) ?? .identity
-            let trackNaturalSize = (try? await segment.videoTrack.load(.naturalSize)) ?? naturalSize0
+            let trackNaturalSize = (try? await segment.videoTrack.load(.naturalSize)) ?? renderSize
             let trackRect = CGRect(origin: .zero, size: trackNaturalSize).applying(trackTransform)
-            let trackWidth = abs(trackRect.width) > 0 ? abs(trackRect.width) : renderWidth
-            let trackHeight = abs(trackRect.height) > 0 ? abs(trackRect.height) : renderHeight
-            let scaleX = renderWidth / trackWidth
-            let scaleY = renderHeight / trackHeight
-            let finalTransform = trackTransform.concatenating(CGAffineTransform(scaleX: scaleX, y: scaleY))
+            let orientedWidth = abs(trackRect.width) > 0 ? abs(trackRect.width) : renderSize.width
+            let orientedHeight = abs(trackRect.height) > 0 ? abs(trackRect.height) : renderSize.height
+
+            // Uniform aspect-fill scaling to preserve 3:4 geometry without stretching or warping
+            let uniformScale = max(renderSize.width / orientedWidth, renderSize.height / orientedHeight)
+            let scaledWidth = orientedWidth * uniformScale
+            let scaledHeight = orientedHeight * uniformScale
+            let tx = (renderSize.width - scaledWidth) / 2.0 - trackRect.minX * uniformScale
+            let ty = (renderSize.height - scaledHeight) / 2.0 - trackRect.minY * uniformScale
+
+            let finalTransform = trackTransform
+                .concatenating(CGAffineTransform(scaleX: uniformScale, y: uniformScale))
+                .concatenating(CGAffineTransform(translationX: tx, y: ty))
 
             let instruction = AVMutableVideoCompositionInstruction()
             instruction.timeRange = CMTimeRange(start: insertTime, duration: durationCM)

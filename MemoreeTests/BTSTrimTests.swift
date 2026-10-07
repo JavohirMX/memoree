@@ -250,4 +250,13 @@ struct BTSTrimTests {
         #expect(windows[0].window.start == 5)
         #expect(windows[0].window.duration == 5)
     }
+
+    // MARK: - Render dimensions
+
+    @Test("BTS render dimensions adhere strictly to 3:4 portrait aspect ratio")
+    func standardRenderDimensionsAreThreeByFour() {
+        #expect(BTSTrim.renderWidth == 1080)
+        #expect(BTSTrim.renderHeight == 1440)
+        #expect(BTSTrim.targetAspectRatio == 0.75)
+    }
 }

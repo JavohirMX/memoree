@@ -446,7 +446,7 @@ the first camera is recorded while the user composes and shoots photo 1; during 
 the recorder pauses the first segment, resumes on the second camera, and records the second
 segment until photo 2 is captured.
 
-At commit, the segments are stitched together end-to-end using `AVMutableComposition` and trimmed to the user-configured clip duration (default 5s, split evenly across segments with borrowing for shorter segments) via `AVAssetExportSession`. If only one camera was recorded or one segment is available, passthrough export is used.
+At commit, the segments are stitched together end-to-end using `AVMutableComposition` and trimmed to the user-configured clip duration (default 5s, split evenly across segments with borrowing for shorter segments) via `AVAssetExportSession`, standardized to portrait 3:4 Full HD (1080×1440) using uniform aspect-preserving transforms to eliminate lag and prevent distortion. If composition fails, passthrough export serves as a safety fallback.
 
 Audio requires the microphone permission. Request it lazily, only when BTS is enabled for the
 first time, and degrade to a silent clip if denied rather than blocking the moment.

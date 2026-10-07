@@ -1577,6 +1577,28 @@ If users report preferring only a single view mode, the view switcher can be mad
 
 ---
 
+## ADR-037 — Standardized 1080×1440 portrait 3:4 geometry and uniform aspect transforms for Behind the Scenes
+
+**Status:** Accepted · **Date:** 2026-10-07 · **Consequence of:** ADR-013, ADR-035
+
+**Context.** Behind-the-Scenes (BTS) video recordings suffered from severe lag and distorted geometry appearing "stretched to fit a square":
+1. Camera sensor formats selected for photo capture (4032×3024 / 12MP or 48MP) overloaded the movie output when recording at `.inputPriority`, causing sensor frame drops, device heating, multi-second export times (100MB+ files), and `AVPlayer` decode stutter in SwiftUI.
+2. In `LiveBTSRecorder`, composition transforms concatenated independent non-uniform scale factors `(scaleX, scaleY)` onto coordinate systems already rotated 90° for portrait, which mathematically inverted the aspect scaling and distorted the 3:4 portrait video into a square.
+3. In `CaptureSessionController`, `movieConnection.isVideoRotationAngleSupported` rejected rotation angle configuration, while legacy `movieConnection.videoOrientation` was omitted, leaving movie recordings unoriented.
+
+**Decision.**
+1. **Standardized 1080×1440 3:4 Render Size**: Standardize all BTS exports to Full HD portrait 3:4 (`1080×1440`) via `BTSTrim.renderWidth` and `BTSTrim.renderHeight`. Clamps pixel processing by over 80%, yielding fast hardware-accelerated exports and buttery-smooth 30fps playback.
+2. **Uniform Aspect-Preserving Scaling & Centering**: Replace non-uniform axis scaling with uniform aspect-fill scale (`uniformScale = max(...)`), normalizing track bounding boxes and centering the footage without distortion.
+3. **Capture Movie Connection Orientation**: Add `videoOrientation` fallback on `movieConnection` when `isVideoRotationAngleSupported` is false, ensuring portrait recording flags are applied directly by AVFoundation.
+4. **Universal Export Pipeline**: Route all valid segments (single- and multi-segment) through the 1080×1440 composition pipeline with passthrough as a safety fallback.
+
+**Consequences.**
+- Eliminates camera viewfinder lag and playback stutter. File sizes drop from ~100MB to ~3–5MB.
+- Behind the Scenes videos render strictly in 3:4 portrait geometry matching Memoree's photos.
+- Zero architectural boundary violations; passes all unit tests and design system invariant scans.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

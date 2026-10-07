@@ -27,6 +27,16 @@ import Foundation
 /// arrived at the camera.
 enum BTSTrim {
 
+    /// Portrait 3:4 HD render dimensions for Behind the Scenes video export (1080x1440).
+    /// Standardized full HD ensures sharp Retina playback, hardware acceleration, and uniform geometry.
+    static let renderWidth: Double = 1080
+    static let renderHeight: Double = 1440
+
+    /// Portrait 3:4 aspect ratio (0.75).
+    static var targetAspectRatio: Double {
+        renderWidth / renderHeight
+    }
+
     /// A range to keep: an offset into the recording, and how long to run for.
     ///
     /// `duration` rather than `end`, because the two invariants that matter are

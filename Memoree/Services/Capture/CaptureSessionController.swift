@@ -1464,9 +1464,17 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
            photoConnection.isVideoRotationAngleSupported(orientation.captureAngle) {
             photoConnection.videoRotationAngle = orientation.captureAngle
         }
-        if let movieConnection = movieOutput?.connection(with: .video),
-           movieConnection.isVideoRotationAngleSupported(orientation.captureAngle) {
-            movieConnection.videoRotationAngle = orientation.captureAngle
+        if let movieConnection = movieOutput?.connection(with: .video) {
+            if movieConnection.isVideoRotationAngleSupported(orientation.captureAngle) {
+                movieConnection.videoRotationAngle = orientation.captureAngle
+            } else if movieConnection.isVideoOrientationSupported {
+                switch orientation.captureAngle {
+                case 90:  movieConnection.videoOrientation = .portrait
+                case 180: movieConnection.videoOrientation = .landscapeLeft
+                case 270: movieConnection.videoOrientation = .portraitUpsideDown
+                default:  movieConnection.videoOrientation = .landscapeRight
+                }
+            }
         }
 
         appliedOrientation = orientation
