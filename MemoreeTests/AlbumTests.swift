@@ -297,6 +297,8 @@ struct AlbumTests {
         }
 
         func saveBTS(_ data: Data) async throws -> String { "bts" }
+        func saveVideo(at fileURL: URL) async throws -> String { "video" }
+        func exportFlipbookVideo(for moments: [MomentFacts], framesPerSecond: Int32) async throws -> String { "flipbook" }
 
         #if DEBUG
         /// Debug-only on the protocol, so a test double has to answer it.

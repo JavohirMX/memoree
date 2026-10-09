@@ -139,6 +139,37 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
         }
     }
 
+    func saveVideo(at fileURL: URL) async throws -> String {
+        try lock.withLock {
+            guard state.authorization == .authorized else {
+                throw LibraryError.authorizationDenied
+            }
+            counter += 1
+            let identifier = "video-\(counter)"
+            let data = FileManager.default.contents(atPath: fileURL.path) ?? Data()
+            state.storedBytes[identifier] = data
+            return identifier
+        }
+    }
+
+    func exportFlipbookVideo(
+        for moments: [MomentFacts],
+        framesPerSecond: Int32 = 2
+    ) async throws -> String {
+        try lock.withLock {
+            guard state.authorization == .authorized else {
+                throw LibraryError.authorizationDenied
+            }
+            guard !moments.isEmpty else {
+                throw LibraryError.writeFailed("No moments to export")
+            }
+            counter += 1
+            let identifier = "flipbook-\(counter)"
+            state.storedBytes[identifier] = Data()
+            return identifier
+        }
+    }
+
     /// Writes a real, empty file at a real path.
     ///
     /// **A file, and not a fabricated URL, because the consumer opens it.** A

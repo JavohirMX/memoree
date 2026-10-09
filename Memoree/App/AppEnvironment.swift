@@ -11,6 +11,9 @@ import SwiftUI
 @Observable
 final class AppEnvironment {
 
+    /// Shared reference maintained for system integrations like AppIntents.
+    private(set) static weak var shared: AppEnvironment?
+
     let container: ModelContainer
     let momentStore: MomentStore
     let momentScheduler: MomentScheduler
@@ -130,6 +133,7 @@ final class AppEnvironment {
         self._captureService = captureService
         self.injectedBTSRecorder = btsRecorder
         self.haptics = haptics ?? SystemHapticFeedback()
+        Self.shared = self
 
         // **The crash sweep, once, here.** Everywhere else that would be is too
         // late: a launch that dies before the camera opens still left bytes behind,
@@ -366,7 +370,8 @@ final class AppEnvironment {
                 // — the exact "missing from Photos" state the archive has to
                 // distinguish from a real orphan.
                 hasBTS: capture.bts != nil,
-                btsAssetIdentifier: capture.bts?.assetIdentifier
+                btsAssetIdentifier: capture.bts?.assetIdentifier,
+                note: capture.note
             )
             Task { [weak self] in
                 await self?.notificationService.cancelStreakSaver(for: day)

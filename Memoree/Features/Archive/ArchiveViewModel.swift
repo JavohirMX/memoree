@@ -204,6 +204,32 @@ final class ArchiveViewModel {
         requested.remove(moment.id)
     }
 
+    // MARK: - Export
+
+    private(set) var isExporting = false
+    private(set) var exportError: String?
+
+    /// Exports all moments in the archive as a timelapse flipbook video saved directly to Photos.
+    func exportFlipbook() async -> Bool {
+        guard !moments.isEmpty, !isExporting else { return false }
+        isExporting = true
+        exportError = nil
+        defer { isExporting = false }
+
+        // Chronological order for timelapse
+        let sortedMoments = moments.sorted { $0.capturedAt < $1.capturedAt }
+        do {
+            _ = try await environment.photoLibrary.exportFlipbookVideo(
+                for: sortedMoments,
+                framesPerSecond: 2
+            )
+            return true
+        } catch {
+            exportError = error.localizedDescription
+            return false
+        }
+    }
+
     // MARK: - Cache lifecycle
 
     /// Hands the decoded images back.

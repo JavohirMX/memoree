@@ -554,6 +554,33 @@ final class CameraViewModel {
         }
     }
 
+    // MARK: - Low-light & Torch
+
+    /// Current torch mode chosen by the user.
+    private(set) var torchMode: TorchMode = .off
+
+    /// Whether the torch can be toggled in the current phase.
+    var canToggleTorch: Bool {
+        phase == .shooting || phase == .idle || phase == .starting
+    }
+
+    /// Toggles the torch on or off.
+    func toggleTorch() async {
+        guard canToggleTorch else { return }
+        let next: TorchMode = (torchMode == .off) ? .on : .off
+        torchMode = next
+        do {
+            try await service.setTorchMode(next)
+        } catch {
+            torchMode = .off
+        }
+    }
+
+    // MARK: - Micro-Journal Note
+
+    /// User's micro-journal note entered on the review screen (max 80 chars).
+    var draftNote: String = ""
+
     // MARK: - Review
 
     /// Promotes the small photograph to the large one, and vice versa.
@@ -599,6 +626,7 @@ final class CameraViewModel {
         phase = .working
         captured = [:]
         prominentPosition = nil
+        draftNote = ""
         // **Awaited, not detached** — see `abandonCapture`.
         await abandonCapture()
         let opening = chooseFirstCamera()
@@ -762,6 +790,9 @@ final class CameraViewModel {
             )
         }
 
+        let trimmedNote = draftNote.trimmingCharacters(in: .whitespacesAndNewlines)
+        let noteToSave = trimmedNote.isEmpty ? nil : String(trimmedNote.prefix(80))
+
         try await record(
             CommittedCapture(
                 back: pair.back,
@@ -769,7 +800,8 @@ final class CameraViewModel {
                 assets: assets,
                 capturedAt: lastCaptureAt ?? now(),
                 retakeCount: retakeCount,
-                bts: committedClip
+                bts: committedClip,
+                note: noteToSave
             )
         )
     }

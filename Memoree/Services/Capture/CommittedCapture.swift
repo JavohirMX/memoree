@@ -83,13 +83,17 @@ struct CommittedCapture: Sendable, Equatable {
     /// photographs are the moment.
     let bts: CommittedBTS?
 
+    /// Optional micro-journal note entered by the user.
+    let note: String?
+
     init(
         back: CapturedPhoto,
         front: CapturedPhoto,
         assets: SavedAssetPair,
         capturedAt: Date,
         retakeCount: Int,
-        bts: CommittedBTS? = nil
+        bts: CommittedBTS? = nil,
+        note: String? = nil
     ) {
         self.back = back
         self.front = front
@@ -97,6 +101,7 @@ struct CommittedCapture: Sendable, Equatable {
         self.capturedAt = capturedAt
         self.retakeCount = retakeCount
         self.bts = bts
+        self.note = note
     }
 }
 

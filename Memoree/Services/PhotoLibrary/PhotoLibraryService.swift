@@ -43,6 +43,20 @@ protocol PhotoLibraryService: Sendable {
     /// Writes an optional Behind-The-Scenes video alongside a moment.
     func saveBTS(_ data: Data) async throws -> String
 
+    /// Writes an exported video file to the user's Photos library.
+    func saveVideo(at fileURL: URL) async throws -> String
+
+    /// Generates a timelapse flipbook video from the provided moments and saves it to Photos.
+    ///
+    /// - Parameters:
+    ///   - moments: Moments in chronological order to include in the timelapse.
+    ///   - framesPerSecond: Frame rate (default: 2 fps = 0.5s per day).
+    /// - Returns: Local identifier of the created video asset.
+    func exportFlipbookVideo(
+        for moments: [MomentFacts],
+        framesPerSecond: Int32
+    ) async throws -> String
+
     // MARK: Reading
 
     /// A downsampled image for an archive cell.

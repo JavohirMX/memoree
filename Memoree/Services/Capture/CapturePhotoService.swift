@@ -124,8 +124,11 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// the same framing.
     func applyZoom(_ zoom: CameraZoom) async throws
 
-    /// The zoom currently in force, for the buttons.
-    func currentZoom() async -> CameraZoom
+    /// Sets the torch mode on the active device, if supported.
+    func setTorchMode(_ mode: TorchMode) async throws
+
+    /// The torch mode currently in force.
+    func currentTorchMode() async -> TorchMode
 
     /// Rebuilds the session from scratch.
     ///
@@ -399,3 +402,10 @@ enum CaptureError: Error, LocalizedError, Equatable {
         }
     }
 }
+
+/// The torch mode for low-light capture.
+enum TorchMode: String, Sendable, Equatable, CaseIterable {
+    case off
+    case on
+}
+

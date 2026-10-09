@@ -13,7 +13,7 @@ import SwiftUI
 /// thesis (AGENTS.md §2.4).
 struct ArchiveView: View {
 
-    @Environment(AppEnvironment.self) private var environment
+    @Environment(AppEnvironment.self) private var appEnvironment
     @Environment(\.dismiss) private var dismiss
 
     @State private var model: ArchiveViewModel?
@@ -46,13 +46,31 @@ struct ArchiveView: View {
             .navigationTitle("Archive")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if let model, !model.moments.isEmpty {
+                        if model.isExporting {
+                            ProgressView()
+                                .tint(Theme.Color.textPrimary)
+                        } else {
+                            Button {
+                                Task {
+                                    _ = await model.exportFlipbook()
+                                }
+                            } label: {
+                                Label("Export Timelapse", systemImage: "film")
+                                    .foregroundStyle(Theme.Color.textPrimary)
+                            }
+                            .accessibilityLabel("Export Timelapse Flipbook Video")
+                        }
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
                 }
             }
         }
         .task {
-            let created = ArchiveViewModel(environment: environment)
+            let created = ArchiveViewModel(environment: appEnvironment)
             model = created
             created.load()
             await created.loadInitialImages()
@@ -129,7 +147,7 @@ struct ArchiveView: View {
                     moments: model.moments,
                     onDelete: { isConfirmingDelete = true }
                 )
-                .environment(environment)
+                .environment(appEnvironment)
             }
         }
     }

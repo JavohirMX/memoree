@@ -140,6 +140,14 @@ final class SequentialCaptureService: CapturePhotoService, @unchecked Sendable {
         await controller.currentCameraZoom()
     }
 
+    func setTorchMode(_ mode: TorchMode) async throws {
+        try await controller.setTorchMode(mode)
+    }
+
+    func currentTorchMode() async -> TorchMode {
+        await controller.currentTorchMode()
+    }
+
     // MARK: - Diagnostics
 
     /// The last few frame waits, for a device diagnostic to read.

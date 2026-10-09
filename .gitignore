@@ -19,6 +19,7 @@ Icon?
 # ── Xcode: build output ──────────────────────────────────────────────────────
 build/
 DerivedData/
+.derivedData/
 Build/
 *.ipa
 *.dSYM

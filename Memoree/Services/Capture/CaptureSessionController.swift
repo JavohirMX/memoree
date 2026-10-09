@@ -578,6 +578,11 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                 // still rotates connections belonging to a stopped session.
                 self.removeRotationObservations()
                 self.rotationCoordinator = nil
+                if let device = self.activeInput?.device, device.hasTorch, device.isTorchModeSupported(.off) {
+                    try? device.lockForConfiguration()
+                    device.torchMode = .off
+                    device.unlockForConfiguration()
+                }
                 c.resume()
             }
         }
@@ -1090,6 +1095,7 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         attachedLens = (position == .front && device.deviceType == .builtInUltraWideCamera)
             ? .ultraWide
             : nil
+        reapplyTorchOnActiveDevice()
     }
 
     /// Applies the 3:4 format to the active input. Runs on `queue`.
@@ -1301,6 +1307,56 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             queue.async { [self] in c.resume(returning: currentZoom) }
         }
     }
+
+    // MARK: - Torch
+
+    private var torchMode: TorchMode = .off
+
+    /// Sets the torch mode on the active device, if supported.
+    func setTorchMode(_ mode: TorchMode) async throws {
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            queue.async { [self] in
+                torchMode = mode
+                guard let device = activeInput?.device else {
+                    c.resume()
+                    return
+                }
+                guard device.hasTorch, device.isTorchModeSupported(.on) else {
+                    c.resume()
+                    return
+                }
+                do {
+                    try device.lockForConfiguration()
+                    defer { device.unlockForConfiguration() }
+                    device.torchMode = (mode == .on) ? .on : .off
+                    c.resume()
+                } catch {
+                    c.resume(throwing: CaptureError.configurationFailed("Failed to set torch mode: \(error.localizedDescription)"))
+                }
+            }
+        }
+    }
+
+    /// The torch mode currently in force.
+    func currentTorchMode() async -> TorchMode {
+        await withCheckedContinuation { (c: CheckedContinuation<TorchMode, Never>) in
+            queue.async { [self] in
+                c.resume(returning: torchMode)
+            }
+        }
+    }
+
+    private func reapplyTorchOnActiveDevice() {
+        guard let device = activeInput?.device, device.hasTorch, device.isTorchModeSupported(.on) else { return }
+        do {
+            try device.lockForConfiguration()
+            defer { device.unlockForConfiguration() }
+            device.torchMode = (torchMode == .on) ? .on : .off
+        } catch {
+            // Best effort
+        }
+    }
+
 
     // MARK: - Orientation
 

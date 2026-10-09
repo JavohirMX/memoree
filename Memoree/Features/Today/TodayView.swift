@@ -236,11 +236,13 @@ struct TodayView: View {
     private func feed(_ model: TodayViewModel) -> some View {
         ScrollView {
             LazyVStack(spacing: Theme.Spacing.xl) {
+                if !model.flashbackMoments.isEmpty {
+                    flashbackSection(model)
+                }
+
                 ForEach(model.feedMoments) { moment in
                     feedCard(for: moment, in: model)
                 }
-
-
 
                 footer(model)
                     .padding(.bottom, Theme.Spacing.m)
@@ -248,6 +250,30 @@ struct TodayView: View {
             .padding(.horizontal, Theme.Spacing.xl)
             .padding(.top, Theme.Spacing.s)
             .padding(.bottom, Theme.Size.feedBottomClearance)
+        }
+    }
+
+    @ViewBuilder
+    private func flashbackSection(_ model: TodayViewModel) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            HStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: "clock.arrow.circlepath")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+
+                Text("ON THIS DAY")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+
+            ForEach(model.flashbackMoments) { moment in
+                feedCard(for: moment, in: model)
+            }
+
+            Rectangle()
+                .fill(Theme.Color.divider)
+                .frame(height: 1)
+                .padding(.vertical, Theme.Spacing.xs)
         }
     }
 
@@ -350,6 +376,13 @@ struct TodayView: View {
                     .task {
                         await model.loadImage(for: moment)
                     }
+            }
+
+            if let note = moment.note, !note.isEmpty {
+                Text(note)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Color.textPrimary)
+                    .padding(.top, Theme.Spacing.xs)
             }
         }
         .task {

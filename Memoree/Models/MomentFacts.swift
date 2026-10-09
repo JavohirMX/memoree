@@ -65,6 +65,9 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
     /// invite a caller to handle it.
     let assets: SavedAssetPair?
 
+    /// Optional micro-journal note entered by the user.
+    let note: String?
+
     init(
         id: UUID,
         day: DayIdentifier,
@@ -74,7 +77,8 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
         retakeCount: Int,
         hasBTS: Bool,
         btsAssetIdentifier: String? = nil,
-        assets: SavedAssetPair? = nil
+        assets: SavedAssetPair? = nil,
+        note: String? = nil
     ) {
         self.id = id
         self.day = day
@@ -85,6 +89,7 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
         self.hasBTS = hasBTS
         self.btsAssetIdentifier = btsAssetIdentifier
         self.assets = assets
+        self.note = note
     }
 
     /// How long after the window closed this moment was captured.

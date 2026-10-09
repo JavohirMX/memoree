@@ -39,6 +39,8 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
         /// swap** — the failure mode that gives a moment two different framings.
         var zoom: CameraZoom = .wide
         var zoomRequests: [CameraZoom] = []
+        var torchMode: TorchMode = .off
+        var torchRequests: [TorchMode] = []
         /// Every point focus was asked for, in the normalised 0…1 form the
         /// protocol takes, so a test can assert the view passes one.
         var focusRequests: [CGPoint] = []
@@ -151,6 +153,7 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
     var rebuildCount: Int { lock.withLock { state.rebuildCount } }
     var configuredFormats: [CameraPosition] { lock.withLock { state.configuredFormats } }
     var focusRequests: [CGPoint] { lock.withLock { state.focusRequests } }
+    var torchRequests: [TorchMode] { lock.withLock { state.torchRequests } }
     var capturedPositions: [CameraPosition] { lock.withLock { state.capturedPositions } }
     var switchedTo: [CameraPosition] { lock.withLock { state.switchedTo } }
     var openedOn: [CameraPosition] { lock.withLock { state.openedOn } }
@@ -222,6 +225,18 @@ final class InMemoryCaptureService: CapturePhotoService, @unchecked Sendable {
 
     func currentZoom() async -> CameraZoom {
         lock.withLock { state.zoom }
+    }
+
+    func setTorchMode(_ mode: TorchMode) async throws {
+        try lock.withLock {
+            try Self.throwIfNeeded(&state)
+            state.torchMode = mode
+            state.torchRequests.append(mode)
+        }
+    }
+
+    func currentTorchMode() async -> TorchMode {
+        lock.withLock { state.torchMode }
     }
 
     /// Records the request, so a test can assert BTS asked for its output *before*

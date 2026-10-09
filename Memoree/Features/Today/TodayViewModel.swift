@@ -50,6 +50,13 @@ final class TodayViewModel {
     private(set) var feedImagesMap: [UUID: (large: UIImage, inset: UIImage)] = [:]
     private(set) var feedMissingMap: Set<UUID> = []
 
+    /// Flashback moments from previous years on today's calendar date ("On This Day").
+    private(set) var flashbackMoments: [MomentFacts] = []
+
+    /// Maximum active image pairs cached in memory for the feed.
+    static let maxFeedCacheSize = 15
+    private var feedAccessOrder: [UUID] = []
+
     /// Today's photographs are gone from Photos.
     ///
     /// The user may have deleted them deliberately — that is their library, and
@@ -108,6 +115,7 @@ final class TodayViewModel {
             .sorted { $0.capturedAt < $1.capturedAt }
         self.todayMoments = moments
         self.todayMoment = moments.last
+        self.flashbackMoments = environment.momentStore.flashbackMoments(for: current)
         self.summary = environment.momentStore.summary(today: today)
     }
 
@@ -212,6 +220,7 @@ final class TodayViewModel {
                 .sorted { $0.capturedAt < $1.capturedAt }
             todayMoments = moments
             todayMoment = moments.last
+            flashbackMoments = environment.momentStore.flashbackMoments(for: current)
             summary = environment.momentStore.summary(today: today)
             Task { await loadTodayImages() }
         }
@@ -229,6 +238,7 @@ final class TodayViewModel {
             .sorted { $0.capturedAt < $1.capturedAt }
         todayMoments = moments
         todayMoment = moments.last
+        flashbackMoments = environment.momentStore.flashbackMoments(for: now)
         summary = environment.momentStore.summary(today: today)
         // Re-read on every reload, not only at construction: the Settings screen
         // can change the window while the Today screen exists underneath it, and
@@ -253,6 +263,17 @@ final class TodayViewModel {
         if let largeImage, let insetImage {
             feedImagesMap[moment.id] = (large: largeImage, inset: insetImage)
             todayImagesMap[moment.id] = (large: largeImage, inset: insetImage)
+
+            feedAccessOrder.removeAll { $0 == moment.id }
+            feedAccessOrder.append(moment.id)
+
+            if feedAccessOrder.count > Self.maxFeedCacheSize {
+                let todayIDs = Set(todayMoments.map(\.id))
+                if let evictCandidate = feedAccessOrder.first(where: { !todayIDs.contains($0) }) {
+                    feedAccessOrder.removeAll { $0 == evictCandidate }
+                    feedImagesMap.removeValue(forKey: evictCandidate)
+                }
+            }
         } else {
             let backExists = await environment.photoLibrary.assetExists(assets.back)
             let frontExists = await environment.photoLibrary.assetExists(assets.front)

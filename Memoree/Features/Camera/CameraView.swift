@@ -243,6 +243,14 @@ struct CameraView: View {
                     .allowsHitTesting(false)
             }
         }
+        .overlay {
+            if model.torchMode == .on, model.livePosition == .front {
+                RoundedRectangle(cornerRadius: Theme.Radius.card)
+                    .strokeBorder(Theme.Color.textPrimary.opacity(0.8), lineWidth: 4)
+                    .padding(Theme.Spacing.xs)
+                    .allowsHitTesting(false)
+            }
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
     }
@@ -332,9 +340,8 @@ struct CameraView: View {
             zoomRow(model)
 
             HStack {
-                // Leading balance spacer to keep shutter centered
-                Color.clear
-                    .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                // Torch toggle on the leading side
+                torchButton(model)
 
                 Spacer()
 
@@ -348,6 +355,22 @@ struct CameraView: View {
             .padding(.horizontal, Theme.Spacing.xl)
         }
         .padding(.vertical, Theme.Spacing.m)
+    }
+
+    private func torchButton(_ model: CameraViewModel) -> some View {
+        Button {
+            Task { await model.toggleTorch() }
+        } label: {
+            Image(systemName: model.torchMode == .on ? "bolt.fill" : "bolt.slash")
+                .scaledDisplayFont(Theme.Size.headerIcon, weight: .regular)
+                .foregroundStyle(model.torchMode == .on ? Theme.Color.textPrimary : Theme.Color.textSecondary)
+                .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                .background(Circle().fill(model.torchMode == .on ? Theme.Color.divider : Theme.Color.surface.opacity(0.8)))
+        }
+        .buttonStyle(.plain)
+        .disabled(!model.canToggleTorch)
+        .opacity(model.canToggleTorch ? 1 : 0.4)
+        .accessibilityLabel(model.torchMode == .on ? "Turn torch off" : "Turn torch on")
     }
 
     private func cameraFlipButton(_ model: CameraViewModel) -> some View {
@@ -399,7 +422,11 @@ struct CameraView: View {
         VStack(spacing: 0) {
             composite(model)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: Theme.Spacing.s)
+
+            noteInput(model)
+                .padding(.horizontal, Theme.Spacing.xl)
+                .padding(.bottom, Theme.Spacing.m)
 
             if model.retakeCount > 0 {
                 Text("\(model.retakeCount) \(model.retakeCount == 1 ? "retake" : "retakes")")
@@ -410,6 +437,38 @@ struct CameraView: View {
 
             reviewActions(model)
                 .padding(.bottom, Theme.Spacing.xl)
+        }
+    }
+
+    private func noteInput(_ model: CameraViewModel) -> some View {
+        @Bindable var bindableModel = model
+        return HStack(spacing: Theme.Spacing.s) {
+            Image(systemName: "pencil.line")
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textTertiary)
+
+            TextField(
+                "Add a note...",
+                text: $bindableModel.draftNote
+            )
+            .font(Theme.Typography.body)
+            .foregroundStyle(Theme.Color.textPrimary)
+            .tint(Theme.Color.textPrimary)
+            .submitLabel(.done)
+
+            if !model.draftNote.isEmpty {
+                Text("\(model.draftNote.count)/80")
+                    .font(Theme.Typography.retakePill)
+                    .foregroundStyle(model.draftNote.count > 80 ? Theme.Color.destructive : Theme.Color.textTertiary)
+            }
+        }
+        .padding(.horizontal, Theme.Spacing.m)
+        .padding(.vertical, Theme.Spacing.s)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inset))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.Radius.inset)
+                .strokeBorder(Theme.Color.divider, lineWidth: 1)
         }
     }
 

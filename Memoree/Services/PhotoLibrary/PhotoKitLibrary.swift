@@ -1,4 +1,6 @@
+import AVFoundation
 import CoreGraphics
+import CoreVideo
 import Foundation
 import Photos
 import UIKit
@@ -183,6 +185,153 @@ struct PhotoKitLibrary: PhotoLibraryService {
                 continuation.resume(returning: identifier)
             })
         }
+    }
+
+    func saveVideo(at fileURL: URL) async throws -> String {
+        let status = authorizationStatus()
+        if status == .notDetermined {
+            let requested = await requestAuthorization()
+            guard requested == .authorized else {
+                throw LibraryError.authorizationDenied
+            }
+        } else if status == .denied || status == .restricted {
+            throw LibraryError.authorizationDenied
+        }
+
+        return try await withCheckedThrowingContinuation { continuation in
+            let created = PlaceholderBox()
+
+            PHPhotoLibrary.shared().performChanges({
+                let request = PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: fileURL)
+                created.set(
+                    back: request?.placeholderForCreatedAsset?.localIdentifier,
+                    front: nil
+                )
+            }, completionHandler: { success, error in
+                guard success, let identifier = created.back else {
+                    continuation.resume(throwing: LibraryError.writeFailed(
+                        error?.localizedDescription ?? "unknown"
+                    ))
+                    return
+                }
+                continuation.resume(returning: identifier)
+            })
+        }
+    }
+
+    func exportFlipbookVideo(
+        for moments: [MomentFacts],
+        framesPerSecond: Int32 = 2
+    ) async throws -> String {
+        guard !moments.isEmpty else {
+            throw LibraryError.writeFailed("No moments to export")
+        }
+
+        let renderDimensions = (w: Double(1080), h: Double(1440))
+        let targetSize = CGSize(width: renderDimensions.w, height: renderDimensions.h)
+        let tempMovieURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("flipbook-\(UUID().uuidString).mov")
+
+        // Render frames into video file
+        guard let videoWriter = try? AVAssetWriter(outputURL: tempMovieURL, fileType: .mov) else {
+            throw LibraryError.writeFailed("Unable to create video writer")
+        }
+
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: Int(targetSize.width),
+            AVVideoHeightKey: Int(targetSize.height)
+        ]
+
+        let writerInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        writerInput.expectsMediaDataInRealTime = false
+
+        let sourcePixelBufferAttributes: [String: Any] = [
+            kCVPixelBufferPixelFormatTypeKey as String: Int(kCVPixelFormatType_32ARGB),
+            kCVPixelBufferWidthKey as String: Int(targetSize.width),
+            kCVPixelBufferHeightKey as String: Int(targetSize.height)
+        ]
+
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: writerInput,
+            sourcePixelBufferAttributes: sourcePixelBufferAttributes
+        )
+
+        guard videoWriter.canAdd(writerInput) else {
+            throw LibraryError.writeFailed("Cannot add video input")
+        }
+        videoWriter.add(writerInput)
+
+        guard videoWriter.startWriting() else {
+            throw LibraryError.writeFailed("Failed to start video writing")
+        }
+        videoWriter.startSession(atSourceTime: .zero)
+
+        let frameDuration = CMTime(value: 1, timescale: framesPerSecond)
+        var currentFrameTime = CMTime.zero
+
+        for moment in moments {
+            guard let backIdentifier = moment.assets?.back,
+                  let image = await self.image(for: backIdentifier, targetSize: targetSize)
+            else { continue }
+
+            while !writerInput.isReadyForMoreMediaData {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+
+            if let pixelBuffer = Self.pixelBuffer(from: image, size: targetSize) {
+                adaptor.append(pixelBuffer, withPresentationTime: currentFrameTime)
+                currentFrameTime = CMTimeAdd(currentFrameTime, frameDuration)
+            }
+        }
+
+        writerInput.markAsFinished()
+        await videoWriter.finishWriting()
+
+        guard videoWriter.status == .completed else {
+            try? FileManager.default.removeItem(at: tempMovieURL)
+            throw LibraryError.writeFailed("Video writer failed")
+        }
+
+        let identifier = try await saveVideo(at: tempMovieURL)
+        try? FileManager.default.removeItem(at: tempMovieURL)
+        return identifier
+    }
+
+    private static func pixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
+        var pixelBuffer: CVPixelBuffer?
+        let attrs = [
+            kCVPixelBufferCGImageCompatibilityKey: kCFBooleanTrue,
+            kCVPixelBufferCGBitmapContextCompatibilityKey: kCFBooleanTrue
+        ] as CFDictionary
+
+        let status = CVPixelBufferCreate(
+            kCFAllocatorDefault,
+            Int(size.width),
+            Int(size.height),
+            kCVPixelFormatType_32ARGB,
+            attrs,
+            &pixelBuffer
+        )
+        guard status == kCVReturnSuccess, let buffer = pixelBuffer else { return nil }
+
+        CVPixelBufferLockBaseAddress(buffer, [])
+        defer { CVPixelBufferUnlockBaseAddress(buffer, []) }
+
+        let context = CGContext(
+            data: CVPixelBufferGetBaseAddress(buffer),
+            width: Int(size.width),
+            height: Int(size.height),
+            bitsPerComponent: 8,
+            bytesPerRow: CVPixelBufferGetBytesPerRow(buffer),
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
+        )
+
+        guard let ctx = context, let cgImage = image.cgImage else { return nil }
+        ctx.clear(CGRect(origin: .zero, size: size))
+        ctx.draw(cgImage, in: CGRect(origin: .zero, size: size))
+        return buffer
     }
 
     /// Adds already-created assets to the `Memoree` album.

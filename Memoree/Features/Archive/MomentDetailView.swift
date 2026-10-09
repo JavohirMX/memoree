@@ -273,6 +273,12 @@ struct MomentDetailView: View {
                 label: "Date",
                 value: item.day.date.formatted(.dateTime.day().month(.wide).year())
             )
+            if let note = item.note, !note.isEmpty {
+                MetadataRow(
+                    label: "Note",
+                    value: note
+                )
+            }
             if item.retakeCount > 0 {
                 MetadataRow(
                     label: "Retakes",

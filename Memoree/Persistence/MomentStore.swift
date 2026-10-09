@@ -102,7 +102,8 @@ final class MomentStore {
                 retakeCount: moment.retakeCount,
                 hasBTS: moment.hasBTS,
                 btsAssetIdentifier: moment.btsAssetIdentifier,
-                assets: Self.assets(of: moment)
+                assets: Self.assets(of: moment),
+                note: moment.note
             )
         }
     }
@@ -131,6 +132,27 @@ final class MomentStore {
             today: today ?? DayIdentifier(date: Date(), calendar: calendar),
             calendar: calendar
         )
+    }
+
+    /// Finds moments captured on the same calendar month and day in previous years ("On This Day").
+    ///
+    /// Excludes the current year. On leap years (Feb 29), checks Feb 29 captures in past leap years,
+    /// or Feb 28 on non-leap years if needed.
+    func flashbackMoments(for date: Date = Date()) -> [MomentFacts] {
+        let currentComponents = calendar.dateComponents([.year, .month, .day], from: date)
+        guard let currentYear = currentComponents.year,
+              let currentMonth = currentComponents.month,
+              let currentDay = currentComponents.day
+        else { return [] }
+
+        return facts()
+            .filter { fact in
+                let comp = calendar.dateComponents([.year, .month, .day], from: fact.day.date)
+                guard let y = comp.year, let m = comp.month, let d = comp.day else { return false }
+                guard y < currentYear else { return false }
+                return m == currentMonth && d == currentDay
+            }
+            .sorted { $0.capturedAt < $1.capturedAt }
     }
 
     // MARK: - Writing
