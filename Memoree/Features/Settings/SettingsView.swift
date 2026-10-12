@@ -83,32 +83,18 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
                     windowSection
-                    remindersSection
                     behindTheScenesSection
-                    exportSection
                     photosSection
-                    permanenceSection
+                    remindersSection
+                    exportSection
                     diagnosticsSection
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.xl)
+                .padding(.horizontal, Theme.Spacing.l)
+                .padding(.vertical, Theme.Spacing.l)
             }
-            // The background as a `background`, not a sibling view.
-            //
-            // As a sibling — a `CanvasBackground()` above the `ScrollView` — the
-            // scroll view got a shorter proposal than the screen and left the
-            // first section floating more than half way down, with a black void
-            // above it. The background claimed space that only it wanted. As an
-            // actual background it is painted behind the content and competes
-            // for nothing.
             .background(CanvasBackground())
             .scrollIndicators(.hidden)
-            // A title and a Done button, because this screen was first built
-            // with neither — which is why it wanted to be a short sheet with a
-            // drag handle and nothing else. A settings screen you can only leave
-            // by flicking the sheet downward is a settings screen most people
-            // will not find their way out of.
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -123,113 +109,84 @@ struct SettingsView: View {
     // MARK: - Window
 
     private var windowSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            Text("Your window")
-                .font(Theme.Typography.screenTitle)
-                .foregroundStyle(Theme.Color.textPrimary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            SettingsSectionHeader("Daily Window", icon: "clock")
 
-            // The one paragraph that has to explain the whole mechanic, because
-            // a window that only decides when you get interrupted is not
-            // self-evident. Said as three facts rather than as a rule.
-            Text("""
-                Memoree picks one random moment inside this, each day, and \
-                reminds you then. A photo taken during those two minutes grows \
-                your streak; one taken at any other time is kept but does not \
-                count.
-                """)
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingsCard {
+                // Explains the mechanic per ADR-023, ADR-032, and ADR-036:
+                // capturing is permitted at any time, every memory counts,
+                // and the window decides the spontaneous prompt.
+                Text("""
+                    Memoree picks one random moment inside this window each day \
+                    and sends a spontaneous prompt. You can capture memories at \
+                    any time—every memory counts toward your streak.
+                    """)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            WindowPicker(
-                window: $window,
-                onCommit: { new in await apply(new) },
-                isCommitting: isCommitting
-            )
+                SettingsDivider()
 
-            Text(didApply ? "Applied. Tomorrow onward." : "Wider is more random.")
-                .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .appAnimation(didApply)
+                WindowPicker(
+                    window: $window,
+                    onCommit: { new in await apply(new) },
+                    isCommitting: isCommitting
+                )
+
+                Text(didApply ? "Applied. Tomorrow onward." : "Wider is more random.")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .appAnimation(didApply)
+            }
         }
     }
 
     // MARK: - Reminders
 
     private var remindersSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            Text("Reminders")
-                .font(Theme.Typography.screenTitle)
-                .foregroundStyle(Theme.Color.textPrimary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            SettingsSectionHeader("Notifications", icon: "bell")
 
-            // Stated as a consequence, not a warning. With no server, iOS only
-            // ever asks once, so a declined permission is permanent from the
-            // app's side — and the honest thing is to say what the user loses
-            // rather than to imply it can be fixed here. It cannot (AGENTS.md §9).
-            Text(remindersAuthorized
-                ? """
-                  Memoree sends a spontaneous daily prompt, plus an evening \
-                  streak-saver if you haven't captured a memory yet. Your phone \
-                  does the asking; nothing is sent anywhere.
-                  """
-                : """
-                  Reminders are off, so Memoree cannot tell you when your \
-                  moment is. This app can only ask once, so turning them back \
-                  on has to happen in the system Settings app.
-                  """)
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
+            SettingsCard {
+                // Stated as a consequence, not a warning (ADR-036).
+                Text(remindersAuthorized
+                    ? """
+                      Memoree sends a spontaneous daily prompt, plus an evening \
+                      streak-saver reminder at 21:00 if you haven't captured a \
+                      memory yet. Your phone does the scheduling; nothing is \
+                      sent over the network.
+                      """
+                    : """
+                      Notifications are off, so Memoree cannot alert you when \
+                      your spontaneous moment arrives. This app can only ask \
+                      once, so re-enabling them has to happen in the system \
+                      Settings app.
+                      """)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            if !remindersAuthorized {
-                // The only amber in the app, and this is its one reserved job
-                // (ADR-025): a permission the user declined and cannot fix from
-                // in here.
-                Button {
-                    Task { await openSystemSettings() }
-                } label: {
-                    Text("Open Settings")
-                        .font(Theme.Typography.button)
-                        .foregroundStyle(Theme.Color.onAccent)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: Theme.Size.tapTargetComfortable)
-                        .background(Theme.Color.accent)
-                        .clipShape(Capsule())
+                if !remindersAuthorized {
+                    // The only amber in the app, and this is its one reserved job
+                    // (ADR-025): a permission the user declined and cannot fix from
+                    // in here.
+                    Button {
+                        Task { await openSystemSettings() }
+                    } label: {
+                        Text("Open Settings")
+                            .font(Theme.Typography.button)
+                            .foregroundStyle(Theme.Color.onAccent)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: Theme.Size.tapTargetComfortable)
+                            .background(Theme.Color.accent)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the system Settings app so you can turn on notifications for Memoree")
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens the system Settings app so you can turn on notifications for Memoree")
             }
-        }
-    }
-
-    // MARK: - Permanence
-
-    /// What deleting the app costs.
-    ///
-    /// The most permanent-feeling thing in the product, and it was previously
-    /// documented in a PRD risk table and a Phase 10 task rather than anywhere
-    /// the user would look. Memoree holds **add-only** authorisation and
-    /// physically cannot delete a photograph it wrote (ADR-008) — so the split
-    /// is real and asymmetric: the photos are untouchable, the archive is not.
-    private var permanenceSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            Text("If you delete Memoree")
-                .font(Theme.Typography.screenTitle)
-                .foregroundStyle(Theme.Color.textPrimary)
-
-            Text("""
-                Your archive and your streak are stored only on this phone, \
-                inside this app. Deleting the app deletes them.
-
-                Your photographs do not live here. They are in your Photos \
-                library and Memoree never touches them — it has no permission \
-                to, and never will.
-                """)
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -250,64 +207,48 @@ struct SettingsView: View {
     /// subtitle because a file called "export" that a user believes brings their
     /// archive back is worse than no file — they will not check.
     private var exportSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            Text("Your archive")
-                .font(Theme.Typography.screenTitle)
-                .foregroundStyle(Theme.Color.textPrimary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            SettingsSectionHeader("Archive & Data", icon: "archivebox")
 
-            Text("""
-                A record of every moment: which day, when, and whether it grew \
-                your streak. The photographs are not in it — they are already in \
-                your Photos library, where any app can reach them.
-                """)
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if let failure = exportFailure {
-                Text(failure)
-                    .font(Theme.Typography.metadata)
+            SettingsCard {
+                Text("""
+                    A complete record of every moment: dates, timestamps, and \
+                    streak status. The photographs are not in it—they already live \
+                    in your Photos library.
+                    """)
+                    .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
-            }
+                    .fixedSize(horizontal: false, vertical: true)
 
-            if let export = preparedExport {
-                ShareLink(
-                    item: SharedArchiveFile.export(
-                        day: exportedOn.formatted(.iso8601.year().month().day()),
-                        data: export
-                    ),
-                    preview: SharePreview("Memoree archive")
-                ) {
-                    // **Outlined, not filled.** This was a solid white capsule, which is
-                    // the same treatment `PrimaryButton(.filled)` gives and the
-                    // app reserves for the one thing a screen wants you to do.
-                    // Settings has three sections and this row is not the
-                    // important one — the window and the album are. A white pill
-                    // at the bottom of the screen is a button that says "this is
-                    // the main event" in the only voice the design language has,
-                    // and it was spending that on an export nobody opens twice.
-                    //
-                    // The border keeps it discoverable, which is what the weight
-                    // change is at risk of: a row that recedes too far is a
-                    // feature that does not exist. `Theme.Radius` already has
-                    // what this needs; the outline is `textPrimary`, same as
-                    // `PrimaryButton(.outlined)`.
-                    Label("Export as JSON", systemImage: "square.and.arrow.up")
-                        .font(Theme.Typography.button)
-                        .foregroundStyle(Theme.Color.textPrimary)
-                        .frame(maxWidth: .infinity)
-                        .frame(minHeight: Theme.Size.tapTargetComfortable)
-                        .overlay {
-                            Capsule().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
-                        }
+                if let failure = exportFailure {
+                    Text(failure)
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Opens the share sheet with one JSON file of every moment")
-            } else {
-                // **Not a spinner.** An archive of 500 moments encodes in
-                // milliseconds, and a spinner implies work that is not happening.
-                // The row is simply absent until it is ready, which is immediate.
-                Color.clear.frame(minHeight: Theme.Size.tapTargetComfortable).accessibilityHidden(true)
+
+                if let export = preparedExport {
+                    ShareLink(
+                        item: SharedArchiveFile.export(
+                            day: exportedOn.formatted(.iso8601.year().month().day()),
+                            data: export
+                        ),
+                        preview: SharePreview("Memoree archive")
+                    ) {
+                        Label("Export as JSON", systemImage: "square.and.arrow.up")
+                            .font(Theme.Typography.button)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                            .frame(maxWidth: .infinity)
+                            .frame(minHeight: Theme.Size.tapTargetComfortable)
+                            .overlay {
+                                Capsule().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Opens the share sheet with one JSON file of every moment")
+                } else {
+                    // Not a spinner. Encoding is immediate.
+                    Color.clear.frame(minHeight: Theme.Size.tapTargetComfortable).accessibilityHidden(true)
+                }
             }
         }
     }
@@ -358,60 +299,38 @@ struct SettingsView: View {
     /// people say no to permissions for things they would have said yes to. The
     /// user opts in; Memoree does not ask on their behalf.
     private var behindTheScenesSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            Text("Behind the Scenes")
-                .font(Theme.Typography.screenTitle)
-                .foregroundStyle(Theme.Color.textPrimary)
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            SettingsSectionHeader("Behind the Scenes", icon: "video")
 
-            Text("""
-                Records a few seconds of video around the shutter, so you can see \
-                the moment rather than only the picture. Off by default — turning \
-                it on is the only thing that asks for the microphone.
-                """)
-                .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textSecondary)
+            SettingsCard {
+                Text("""
+                    Records a few seconds of video around the shutter, so you can see \
+                    the moment rather than only the picture. Off by default—turning \
+                    it on is the only thing that asks for the microphone.
+                    """)
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
 
-            SettingsRow(
-                title: "Record Behind the Scenes",
-                subtitle: "Capture a short clip with every moment.",
-                control: {
-                    Toggle(
-                        "",
-                        isOn: Binding(
-                            get: { btsEnabled },
-                            set: { enabled in
-                                btsEnabled = enabled
-                                if enabled && !saveBTS {
-                                    saveBTS = true
-                                }
-                                applyBTSPreferences(
-                                    enabled: enabled,
-                                    save: enabled ? saveBTS : false
-                                )
-                            }
-                        )
-                    )
-                    .labelsHidden()
-                }
-            )
+                SettingsDivider()
 
-            // **Hidden rather than disabled while recording is off.** A greyed-out
-            // row invites the question "what is this", and the answer — a setting
-            // for a feature that is off — is not worth a line of screen. Disabling
-            // it instead would be honest but would also put two dead controls on
-            // the screen, which is what the album toggle's neighbour used to be.
-            if btsEnabled {
                 SettingsRow(
-                    title: "Keep the clip in Photos",
-                    subtitle: "Turning this off leaves your moments as two photographs.",
+                    title: "Record Behind the Scenes",
+                    subtitle: "Capture a short clip with every moment.",
                     control: {
                         Toggle(
                             "",
                             isOn: Binding(
-                                get: { saveBTS },
+                                get: { btsEnabled },
                                 set: { enabled in
-                                    saveBTS = enabled
-                                    applyBTSPreferences(enabled: btsEnabled, save: enabled)
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    btsEnabled = enabled
+                                    if enabled && !saveBTS {
+                                        saveBTS = true
+                                    }
+                                    applyBTSPreferences(
+                                        enabled: enabled,
+                                        save: enabled ? saveBTS : false
+                                    )
                                 }
                             )
                         )
@@ -419,28 +338,57 @@ struct SettingsView: View {
                     }
                 )
 
-                SettingsRow(
-                    title: "Clip length",
-                    subtitle: clipLengthExplanation,
-                    control: {
-                        Picker("", selection: $btsDuration) {
-                            ForEach(Self.clipLengths, id: \.self) { seconds in
-                                Text("\(Int(seconds))s").tag(seconds)
+                // Hidden rather than disabled while recording is off.
+                if btsEnabled {
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Keep the clip in Photos",
+                        subtitle: "Turning this off leaves your moments as two photographs.",
+                        control: {
+                            Toggle(
+                                "",
+                                isOn: Binding(
+                                    get: { saveBTS },
+                                    set: { enabled in
+                                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                        saveBTS = enabled
+                                        applyBTSPreferences(enabled: btsEnabled, save: enabled)
+                                    }
+                                )
+                            )
+                            .labelsHidden()
+                        }
+                    )
+
+                    SettingsDivider()
+
+                    SettingsRow(
+                        title: "Clip length",
+                        subtitle: clipLengthExplanation,
+                        control: {
+                            Picker("", selection: $btsDuration) {
+                                ForEach(Self.clipLengths, id: \.self) { seconds in
+                                    Text("\(Int(seconds))s").tag(seconds)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .labelsHidden()
+                            .onChange(of: btsDuration) { _, newValue in
+                                UISelectionFeedbackGenerator().selectionChanged()
+                                applyClipDuration(newValue)
                             }
                         }
-                        .pickerStyle(.menu)
-                        .labelsHidden()
-                        .onChange(of: btsDuration) { _, newValue in
-                            applyClipDuration(newValue)
-                        }
-                    }
-                )
-            }
+                    )
+                }
 
-            if let microphoneNote {
-                Text(microphoneNote)
-                    .font(Theme.Typography.metadata)
-                    .foregroundStyle(Theme.Color.textSecondary)
+                if let microphoneNote {
+                    SettingsDivider()
+
+                    Text(microphoneNote)
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
             }
         }
     }
@@ -514,72 +462,94 @@ struct SettingsView: View {
     /// the library to remove anything, and an album Memoree created is now the
     /// user's to keep or delete themselves. A toggle that silently deleted things
     /// would be the single worst control in the app.
-    private var photosSection: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            Text("Photos")
-                .font(Theme.Typography.screenTitle)
-                .foregroundStyle(Theme.Color.textPrimary)
+    // MARK: - Photos & Library
 
-            SettingsRow(
-                title: "Keep a \(CameraViewModel.albumName) album",
-                subtitle: "Also file each moment into an album alongside your "
-                    + "library. Turning this off never deletes anything.",
-                control: {
-                    Toggle(
-                        "",
-                        // Not `$saveToAlbum` directly: the toggle has to write
-                        // through to the store, or the value survives only until
-                        // the next `reload()`.
-                        isOn: Binding(
-                            get: { saveToAlbum },
-                            set: { enabled in
-                                saveToAlbum = enabled
-                                applyAlbumPreference(enabled)
-                            }
+    private var photosSection: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+            SettingsSectionHeader("Photos & Library", icon: "photo.on.rectangle")
+
+            SettingsCard {
+                SettingsRow(
+                    title: "Keep a \(CameraViewModel.albumName) album",
+                    subtitle: "Also file each moment into an album alongside your "
+                        + "library. Turning this off never deletes anything.",
+                    control: {
+                        Toggle(
+                            "",
+                            // Not `$saveToAlbum` directly: the toggle has to write
+                            // through to the store, or the value survives only until
+                            // the next `reload()`.
+                            isOn: Binding(
+                                get: { saveToAlbum },
+                                set: { enabled in
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    saveToAlbum = enabled
+                                    applyAlbumPreference(enabled)
+                                }
+                            )
                         )
-                    )
-                    .labelsHidden()
+                        .labelsHidden()
+                    }
+                )
+
+                SettingsDivider()
+
+                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
+                    Text("Permanence")
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Color.textPrimary)
+
+                    Text("""
+                        Memoree holds add-only permission. It never deletes from \
+                        your Photos library, and all photographs remain in your \
+                        library even if you delete the app.
+                        """)
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
-            )
+            }
         }
     }
 
-    // MARK: - Diagnostics
+    // MARK: - About & Diagnostics
 
-    /// Facts about what the app has scheduled, and the one recovery hook worth
-    /// being able to reach.
-    ///
-    /// The camera-reset button used to live in the Today footer, behind an
-    /// `.opacity` that hid it whenever there were no moments and reminders were
-    /// on — an invisible but still tappable control, guarding the one failure
-    /// mode that produces no error, no callback and no log line. It belongs with
-    /// the other diagnostics, where being visible is the point (TRD §5.5).
     @ViewBuilder
     private var diagnosticsSection: some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            Text("Diagnostics")
+            SettingsSectionHeader("About & Diagnostics", icon: "info.circle")
+
+            SettingsCard {
+                MetadataRow(label: "Version", value: appVersionString)
+                MetadataRow(label: "Moments in archive", value: "\(momentsCount)")
+                MetadataRow(label: "Reminders queued", value: "\(pendingCount)")
+
+                #if DEBUG
+                SettingsDivider()
+
+                Button("Reset camera services") {
+                    Task { await environment.simulateMediaServicesReset() }
+                }
                 .font(Theme.Typography.metadata)
                 .foregroundStyle(Theme.Color.textSecondary)
-
-            MetadataRow(label: "Reminders queued", value: "\(pendingCount)")
-
-            #if DEBUG
-            Button("Reset camera services") {
-                Task { await environment.simulateMediaServicesReset() }
+                .accessibilityHint(
+                    "Rebuilds the camera session from scratch, the way iOS does after a media services reset"
+                )
+                #endif
             }
-            .font(Theme.Typography.metadata)
-            .foregroundStyle(Theme.Color.textSecondary)
-            .accessibilityHint(
-                "Rebuilds the camera session from scratch, the way iOS does after a media services reset"
-            )
-            #endif
         }
-        .padding(.top, Theme.Spacing.l)
     }
 
     // MARK: - State
 
     @State private var pendingCount = 0
+    @State private var momentsCount = 0
+
+    private var appVersionString: String {
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0"
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "1"
+        return "\(version) (\(build))"
+    }
 
     private func reload() async {
         let settings = environment.momentStore.settings()
@@ -594,6 +564,7 @@ struct SettingsView: View {
         remindersAuthorized = await environment.notificationService
             .authorizationStatus().willDeliver
         pendingCount = await environment.notificationService.pendingCount()
+        momentsCount = environment.momentStore.allMoments.count
         refreshMicrophoneNote()
         prepareExport()
     }

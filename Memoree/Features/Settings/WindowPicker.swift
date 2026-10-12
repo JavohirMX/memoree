@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// The daily moment window, as two sliders.
 ///
@@ -44,6 +45,8 @@ struct WindowPicker: View {
 
     var body: some View {
         VStack(spacing: Theme.Spacing.m) {
+            headerSummary
+            timelineVisualizer
             bound(
                 label: "From",
                 minutes: window.startMinutes,
@@ -81,6 +84,68 @@ struct WindowPicker: View {
         .disabled(isCommitting)
     }
 
+    private var headerSummary: some View {
+        HStack {
+            Text("Active span")
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textSecondary)
+            Spacer()
+            Text("\(spanDescription) (\(TimeWindow.format(minutes: window.startMinutes)) – \(TimeWindow.format(minutes: window.endMinutes)))")
+                .font(Theme.Typography.body)
+                .monospacedDigit()
+                .foregroundStyle(Theme.Color.textPrimary)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Active window span \(spanDescription), from \(TimeWindow.format(minutes: window.startMinutes)) until \(TimeWindow.format(minutes: window.endMinutes))")
+    }
+
+    private var spanDescription: String {
+        let spanMinutes = window.endMinutes - window.startMinutes
+        let hours = spanMinutes / 60
+        let minutes = spanMinutes % 60
+        if minutes == 0 {
+            return "\(hours)h"
+        } else {
+            return "\(hours)h \(minutes)m"
+        }
+    }
+
+    private var timelineVisualizer: some View {
+        VStack(spacing: Theme.Spacing.xs) {
+            GeometryReader { proxy in
+                let totalWidth = proxy.size.width
+                let startFraction = CGFloat(window.startMinutes) / 1440.0
+                let endFraction = CGFloat(window.endMinutes) / 1440.0
+                let activeWidth = max(CGFloat.zero, (endFraction - startFraction) * totalWidth)
+                let activeOffset = startFraction * totalWidth
+
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Theme.Color.divider)
+                        .frame(height: Theme.Spacing.s)
+
+                    Capsule()
+                        .fill(Theme.Color.textPrimary)
+                        .frame(width: activeWidth, height: Theme.Spacing.s)
+                        .offset(x: activeOffset)
+                }
+            }
+            .frame(height: Theme.Spacing.s)
+
+            HStack {
+                Text("00:00")
+                Spacer()
+                Text("12:00")
+                Spacer()
+                Text("24:00")
+            }
+            .font(Theme.Typography.retakePill)
+            .foregroundStyle(Theme.Color.textTertiary)
+        }
+        .accessibilityHidden(true)
+        .padding(.bottom, Theme.Spacing.xs)
+    }
+
     private func bound(
         label: String,
         minutes: Int,
@@ -105,12 +170,19 @@ struct WindowPicker: View {
             Slider(
                 value: Binding(
                     get: { Double(minutes) },
-                    set: { onChange(Int($0.rounded())) }
+                    set: { newMinutes in
+                        let rounded = Int(newMinutes.rounded())
+                        if rounded != minutes {
+                            UISelectionFeedbackGenerator().selectionChanged()
+                        }
+                        onChange(rounded)
+                    }
                 ),
                 in: range,
                 step: Double(Self.stepMinutes),
                 onEditingChanged: { isEditing in
                     if !isEditing {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         Task { await onCommit(window) }
                     }
                 }

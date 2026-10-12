@@ -100,3 +100,60 @@ extension Theme.Spacing {
     /// own subtitle *should* read as one unit rather than two.
     static let xxs: CGFloat = 2
 }
+
+/// An elevated container card for settings groups.
+///
+/// Dark only: `#1C1C1E` (`Theme.Color.surface`) on `#000000` (`Theme.Color.canvas`).
+struct SettingsCard<Content: View>: View {
+
+    @ViewBuilder let content: () -> Content
+
+    init(@ViewBuilder content: @escaping () -> Content) {
+        self.content = content
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            content()
+        }
+        .padding(Theme.Spacing.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
+    }
+}
+
+/// Section title with optional SF Symbol icon, rendered in uppercase metadata typography.
+struct SettingsSectionHeader: View {
+
+    let title: String
+    var icon: String?
+
+    init(_ title: String, icon: String? = nil) {
+        self.title = title
+        self.icon = icon
+    }
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            if let icon {
+                Image(systemName: icon)
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            Text(title.uppercased())
+                .font(Theme.Typography.metadata.weight(.semibold))
+                .foregroundStyle(Theme.Color.textSecondary)
+        }
+        .padding(.horizontal, Theme.Spacing.xs)
+    }
+}
+
+/// Hairline separator between rows within a settings card.
+struct SettingsDivider: View {
+    var body: some View {
+        Theme.Color.divider
+            .frame(height: 1)
+            .accessibilityHidden(true)
+    }
+}
