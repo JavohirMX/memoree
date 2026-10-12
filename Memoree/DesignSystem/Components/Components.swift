@@ -134,10 +134,11 @@ struct StreakDisplay: View {
 
     let streak: Int
     var longest: Int?
+    var isCapturedToday: Bool = false
 
     var body: some View {
         HStack(spacing: Theme.Spacing.xs) {
-            Image(systemName: "flame.fill")
+            Image(systemName: (isCapturedToday && streak > 0) ? "flame.fill" : "flame")
                 .scaledDisplayFont(20)
                 .foregroundStyle(streak > 0 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
             Text("\(streak)")

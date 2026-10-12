@@ -339,13 +339,15 @@ struct SummaryTests {
         let retakes: Int
         let bts: Bool
         let hour: Int
+        let note: String?
 
-        init(_ day: String, onTime: Bool, retakes: Int = 0, bts: Bool = false, hour: Int = 12) {
+        init(_ day: String, onTime: Bool, retakes: Int = 0, bts: Bool = false, hour: Int = 12, note: String? = nil) {
             self.day = day
             self.onTime = onTime
             self.retakes = retakes
             self.bts = bts
             self.hour = hour
+            self.note = note
         }
     }
 
@@ -363,7 +365,8 @@ struct SummaryTests {
                 capturedAt: capturedAt,
                 windowEndsAt: capturedAt.addingTimeInterval(120),
                 retakeCount: row.retakes,
-                hasBTS: row.bts
+                hasBTS: row.bts,
+                note: row.note
             )
         }
     }
@@ -377,9 +380,9 @@ struct SummaryTests {
     @Test("Counts, percentages and averages are all derived correctly")
     func aggregates() throws {
         let facts = makeFacts([
-            Row("2026-09-27", onTime: false, retakes: 0, bts: true,  hour: 9),
+            Row("2026-09-27", onTime: false, retakes: 0, bts: true,  hour: 9, note: "Morning walk"),
             Row("2026-09-28", onTime: true,  retakes: 1, bts: false, hour: 14),
-            Row("2026-09-29", onTime: true,  retakes: 2, bts: true,  hour: 14),
+            Row("2026-09-29", onTime: true,  retakes: 2, bts: true,  hour: 14, note: "Coffee"),
             Row("2026-09-30", onTime: true,  retakes: 3, bts: false, hour: 14),
         ])
         let today = try #require(DayIdentifier(string: "2026-09-30", calendar: calendar))
@@ -391,6 +394,11 @@ struct SummaryTests {
         #expect(s.longestStreak == 4)
         #expect(s.averageRetakes == 1.5)    // (0+1+2+3)/4
         #expect(s.btsCount == 2)
+        #expect(s.notesCount == 2)
+        #expect(s.firstCaptureDate != nil)
+        #expect(s.consistencyPercentage == 100.0)
+        #expect(s.hourlyDistribution[14] == 3)
+        #expect(s.hourlyDistribution[9] == 1)
     }
 
     @Test("Busiest hour picks the mode and resolves ties to the earlier hour")
@@ -419,6 +427,8 @@ struct SummaryTests {
         #expect(s.busiestHour == nil)
         #expect(s.currentStreak == 0)
         #expect(s.longestStreak == 0)
+        #expect(s.consistencyPercentage == nil)
+        #expect(s.notesCount == 0)
     }
 
     @Test("Multiple captures on the same day preserve on-time streak")
@@ -434,5 +444,25 @@ struct SummaryTests {
         #expect(s.daysCaptured == 2)
         #expect(s.currentStreak == 2, "Bonus off-window capture must never break an on-time day")
         #expect(s.longestStreak == 2)
+    }
+
+    @Test("Recent habit days correctly maps trailing sequence of days")
+    func recentHabitDays() throws {
+        let today = try #require(DayIdentifier(string: "2026-09-30", calendar: calendar))
+        let captured: Set<DayIdentifier> = [
+            today,
+            today.offset(by: -2, calendar: calendar)
+        ]
+        let habit = StreakCalculator.recentHabitDays(
+            capturedDays: captured,
+            today: today,
+            daysCount: 7,
+            calendar: calendar
+        )
+        #expect(habit.count == 7)
+        #expect(habit.last?.isToday == true)
+        #expect(habit.last?.isCaptured == true)
+        #expect(habit[habit.count - 3].isCaptured == true)
+        #expect(habit.first?.isCaptured == false)
     }
 }

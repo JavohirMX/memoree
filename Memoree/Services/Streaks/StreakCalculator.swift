@@ -139,11 +139,20 @@ enum StreakCalculator {
         var hourCounts = [Int: Int]()
         var retakeTotal = 0
         var btsCount = 0
+        var notesCount = 0
+        var earliestCapture: Date?
 
         for fact in facts {
             capturedDays.insert(fact.day)
             retakeTotal += fact.retakeCount
             if fact.hasBTS { btsCount += 1 }
+            if let note = fact.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                notesCount += 1
+            }
+
+            if earliestCapture == nil || fact.capturedAt < earliestCapture! {
+                earliestCapture = fact.capturedAt
+            }
 
             let hour = calendar.component(.hour, from: fact.capturedAt)
             hourCounts[hour, default: 0] += 1
@@ -157,6 +166,12 @@ enum StreakCalculator {
             .keys
             .min()
 
+        let missed = missedDays(capturedDays: capturedDays, today: today, calendar: calendar)
+        let totalSpan = capturedDays.count + missed
+        let consistency: Double? = totalSpan > 0
+            ? (Double(capturedDays.count) / Double(totalSpan)) * 100.0
+            : nil
+
         return StreakSummary(
             currentStreak: currentStreak(
                 capturedDays: capturedDays,
@@ -167,9 +182,43 @@ enum StreakCalculator {
             averageRetakes: Double(retakeTotal) / Double(total),
             btsCount: btsCount,
             busiestHour: busiest,
-            missedDays: missedDays(
-                capturedDays: capturedDays, today: today, calendar: calendar)
+            missedDays: missed,
+            firstCaptureDate: earliestCapture,
+            notesCount: notesCount,
+            hourlyDistribution: hourCounts,
+            consistencyPercentage: consistency
         )
+    }
+
+    // MARK: - Habit continuity
+
+    /// One day in the recent habit continuity strip.
+    struct HabitDay: Sendable, Equatable, Identifiable {
+        let day: DayIdentifier
+        let isCaptured: Bool
+        let isToday: Bool
+
+        var id: String { day.rawValue }
+    }
+
+    /// The trailing sequence of days up to and including today (oldest to newest).
+    static func recentHabitDays(
+        capturedDays: Set<DayIdentifier>,
+        today: DayIdentifier,
+        daysCount: Int = 14,
+        calendar: Calendar = .current
+    ) -> [HabitDay] {
+        guard daysCount > 0 else { return [] }
+        var result: [HabitDay] = []
+        result.reserveCapacity(daysCount)
+
+        for offset in stride(from: -(daysCount - 1), through: 0, by: 1) {
+            let day = today.offset(by: offset, calendar: calendar)
+            let isCaptured = capturedDays.contains(day)
+            let isToday = (day == today)
+            result.append(HabitDay(day: day, isCaptured: isCaptured, isToday: isToday))
+        }
+        return result
     }
 
     // MARK: - Extracting day sets

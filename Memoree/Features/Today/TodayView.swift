@@ -508,7 +508,11 @@ struct TodayView: View {
             Button {
                 isShowingStats = true
             } label: {
-                StreakDisplay(streak: model.streak, longest: model.longestStreak)
+                StreakDisplay(
+                    streak: model.streak,
+                    longest: model.longestStreak,
+                    isCapturedToday: model.isCapturedToday
+                )
             }
             .buttonStyle(.pressDip)
             .accessibilityLabel(

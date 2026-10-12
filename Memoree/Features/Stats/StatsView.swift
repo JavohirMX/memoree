@@ -83,9 +83,9 @@ struct StatsView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
                     HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
-                        Image(systemName: "flame.fill")
+                        Image(systemName: (model.isStreakActiveToday && model.summary.currentStreak > 0) ? "flame.fill" : "flame")
                             .scaledDisplayFont(28)
-                            .foregroundStyle(Theme.Color.textPrimary)
+                            .foregroundStyle(model.summary.currentStreak > 0 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
                         Text("\(model.summary.currentStreak)")
                             .scaledDisplayFont(48)
                             .monospacedDigit()

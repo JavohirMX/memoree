@@ -135,7 +135,7 @@ struct BTSPlaybackView: View {
                 RoundedRectangle(cornerRadius: Theme.Radius.card)
                     .strokeBorder(Theme.Color.divider, lineWidth: 1)
             }
-            .animation(.easeInOut(duration: 0.2), value: model.isPlaying)
+            .appAnimation(model.isPlaying) { .easeInOut(duration: 0.2) }
         } else if model?.failure != nil {
             // **Said, not shown as a black rectangle.** A frame that will not play
             // looks like a rendering bug; the truth is that the clip is gone from

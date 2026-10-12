@@ -143,14 +143,30 @@ struct StreakSummary: Sendable, Equatable {
     /// Stats screen mean something.
     let missedDays: Int
 
+    /// When the very first moment was captured.
+    let firstCaptureDate: Date?
+
+    /// How many moments include an attached note.
+    let notesCount: Int
+
+    /// Capture counts mapped by local hour of day (0–23).
+    let hourlyDistribution: [Int: Int]
+
+    /// Percentage of days captured since the start of recording (0–100).
+    let consistencyPercentage: Double?
+
     static let empty = StreakSummary(
         currentStreak: 0, longestStreak: 0, daysCaptured: 0, totalMoments: 0,
-        averageRetakes: 0, btsCount: 0, busiestHour: nil, missedDays: 0
+        averageRetakes: 0, btsCount: 0, busiestHour: nil, missedDays: 0,
+        firstCaptureDate: nil, notesCount: 0, hourlyDistribution: [:],
+        consistencyPercentage: nil
     )
 
     init(
         currentStreak: Int, longestStreak: Int, daysCaptured: Int, totalMoments: Int,
-        averageRetakes: Double, btsCount: Int, busiestHour: Int?, missedDays: Int
+        averageRetakes: Double, btsCount: Int, busiestHour: Int?, missedDays: Int,
+        firstCaptureDate: Date? = nil, notesCount: Int = 0,
+        hourlyDistribution: [Int: Int] = [:], consistencyPercentage: Double? = nil
     ) {
         self.currentStreak = currentStreak
         self.longestStreak = longestStreak
@@ -160,5 +176,9 @@ struct StreakSummary: Sendable, Equatable {
         self.btsCount = btsCount
         self.busiestHour = busiestHour
         self.missedDays = missedDays
+        self.firstCaptureDate = firstCaptureDate
+        self.notesCount = notesCount
+        self.hourlyDistribution = hourlyDistribution
+        self.consistencyPercentage = consistencyPercentage
     }
 }

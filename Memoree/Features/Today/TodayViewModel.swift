@@ -168,6 +168,9 @@ final class TodayViewModel {
 
     var longestStreak: Int { summary.longestStreak }
 
+    /// Whether today's moment has already been captured.
+    var isCapturedToday: Bool { todayMoment != nil }
+
     /// "3 days" / "1 day"
     var streakDescription: String {
         "\(streak) \(streak == 1 ? "day" : "days")"

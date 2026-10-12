@@ -37,6 +37,18 @@ final class StatsViewModel {
     /// The days themselves, for the streak history.
     private(set) var days: [MomentFacts] = []
 
+    /// Trailing 14 days of streak continuity.
+    private(set) var habitDays: [StreakCalculator.HabitDay] = []
+
+    /// 24-hour distribution bins for capture rhythm.
+    private(set) var hourlyDistribution: [(hour: Int, count: Int, ratio: Double)] = []
+
+    /// Whether today already has a recorded capture.
+    private(set) var isStreakActiveToday: Bool = false
+
+    /// Currently selected moment for detail view sheet presentation.
+    var selectedMoment: MomentFacts?
+
     /// The clock, for the same reason `TodayViewModel` has one: "which day is it"
     /// is an input to every derived value here, and a view model that reads
     /// `Date()` cannot be tested at a chosen time.
@@ -56,6 +68,21 @@ final class StatsViewModel {
         // about which moment is "the first one", which is the kind of thing that
         // is obvious when it matches and maddening when it does not.
         days = environment.momentStore.facts()
+
+        let captured = StreakCalculator.capturedDays(from: days)
+        habitDays = StreakCalculator.recentHabitDays(
+            capturedDays: captured,
+            today: today,
+            daysCount: 14
+        )
+        isStreakActiveToday = captured.contains(today)
+
+        let maxHourCount = summary.hourlyDistribution.values.max() ?? 0
+        hourlyDistribution = (0..<24).map { hour in
+            let count = summary.hourlyDistribution[hour, default: 0]
+            let ratio = maxHourCount > 0 ? Double(count) / Double(maxHourCount) : 0.0
+            return (hour: hour, count: count, ratio: ratio)
+        }
     }
 
     // MARK: - Copy
@@ -79,6 +106,34 @@ final class StatsViewModel {
 
     var daysCapturedDescription: String {
         Self.plural(summary.daysCaptured, "day")
+    }
+
+    /// First recorded memory date, e.g. "Oct 1, 2026".
+    var firstMemoryDescription: String? {
+        summary.firstCaptureDate?.formatted(date: .abbreviated, time: .omitted)
+    }
+
+    /// Overall capture consistency since the first memory, e.g. "85%".
+    var consistencyDescription: String? {
+        guard let consistency = summary.consistencyPercentage else { return nil }
+        return "\(Int(consistency.rounded()))%"
+    }
+
+    /// Notes written across all moments.
+    var notesDescription: String? {
+        guard summary.notesCount > 0 else { return nil }
+        return Self.plural(summary.notesCount, "note")
+    }
+
+    /// Status of today's streak: "Active today" if captured today, or "Protected through yesterday".
+    var streakStatusDescription: String {
+        if summary.currentStreak == 0 {
+            return "No active streak"
+        } else if isStreakActiveToday {
+            return "Active today"
+        } else {
+            return "Protected through yesterday"
+        }
     }
 
     /// Retakes, or nothing at all when there were none.

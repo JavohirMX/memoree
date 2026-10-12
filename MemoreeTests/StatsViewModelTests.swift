@@ -43,7 +43,8 @@ struct StatsViewModelTests {
         daysAgo offset: Int,
         onTime: Bool = true,
         retakes: Int = 0,
-        hasBTS: Bool = false
+        hasBTS: Bool = false,
+        note: String? = nil
     ) throws -> Moment {
         let today = DayIdentifier(date: Self.reference, calendar: calendar)
         let day = today.offset(by: -offset, calendar: calendar)
@@ -55,7 +56,8 @@ struct StatsViewModelTests {
             retakeCount: retakes,
             backAssetIdentifier: nil,
             frontAssetIdentifier: nil,
-            hasBTS: hasBTS
+            hasBTS: hasBTS,
+            note: note
         )
     }
 
@@ -294,5 +296,78 @@ struct StatsViewModelTests {
         let days = model.days.map(\.day)
         #expect(days == days.sorted(by: >))
         #expect(model.days.count == 5)
+    }
+
+    // MARK: - New Metrics & Visual Data
+
+    @Test("Habit days continuity strip contains 14 trailing days")
+    func habitDaysContinuity() throws {
+        let harness = try makeHarness(now: Self.reference)
+        try record(harness, daysAgo: 0)
+        try record(harness, daysAgo: 2)
+
+        let model = makeModel(harness)
+        model.load()
+
+        #expect(model.habitDays.count == 14)
+        #expect(model.habitDays.last?.isToday == true)
+        #expect(model.habitDays.last?.isCaptured == true)
+        #expect(model.isStreakActiveToday == true)
+        #expect(model.streakStatusDescription == "Active today")
+    }
+
+    @Test("Protected streak status when today is not yet captured")
+    func streakStatusProtected() throws {
+        let harness = try makeHarness(now: Self.reference)
+        try record(harness, daysAgo: 1)
+
+        let model = makeModel(harness)
+        model.load()
+
+        #expect(model.isStreakActiveToday == false)
+        #expect(model.streakStatusDescription == "Protected through yesterday")
+    }
+
+    @Test("Notes description and count")
+    func notesDescription() throws {
+        let harness = try makeHarness(now: Self.reference)
+        let emptyModel = makeModel(harness)
+        emptyModel.load()
+        #expect(emptyModel.notesDescription == nil)
+
+        try record(harness, daysAgo: 1, note: "Sunset reflection")
+        let oneModel = makeModel(harness)
+        oneModel.load()
+        #expect(oneModel.notesDescription == "1 note")
+
+        try record(harness, daysAgo: 2, note: "Second note")
+        let twoModel = makeModel(harness)
+        twoModel.load()
+        #expect(twoModel.notesDescription == "2 notes")
+    }
+
+    @Test("First memory date and consistency description")
+    func firstMemoryAndConsistency() throws {
+        let harness = try makeHarness(now: Self.reference)
+        try record(harness, daysAgo: 3)
+        try record(harness, daysAgo: 1)
+
+        let model = makeModel(harness)
+        model.load()
+
+        #expect(model.firstMemoryDescription != nil)
+        #expect(model.consistencyDescription != nil)
+    }
+
+    @Test("Hourly distribution returns 24 bins")
+    func hourlyDistribution() throws {
+        let harness = try makeHarness(now: Self.reference)
+        try record(harness, daysAgo: 1)
+
+        let model = makeModel(harness)
+        model.load()
+
+        #expect(model.hourlyDistribution.count == 24)
+        #expect(model.hourlyDistribution.map(\.hour) == Array(0..<24))
     }
 }
