@@ -100,7 +100,16 @@ struct CameraView: View {
     }
 
     /// The live preview, the inset, and the shutter.
+    @ViewBuilder
     private func live(_ model: CameraViewModel) -> some View {
+        if verticalSizeClass == .compact {
+            landscapeLive(model)
+        } else {
+            portraitLive(model)
+        }
+    }
+
+    private func portraitLive(_ model: CameraViewModel) -> some View {
         VStack(spacing: 0) {
             previewWithInset(model)
                 .overlay(alignment: .topLeading) {
@@ -132,6 +141,33 @@ struct CameraView: View {
             }
 
             shutterRow(model)
+        }
+    }
+
+    private func landscapeLive(_ model: CameraViewModel) -> some View {
+        HStack(spacing: Theme.Spacing.m) {
+            previewWithInset(model)
+                .overlay(alignment: .topLeading) {
+                    backButton
+                        .padding(Theme.Spacing.m)
+                }
+                .padding(.leading, Theme.Spacing.m)
+                .padding(.vertical, Theme.Spacing.xs)
+
+            VStack(spacing: Theme.Spacing.m) {
+                Spacer()
+
+                if !model.progressDescription.isEmpty {
+                    Text(model.progressDescription)
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+
+                shutterRow(model)
+
+                Spacer()
+            }
+            .padding(.trailing, Theme.Spacing.m)
         }
     }
 
@@ -460,15 +496,34 @@ struct CameraView: View {
 
     // MARK: - Review
 
+    /// Calculates the aspect ratio of the prominent photo, falling back to 3:4 portrait.
+    private func compositeAspectRatio(_ model: CameraViewModel) -> CGFloat {
+        if let photo = model.prominentPhoto,
+           let image = UIImage(data: photo.data),
+           image.size.height > 0 {
+            return image.size.width / image.size.height
+        }
+        return 3.0 / 4.0
+    }
+
     /// Both photographs exist. One large, one in a small square, tappable to
     /// swap.
+    @ViewBuilder
     private func review(_ model: CameraViewModel) -> some View {
+        if verticalSizeClass == .compact {
+            landscapeReview(model)
+        } else {
+            portraitReview(model)
+        }
+    }
+
+    private func portraitReview(_ model: CameraViewModel) -> some View {
         VStack(spacing: 0) {
             composite(model)
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                .aspectRatio(compositeAspectRatio(model), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .padding(.horizontal, Theme.Spacing.m)
-                .frame(maxHeight: verticalSizeClass == .compact ? Theme.Size.compositeLandscapeMaxHeight : nil)
+                .frame(maxHeight: Theme.Size.cameraReviewMaxHeight)
 
             Spacer(minLength: Theme.Spacing.s)
 
@@ -489,6 +544,32 @@ struct CameraView: View {
         }
     }
 
+    private func landscapeReview(_ model: CameraViewModel) -> some View {
+        HStack(spacing: Theme.Spacing.l) {
+            composite(model)
+                .aspectRatio(compositeAspectRatio(model), contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                .padding(.leading, Theme.Spacing.m)
+                .padding(.vertical, Theme.Spacing.xs)
+
+            ScrollView {
+                VStack(spacing: Theme.Spacing.m) {
+                    noteInput(model)
+
+                    if model.retakeCount > 0 {
+                        Text("\(model.retakeCount) \(model.retakeCount == 1 ? "retake" : "retakes")")
+                            .font(Theme.Typography.metadata)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                    }
+
+                    reviewActions(model)
+                }
+                .padding(.trailing, Theme.Spacing.m)
+                .padding(.vertical, Theme.Spacing.s)
+            }
+        }
+    }
+
     private func noteInput(_ model: CameraViewModel) -> some View {
         @Bindable var bindableModel = model
         return HStack(spacing: Theme.Spacing.s) {
@@ -498,7 +579,8 @@ struct CameraView: View {
 
             TextField(
                 "Add a note...",
-                text: $bindableModel.draftNote
+                text: $bindableModel.draftNote,
+                prompt: Text("Add a note...").foregroundStyle(Theme.Color.textSecondary)
             )
             .font(Theme.Typography.body)
             .foregroundStyle(Theme.Color.textPrimary)
@@ -528,34 +610,14 @@ struct CameraView: View {
     /// draws the same thing, and two copies of a composite is how one of them
     /// ends up with a different inset width.
     private func composite(_ model: CameraViewModel) -> some View {
-        ZStack(alignment: .bottomTrailing) {
-            MomentComposite(
-                large: model.prominentPhoto.flatMap { UIImage(data: $0.data) },
-                inset: model.insetReviewPhoto.flatMap { UIImage(data: $0.data) },
-                insetWidth: Theme.Size.insetCamera,
-                onTapInset: { model.swapProminent() }
-            )
-            .onTapGesture(count: 2) {
-                model.swapProminent()
-            }
-
-            // Direct angle toggle button overlay
-            Button {
-                model.swapProminent()
-            } label: {
-                Image(systemName: "arrow.triangle.2.circlepath")
-                    .scaledDisplayFont(Theme.Size.headerIcon, weight: .regular)
-                    .foregroundStyle(Theme.Color.textPrimary)
-                    .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
-                    .background(Circle().fill(Theme.Color.canvas.opacity(0.6)))
-                    .overlay {
-                        Circle().strokeBorder(Theme.Color.textSecondary.opacity(0.3), lineWidth: 1)
-                    }
-            }
-            .buttonStyle(.plain)
-            .padding(Theme.Spacing.m)
-            .accessibilityLabel("Swap photo angle")
-        }
+        MomentComposite(
+            large: model.prominentPhoto.flatMap { UIImage(data: $0.data) },
+            inset: model.insetReviewPhoto.flatMap { UIImage(data: $0.data) },
+            insetWidth: Theme.Size.insetCamera,
+            onTapInset: { model.swapProminent() },
+            onDoubleTapLarge: { model.swapProminent() },
+            onFlip: { model.swapProminent() }
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(CompositeAccessibility.label)
         .accessibilityHint("Double tap or press flip to swap which photo is large")

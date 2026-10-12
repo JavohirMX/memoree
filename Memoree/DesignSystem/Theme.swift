@@ -165,6 +165,9 @@ enum Theme {
         /// The largest the Today screen's composite is drawn in landscape orientation.
         static let compositeLandscapeMaxHeight: CGFloat = 240
 
+        /// The maximum height of the camera review composite in portrait orientation.
+        static let cameraReviewMaxHeight: CGFloat = 440
+
         /// The full-size photograph the archive detail requests, in points at 1×.
         ///
         /// A downsample on purpose (TRD §6.5): the original 3–5 MB stays in the
