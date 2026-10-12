@@ -20,7 +20,6 @@ struct TodayView: View {
     @State private var isShowingArchive = false
     @State private var isShowingStats = false
     @State private var selectedMomentForDetail: MomentFacts?
-    @State private var fullScreenPair: (primary: UIImage, secondary: UIImage)?
     @State private var flippedMoments: Set<UUID> = []
     @State private var playingBTSMoment: MomentFacts?
     @State private var isShowingSameDayFlipbook = false
@@ -122,16 +121,6 @@ struct TodayView: View {
             .environment(environment)
             .presentationDetents([.large])
         }
-        .fullScreenCover(isPresented: Binding(
-            get: { fullScreenPair != nil },
-            set: { if !$0 { fullScreenPair = nil } }
-        )) {
-            if let pair = fullScreenPair {
-                FullScreenImageViewer(pair: pair) {
-                    fullScreenPair = nil
-                }
-            }
-        }
         .onAppear {
             #if DEBUG
                 let arguments = ProcessInfo.processInfo.arguments
@@ -214,7 +203,7 @@ struct TodayView: View {
             .transition(.move(edge: .top).combined(with: .opacity))
         } else if let error = environment.backgroundSaveError {
             Button {
-                withAnimation(.easeInOut(duration: 0.25)) {
+                withAppAnimation(.easeInOut(duration: 0.25)) {
                     environment.clearBackgroundSaveError()
                 }
             } label: {
@@ -348,8 +337,8 @@ struct TodayView: View {
                     flashbackSection(model)
                 }
 
-                ForEach(model.chronologicalFeedMoments) { moment in
-                    feedCard(for: moment, in: model)
+                ForEach(model.chronologicalFeedDayGroups) { group in
+                    feedDaySection(group, in: model)
                 }
 
                 footer(model)
@@ -358,6 +347,22 @@ struct TodayView: View {
             .padding(.horizontal, Theme.Spacing.xl)
             .padding(.top, Theme.Spacing.s)
             .padding(.bottom, Theme.Size.feedBottomClearance)
+        }
+    }
+
+    /// One calendar day in the home feed — date once, then the day's cards.
+    @ViewBuilder
+    private func feedDaySection(_ group: FeedDayGroup, in model: TodayViewModel) -> some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            Text(group.title(now: model.now))
+                .font(Theme.Typography.metadata.weight(.semibold))
+                .foregroundStyle(Theme.Color.textSecondary)
+                .padding(.horizontal, Theme.Spacing.xs)
+                .accessibilityAddTraits(.isHeader)
+
+            ForEach(group.moments) { moment in
+                feedCard(for: moment, in: model, showsDayInHeader: false)
+            }
         }
     }
 
@@ -431,14 +436,24 @@ struct TodayView: View {
     }
 
     @ViewBuilder
-    private func feedCard(for moment: MomentFacts, in model: TodayViewModel) -> some View {
+    private func feedCard(
+        for moment: MomentFacts,
+        in model: TodayViewModel,
+        showsDayInHeader: Bool = true
+    ) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             HStack(spacing: Theme.Spacing.s) {
                 HStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: "clock")
                         .font(Theme.Typography.retakePill)
                         .foregroundStyle(Theme.Color.textSecondary)
-                    Text(model.relativeHeader(for: moment))
+                    // Chronological day sections already name the day; flashbacks
+                    // still need the full relative header on each card.
+                    Text(
+                        showsDayInHeader
+                            ? model.relativeHeader(for: moment)
+                            : model.feedCardTime(for: moment)
+                    )
                         .font(Theme.Typography.metadata)
                         .foregroundStyle(Theme.Color.textSecondary)
                 }
@@ -475,9 +490,9 @@ struct TodayView: View {
                         toggleFlip(for: moment.id)
                     },
                     onTapLarge: {
-                        fullScreenPair = (large, inset)
+                        openDetail(for: moment)
                     },
-                    onDoubleTapLarge: {
+                    onFlip: {
                         toggleFlip(for: moment.id)
                     },
                     onPlayBTS: moment.hasBTS ? {
@@ -508,7 +523,7 @@ struct TodayView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(CompositeAccessibility.label)
                 .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Opens this moment in your archive")
+                .accessibilityHint("Opens moment detail. Flip and Behind the Scenes are separate controls.")
                 .accessibilityAction {
                     openDetail(for: moment)
                 }
@@ -566,7 +581,7 @@ struct TodayView: View {
 
     private func toggleFlip(for id: UUID) {
         UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        withAnimation(.easeInOut(duration: 0.25)) {
+        withAppAnimation(.easeInOut(duration: 0.25)) {
             if flippedMoments.contains(id) {
                 flippedMoments.remove(id)
             } else {
@@ -591,7 +606,7 @@ struct TodayView: View {
                 .shadow(color: Theme.Color.canvas.opacity(0.6), radius: 8, y: 4)
         }
         .buttonStyle(.pressDip)
-        .accessibilityLabel("Capture a moment")
+        .accessibilityLabel(model.shutterTitle)
     }
 
     private func aspect(of image: UIImage) -> CGFloat {

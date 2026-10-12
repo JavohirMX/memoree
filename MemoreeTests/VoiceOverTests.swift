@@ -68,7 +68,7 @@ struct VoiceOverTests {
         )
         #expect(feedCard.contains("CompositeAccessibility.label"),
                 "the live feed card must announce the composite")
-        #expect(feedCard.contains("Opens this moment in your archive"),
+        #expect(feedCard.contains("Opens moment detail"),
                 "and say where activate goes")
         #expect(!today.contains("func todayComposite"),
                 "the dead todayComposite path must stay gone")

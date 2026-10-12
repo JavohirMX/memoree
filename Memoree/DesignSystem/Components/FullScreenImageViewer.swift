@@ -143,12 +143,12 @@ public struct FullScreenImageViewer: View {
             }
             .onEnded { _ in
                 if scale < 1.0 {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    withAppAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         scale = 1.0
                         offset = .zero
                     }
                 } else if scale > 5.0 {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                    withAppAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                         scale = 5.0
                     }
                 }
@@ -188,11 +188,11 @@ public struct FullScreenImageViewer: View {
                     } else if hasPair && abs(value.translation.width) > 50 && abs(value.translation.width) > abs(value.translation.height) {
                         // Horizontal swipe between pairs
                         togglePair()
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        withAppAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             dragDismissOffset = 0
                         }
                     } else {
-                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                        withAppAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             dragDismissOffset = 0
                         }
                     }
@@ -201,13 +201,13 @@ public struct FullScreenImageViewer: View {
     }
 
     private func togglePair() {
-        withAnimation(.easeInOut(duration: 0.2)) {
+        withAppAnimation(.easeInOut(duration: 0.2)) {
             selectedIndex = (selectedIndex == 0) ? 1 : 0
         }
     }
 
     private func toggleZoom() {
-        withAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
+        withAppAnimation(.spring(response: 0.35, dampingFraction: 0.75)) {
             if scale > 1.0 {
                 scale = 1.0
                 lastScale = 1.0

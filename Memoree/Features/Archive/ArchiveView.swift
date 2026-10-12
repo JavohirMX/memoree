@@ -53,15 +53,25 @@ struct ArchiveView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     BackButton { dismiss() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    if let model, !model.moments.isEmpty {
-                        Button {
-                            isShowingTimelapsePreview = true
-                        } label: {
-                            Label("Export Timelapse", systemImage: "film")
-                                .foregroundStyle(Theme.Color.textPrimary)
-                        }
-                        .accessibilityLabel("Export Timelapse Flipbook Video")
+                // Mode (and Jump) stay in their own capsule. Export is a plain
+                // film icon in a separate trailing item. On iOS 26+, hide the
+                // shared toolbar background or liquid glass merges them into
+                // one pill (deployment target is 17 — API is availability-gated).
+                if #available(iOS 26.0, *) {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        archiveModeToolbarContent
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                    ToolbarItem(placement: .topBarTrailing) {
+                        archiveExportToolbarButton
+                    }
+                    .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        archiveModeToolbarContent
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        archiveExportToolbarButton
                     }
                 }
             }
@@ -125,10 +135,8 @@ struct ArchiveView: View {
             empty
         } else {
             VStack(spacing: 0) {
-                summaryHeader(model)
+                archiveCaption(model)
                 filterPillBar(model)
-                Divider()
-                    .overlay(Theme.Color.divider)
 
                 if model.filteredMoments.isEmpty {
                     filterEmpty(model)
@@ -188,37 +196,24 @@ struct ArchiveView: View {
         }
     }
 
-    // MARK: - Summary Header & Filter Pills
+    // MARK: - Caption & Filter Pills
 
-    private func summaryHeader(_ model: ArchiveViewModel) -> some View {
+    /// One quiet line under the nav — count (and span) only. Mode/Jump live in
+    /// the toolbar so photographs own the vertical space.
+    private func archiveCaption(_ model: ArchiveViewModel) -> some View {
         let count = model.filteredMoments.count
         let countString = "\(count) \(count == 1 ? "moment" : "moments")"
         let spanString = dateSpan(for: model.filteredMoments)
-        let sections = ArchiveSection.grouping(model.filteredMoments)
+        let line = spanString.map { "\(countString) · \($0)" } ?? countString
 
-        return HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                HStack(spacing: Theme.Spacing.s) {
-                    Text(countString)
-                        .font(Theme.Typography.screenTitle)
-                        .foregroundStyle(Theme.Color.textPrimary)
-
-                    if sections.count > 1 {
-                        monthJumpMenu(sections: sections)
-                    }
-                }
-                if let spanString {
-                    Text(spanString)
-                        .font(Theme.Typography.metadata)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                }
-            }
-            Spacer(minLength: Theme.Spacing.m)
-            viewModePicker
-        }
-        .padding(.horizontal, Theme.Spacing.m)
-        .padding(.top, Theme.Spacing.s)
-        .padding(.bottom, Theme.Spacing.s)
+        return Text(line)
+            .font(Theme.Typography.metadata)
+            .foregroundStyle(Theme.Color.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Theme.Spacing.m)
+            .padding(.top, Theme.Spacing.xs)
+            .padding(.bottom, Theme.Spacing.s)
+            .accessibilityAddTraits(.isHeader)
     }
 
     private func monthJumpMenu(sections: [ArchiveSection]) -> some View {
@@ -262,7 +257,7 @@ struct ArchiveView: View {
                 let count = model.count(for: filter)
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.15)) {
+                    withAppAnimation(.easeInOut(duration: 0.15)) {
                         model.selectedFilter = filter
                     }
                 } label: {
@@ -292,20 +287,20 @@ struct ArchiveView: View {
             Spacer()
         }
         .padding(.horizontal, Theme.Spacing.m)
-        .padding(.bottom, Theme.Spacing.m)
+        .padding(.bottom, Theme.Spacing.s)
     }
 
     private func filterEmpty(_ model: ArchiveViewModel) -> some View {
         VStack(spacing: Theme.Spacing.m) {
             Image(systemName: model.selectedFilter.iconName ?? "photo.stack")
-                .scaledDisplayFont(Theme.Size.iconStandalone, weight: .regular)
+                .scaledDisplayFont(Theme.Size.iconStandalone, weight: .light)
                 .foregroundStyle(Theme.Color.textTertiary)
                 .accessibilityHidden(true)
-            Text(filterEmptyTitle(for: model.selectedFilter))
-                .font(Theme.Typography.screenTitle)
+            Text("Nothing yet")
+                .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Color.textPrimary)
             Text(filterEmptyMessage(for: model.selectedFilter))
-                .font(Theme.Typography.body)
+                .font(Theme.Typography.metadata)
                 .foregroundStyle(Theme.Color.textSecondary)
                 .multilineTextAlignment(.center)
         }
@@ -313,19 +308,11 @@ struct ArchiveView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    private func filterEmptyTitle(for filter: ArchiveFilter) -> String {
-        switch filter {
-        case .all: return "No Moments"
-        case .bts: return "No Videos"
-        case .notes: return "No Notes"
-        }
-    }
-
     private func filterEmptyMessage(for filter: ArchiveFilter) -> String {
         switch filter {
-        case .all: return "No moments have been captured yet."
-        case .bts: return "None of your captured moments include Behind-the-Scenes video."
-        case .notes: return "None of your captured moments include micro-journal notes."
+        case .all: return "Capture a moment to fill this archive."
+        case .bts: return "No Behind-the-Scenes clips in this filter."
+        case .notes: return "No notes in this filter."
         }
     }
 
@@ -337,10 +324,37 @@ struct ArchiveView: View {
         return start == end ? start : "\(start) – \(end)"
     }
 
+    @ViewBuilder
+    private var archiveModeToolbarContent: some View {
+        if let model, !model.moments.isEmpty {
+            let sections = ArchiveSection.grouping(model.filteredMoments)
+            HStack(spacing: Theme.Spacing.s) {
+                if sections.count > 1 {
+                    monthJumpMenu(sections: sections)
+                }
+                viewModePicker
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var archiveExportToolbarButton: some View {
+        if let model, !model.moments.isEmpty {
+            Button {
+                isShowingTimelapsePreview = true
+            } label: {
+                Image(systemName: "film")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textPrimary)
+            }
+            .accessibilityLabel("Export Timelapse Flipbook Video")
+        }
+    }
+
     private var viewModePicker: some View {
         HStack(spacing: 0) {
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
+                withAppAnimation(.easeInOut(duration: 0.15)) {
                     viewMode = .grid
                 }
             } label: {
@@ -356,7 +370,7 @@ struct ArchiveView: View {
             .accessibilityLabel("Grid view")
 
             Button {
-                withAnimation(.easeInOut(duration: 0.15)) {
+                withAppAnimation(.easeInOut(duration: 0.15)) {
                     viewMode = .calendar
                 }
             } label: {

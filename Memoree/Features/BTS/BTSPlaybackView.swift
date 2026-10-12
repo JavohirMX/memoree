@@ -88,9 +88,26 @@ struct BTSPlaybackView: View {
                         .transition(.scale.combined(with: .opacity))
                 }
 
-                // Controls overlay: Mute button & Progress bar
+                // Controls: explicit play/pause (a11y) + mute; progress display-only.
                 VStack(spacing: Theme.Spacing.s) {
-                    HStack {
+                    HStack(spacing: Theme.Spacing.s) {
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            model.togglePlayback()
+                        } label: {
+                            Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
+                                .font(Theme.Typography.metadata.weight(.semibold))
+                                .foregroundStyle(Theme.Color.textPrimary)
+                                .padding(Theme.Spacing.s)
+                                .background(Theme.Color.canvas.opacity(0.6))
+                                .clipShape(Circle())
+                                .overlay {
+                                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.pressDip)
+                        .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
+
                         Spacer()
 
                         Button {

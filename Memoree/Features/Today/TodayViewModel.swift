@@ -62,6 +62,16 @@ final class TodayViewModel {
         return feedMoments.filter { !flashbackIDs.contains($0.id) }
     }
 
+    /// Chronological feed grouped by calendar day for section titles on Today.
+    var chronologicalFeedDayGroups: [FeedDayGroup] {
+        FeedDayGroup.grouping(chronologicalFeedMoments)
+    }
+
+    /// Clock time only — the day title lives on the section, not on every card.
+    func feedCardTime(for moment: MomentFacts) -> String {
+        moment.capturedAt.formatted(date: .omitted, time: .shortened)
+    }
+
     /// Maximum active image pairs cached in memory for the feed.
     static let maxFeedCacheSize = 15
     private var feedAccessOrder: [UUID] = []

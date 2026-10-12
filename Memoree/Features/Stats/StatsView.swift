@@ -19,6 +19,7 @@ struct StatsView: View {
     @State private var model: StatsViewModel?
     @State private var selectedMoment: MomentFacts?
     @State private var isConfirmingDelete = false
+    @State private var isShowingDeleteError = false
 
     var body: some View {
         NavigationStack {
@@ -61,6 +62,19 @@ struct StatsView: View {
         } message: {
             Text(Self.deleteMessage)
         }
+        .alert(
+            "Couldn’t remove from archive",
+            isPresented: $isShowingDeleteError
+        ) {
+            Button("OK", role: .cancel) {
+                model?.clearDeleteError()
+            }
+        } message: {
+            Text(model?.deleteError ?? "Please try again.")
+        }
+        .onChange(of: model?.deleteError) { _, newValue in
+            isShowingDeleteError = newValue != nil
+        }
         // Lifecycle on the outermost container, never on the `if let model`
         // branch — a `.task` there only runs once the model exists, so it never
         // runs. That black-screened the Today screen in Phase 5.
@@ -81,14 +95,11 @@ struct StatsView: View {
 
     private func deleteSelected() {
         guard let model, let selectedMoment else { return }
-        do {
-            try model.delete(selectedMoment)
-            // Detail is showing a moment that no longer exists.
+        model.delete(selectedMoment)
+        // Only dismiss detail when the tombstone landed — a failure leaves the
+        // sheet open so the user can retry (same as Archive).
+        if model.deleteError == nil {
             self.selectedMoment = nil
-        } catch {
-            // A failed tombstone leaves the moment in the list — honest outcome.
-            // No alert: retry is the only move, and the store is asked again on
-            // the next launch.
         }
     }
 

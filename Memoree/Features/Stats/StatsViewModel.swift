@@ -90,15 +90,32 @@ final class StatsViewModel {
     /// **Does not touch Photos.** Same contract as `ArchiveViewModel.delete`
     /// (ADR-008): add-only authorisation cannot remove assets, so the photos
     /// stay in the camera roll and only the archive entry disappears.
-    func delete(_ moment: MomentFacts) throws {
+    /// Failures land in `deleteError` (same contract as Archive).
+    private(set) var deleteError: String?
+
+    func delete(_ moment: MomentFacts) {
+        deleteError = nil
         guard let row = environment.momentStore.allMoments
             .first(where: { $0.id == moment.id })
-        else { return }
+        else {
+            deleteError = "That moment is no longer in the archive."
+            return
+        }
 
-        try environment.momentStore.delete(row)
+        do {
+            try environment.momentStore.delete(row)
+        } catch {
+            deleteError = error.localizedDescription
+            return
+        }
+
         // Streak, habit strip, and history all read from the store — reload so
         // a tombstone cannot leave a stale count on screen.
         load()
+    }
+
+    func clearDeleteError() {
+        deleteError = nil
     }
 
     // MARK: - Copy

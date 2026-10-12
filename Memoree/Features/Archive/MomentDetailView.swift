@@ -216,7 +216,7 @@ struct MomentDetailView: View {
                 inset: inset,
                 insetWidth: Theme.Size.insetStandard,
                 onTapInset: {
-                    withAnimation(.easeInOut(duration: 0.25)) {
+                    withAppAnimation(.easeInOut(duration: 0.25)) {
                         isFrontLarge.toggle()
                     }
                 },

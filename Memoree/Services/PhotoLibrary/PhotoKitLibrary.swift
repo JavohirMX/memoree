@@ -299,6 +299,15 @@ struct PhotoKitLibrary: PhotoLibraryService {
         return identifier
     }
 
+    /// Renders `image` into a fixed-size pixel buffer, letterboxed on black.
+    ///
+    /// **Aspect-fit, not stretch.** Stretching every rear photo into 1080×1440
+    /// made landscape and square frames look like the same 3:4 crop. Filling
+    /// with opaque black and drawing into `AspectFitRect` keeps each photo's
+    /// shape; bars match Memoree's canvas (`#000000`).
+    ///
+    /// Draws through `UIImage.draw(in:)` so EXIF orientation is applied — raw
+    /// `cgImage` width/height can disagree with the displayed aspect.
     private static func pixelBuffer(from image: UIImage, size: CGSize) -> CVPixelBuffer? {
         var pixelBuffer: CVPixelBuffer?
         let attrs = [
@@ -329,9 +338,20 @@ struct PhotoKitLibrary: PhotoLibraryService {
             bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue
         )
 
-        guard let ctx = context, let cgImage = image.cgImage else { return nil }
-        ctx.clear(CGRect(origin: .zero, size: size))
-        ctx.draw(cgImage, in: CGRect(origin: .zero, size: size))
+        guard let ctx = context else { return nil }
+
+        // Opaque black canvas — Memoree canvas, not a transparent clear.
+        ctx.setFillColor(red: 0, green: 0, blue: 0, alpha: 1)
+        ctx.fill(CGRect(origin: .zero, size: size))
+
+        let fit = AspectFitRect.rect(for: image.size, in: size)
+        // Flip to UIKit top-left so `UIImage.draw` respects orientation.
+        UIGraphicsPushContext(ctx)
+        defer { UIGraphicsPopContext() }
+        ctx.translateBy(x: 0, y: size.height)
+        ctx.scaleBy(x: 1, y: -1)
+        image.draw(in: fit)
+
         return buffer
     }
 
@@ -462,7 +482,9 @@ struct PhotoKitLibrary: PhotoLibraryService {
             manager.requestImage(
                 for: asset,
                 targetSize: targetSize,
-                contentMode: .aspectFill,
+                // Aspect-fit: flipbook letterboxes on black; fill would crop
+                // before the encoder and fight the aspect-fit draw.
+                contentMode: .aspectFit,
                 options: options
             ) { image, _ in
                 // Exactly one callback in high-quality mode.

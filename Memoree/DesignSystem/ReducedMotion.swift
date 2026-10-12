@@ -107,3 +107,18 @@ extension View {
         modifier(ReduceMotionObserver())
     }
 }
+
+/// Transactional animation that becomes a no-op under Reduce Motion.
+///
+/// Pair of `View.appAnimation` for call sites that need `withAnimation { }`
+/// rather than `.animation(_:value:)`. Reads UIKit's snapshot (same route as
+/// haptics) because there is no SwiftUI environment outside a view body.
+func withAppAnimation<Result>(
+    _ animation: Animation? = .default,
+    _ body: () throws -> Result
+) rethrows -> Result {
+    if UIAccessibility.isReduceMotionEnabled {
+        return try body()
+    }
+    return try withAnimation(animation, body)
+}

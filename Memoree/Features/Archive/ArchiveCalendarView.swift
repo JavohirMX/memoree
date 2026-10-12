@@ -45,7 +45,7 @@ struct ArchiveCalendarView: View {
             }
             .onChange(of: targetMonth) { _, newMonth in
                 if let newMonth {
-                    withAnimation(.easeInOut(duration: 0.3)) {
+                    withAppAnimation(.easeInOut(duration: 0.3)) {
                         proxy.scrollTo(newMonth, anchor: .top)
                     }
                     targetMonth = nil
@@ -110,78 +110,77 @@ struct ArchiveCalendarView: View {
         return Button {
             onOpen(moment)
         } label: {
-            ZStack {
-                Theme.Color.surface
-                if let image = images[moment.id] {
-                    Image(uiImage: image)
-                        .resizable()
-                        .scaledToFill()
-                } else if missing.contains(moment.id) {
-                    Image(systemName: "photo")
-                        .font(Theme.Typography.retakePill)
-                        .foregroundStyle(Theme.Color.textTertiary)
+            // Day number lives *below* the circle so it cannot sit next to the
+            // multi-capture count and read as a second date (e.g. "4 5").
+            VStack(spacing: Theme.Spacing.xs) {
+                ZStack {
+                    Theme.Color.surface
+                    if let image = images[moment.id] {
+                        Image(uiImage: image)
+                            .resizable()
+                            .scaledToFill()
+                    } else if missing.contains(moment.id) {
+                        Image(systemName: "photo")
+                            .font(Theme.Typography.retakePill)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
                 }
-            }
-            .aspectRatio(1, contentMode: .fit)
-            .clipped()
-            .clipShape(Circle())
-            .overlay {
-                Circle()
-                    .strokeBorder(isToday ? Theme.Color.textPrimary : Theme.Color.divider, lineWidth: 1)
-            }
-            .contentShape(Circle())
-            .overlay(alignment: .bottomTrailing) {
+                .aspectRatio(1, contentMode: .fit)
+                .clipped()
+                .clipShape(Circle())
+                .overlay {
+                    Circle()
+                        .strokeBorder(isToday ? Theme.Color.textPrimary : Theme.Color.divider, lineWidth: 1)
+                }
+                .contentShape(Circle())
+                .overlay(alignment: .topLeading) {
+                    // ADR-030: more than one capture. `×N` — not a bare digit —
+                    // so it cannot be read as a day-of-month.
+                    if item.hasMultipleMoments {
+                        Text("×\(item.momentCount)")
+                            .font(Theme.Typography.retakePill)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                            .padding(.horizontal, Theme.Spacing.xs)
+                            .padding(.vertical, 2)
+                            .background(Theme.Color.canvas.opacity(0.6))
+                            .clipShape(Capsule())
+                            .padding(Theme.Spacing.xs)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .overlay(alignment: .topTrailing) {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        if moment.hasBTS {
+                            Image(systemName: "video.fill")
+                                .font(Theme.Typography.retakePill)
+                                .foregroundStyle(Theme.Color.textPrimary)
+                                .padding(.horizontal, Theme.Spacing.xs)
+                                .padding(.vertical, 2)
+                                .background(Theme.Color.canvas.opacity(0.6))
+                                .clipShape(Capsule())
+                        }
+                        if let note = moment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            Image(systemName: "text.bubble.fill")
+                                .font(Theme.Typography.retakePill)
+                                .foregroundStyle(Theme.Color.textPrimary)
+                                .padding(.horizontal, Theme.Spacing.xs)
+                                .padding(.vertical, 2)
+                                .background(Theme.Color.canvas.opacity(0.6))
+                                .clipShape(Capsule())
+                        }
+                    }
+                    .padding(Theme.Spacing.xs)
+                    .accessibilityHidden(true)
+                }
+
                 if let dayNumber = item.dayNumber {
                     Text("\(dayNumber)")
                         .font(Theme.Typography.retakePill)
-                        .foregroundStyle(Theme.Color.textPrimary)
-                        .padding(.horizontal, Theme.Spacing.xs)
-                        .padding(.vertical, 2)
-                        .background(Theme.Color.canvas.opacity(0.6))
-                        .clipShape(Capsule())
-                        .padding(Theme.Spacing.xs)
+                        .foregroundStyle(
+                            isToday ? Theme.Color.textPrimary : Theme.Color.textSecondary
+                        )
                         .accessibilityHidden(true)
                 }
-            }
-            .overlay(alignment: .bottomLeading) {
-                // ADR-030: more than one capture on the day. Count only — the
-                // cell still opens the newest moment; the detail carousel is
-                // how the rest are reached.
-                if item.hasMultipleMoments {
-                    Text("\(item.momentCount)")
-                        .font(Theme.Typography.retakePill)
-                        .foregroundStyle(Theme.Color.textPrimary)
-                        .padding(.horizontal, Theme.Spacing.xs)
-                        .padding(.vertical, 2)
-                        .background(Theme.Color.canvas.opacity(0.6))
-                        .clipShape(Capsule())
-                        .padding(Theme.Spacing.xs)
-                        .accessibilityHidden(true)
-                }
-            }
-            .overlay(alignment: .topTrailing) {
-                HStack(spacing: Theme.Spacing.xs) {
-                    if moment.hasBTS {
-                        Image(systemName: "video.fill")
-                            .font(Theme.Typography.retakePill)
-                            .foregroundStyle(Theme.Color.textPrimary)
-                            .padding(.horizontal, Theme.Spacing.xs)
-                            .padding(.vertical, 2)
-                            .background(Theme.Color.canvas.opacity(0.6))
-                            .clipShape(Capsule())
-                    }
-                    if let note = moment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Image(systemName: "text.bubble.fill")
-                            .font(Theme.Typography.retakePill)
-                            .foregroundStyle(Theme.Color.textPrimary)
-                            .padding(.horizontal, Theme.Spacing.xs)
-                            .padding(.vertical, 2)
-                            .background(Theme.Color.canvas.opacity(0.6))
-                            .clipShape(Capsule())
-                    }
-                }
-                .padding(Theme.Spacing.xs)
-                .accessibilityHidden(true)
             }
         }
         .buttonStyle(.pressDip)
@@ -198,23 +197,36 @@ struct ArchiveCalendarView: View {
     private func emptyCell(item: CalendarDayItem) -> some View {
         let isToday = item.date.map { Calendar.current.isDateInToday($0) } ?? false
 
-        return ZStack {
-            Theme.Color.surface.opacity(item.isFuture ? 0.25 : 0.5)
-            if let dayNumber = item.dayNumber {
-                Text("\(dayNumber)")
-                    .font(Theme.Typography.retakePill)
-                    .foregroundStyle(
-                        isToday ? Theme.Color.textPrimary : (item.isFuture ? Theme.Color.textTertiary.opacity(0.4) : Theme.Color.textTertiary)
-                    )
+        // Same VStack chrome as captured cells so the grid row height stays even
+        // when a neighbouring day has its number under the circle.
+        return VStack(spacing: Theme.Spacing.xs) {
+            ZStack {
+                Theme.Color.surface.opacity(item.isFuture ? 0.25 : 0.5)
+                if let dayNumber = item.dayNumber {
+                    Text("\(dayNumber)")
+                        .font(Theme.Typography.retakePill)
+                        .foregroundStyle(
+                            isToday
+                                ? Theme.Color.textPrimary
+                                : (item.isFuture
+                                    ? Theme.Color.textTertiary.opacity(0.4)
+                                    : Theme.Color.textTertiary)
+                        )
+                }
             }
-        }
-        .aspectRatio(1, contentMode: .fit)
-        .clipShape(Circle())
-        .overlay {
-            if isToday {
-                Circle()
-                    .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+            .aspectRatio(1, contentMode: .fit)
+            .clipShape(Circle())
+            .overlay {
+                if isToday {
+                    Circle()
+                        .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                }
             }
+
+            Text(" ")
+                .font(Theme.Typography.retakePill)
+                .accessibilityHidden(true)
+                .hidden()
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(

@@ -16,6 +16,10 @@
 		161F97091524A8928369080E /* ArchiveViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22F42B6A1FFA91C8F16DB76 /* ArchiveViewModelTests.swift */; };
 		191D61389F688CF99EECDA7A /* MemoreeWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 5B2149D7AF9FDE103300B8E5 /* MemoreeWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		1DECEE918B1F4286C69BB28A /* SameDayFlipbook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8D3004AC44878DA03F1EA1 /* SameDayFlipbook.swift */; };
+		7A2B3C4D5E6F708192A3B4C5 /* FeedDayGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1B2C3D4E5F60718293A4B5 /* FeedDayGroup.swift */; };
+		8B3C4D5E6F708192A3B4C5D6 /* FeedDayGroupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B2C3D4E5F60718293A4B5C6 /* FeedDayGroupTests.swift */; };
+		4A9B2D3C0E1F5B6C7D8E9F0A /* AspectFitRect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8A1C2B9D0E4A5B6C7D8E9F /* AspectFitRect.swift */; };
+		6C1D4F5E2A3B7D8E9F0A1B2C /* AspectFitRectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0C3E4D1F2A6C7D8E9F0A1B /* AspectFitRectTests.swift */; };
 		24C6817526B83700CCF2064D /* MomentNotificationCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4877F0D1AC761FBA1E34DD /* MomentNotificationCopy.swift */; };
 		2B9D319B2D985A6015711CCF /* MomentCommitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10DEE387D182EF879E7D835F /* MomentCommitTests.swift */; };
 		2D8E0A48AA7C0AA632160469 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10346D5E089B83B75AC3EE06 /* CameraPreview.swift */; };
@@ -222,6 +226,10 @@
 		5813FE0F46A7A66B303ABBA0 /* ShareTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareTests.swift; sourceTree = "<group>"; };
 		5B2149D7AF9FDE103300B8E5 /* MemoreeWidget.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = MemoreeWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		5C8D3004AC44878DA03F1EA1 /* SameDayFlipbook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SameDayFlipbook.swift; sourceTree = "<group>"; };
+		6A1B2C3D4E5F60718293A4B5 /* FeedDayGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDayGroup.swift; sourceTree = "<group>"; };
+		7B2C3D4E5F60718293A4B5C6 /* FeedDayGroupTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedDayGroupTests.swift; sourceTree = "<group>"; };
+		3F8A1C2B9D0E4A5B6C7D8E9F /* AspectFitRect.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AspectFitRect.swift; sourceTree = "<group>"; };
+		5B0C3E4D1F2A6C7D8E9F0A1B /* AspectFitRectTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AspectFitRectTests.swift; sourceTree = "<group>"; };
 		5CF0CFAC6878E9DBDB669C65 /* CaptureMomentIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureMomentIntent.swift; sourceTree = "<group>"; };
 		609A5ED40E5FA08F137784E6 /* LocalMomentScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMomentScheduler.swift; sourceTree = "<group>"; };
 		60B2C59AAE8043E4474DAEF1 /* Memoree.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Memoree.entitlements; sourceTree = "<group>"; };
@@ -363,6 +371,7 @@
 			isa = PBXGroup;
 			children = (
 				44D954A88FE999BC103F64D3 /* ArchiveSection.swift */,
+				6A1B2C3D4E5F60718293A4B5 /* FeedDayGroup.swift */,
 				CC7F78EA51E71A3AC4786D36 /* Models.swift */,
 				C4C2D1BE256DE2D1E2F0395B /* MomentFacts.swift */,
 				5C8D3004AC44878DA03F1EA1 /* SameDayFlipbook.swift */,
@@ -426,6 +435,7 @@
 		75D982021B44DFCBAF9A46F9 /* Support */ = {
 			isa = PBXGroup;
 			children = (
+				3F8A1C2B9D0E4A5B6C7D8E9F /* AspectFitRect.swift */,
 				5CF0CFAC6878E9DBDB669C65 /* CaptureMomentIntent.swift */,
 				52602E359E6E99263148A8C4 /* CountdownFormatter.swift */,
 				12B9524535B2EE546BAF7097 /* DayIdentifier.swift */,
@@ -488,6 +498,7 @@
 			children = (
 				4FDADB8BA0AAF84D9415161C /* AlbumTests.swift */,
 				AAF110D7C2C9E48ECFB45F3E /* AppIconTests.swift */,
+				5B0C3E4D1F2A6C7D8E9F0A1B /* AspectFitRectTests.swift */,
 				3BA9959A963B966FE3C1F949 /* ArchiveSectionTests.swift */,
 				B22F42B6A1FFA91C8F16DB76 /* ArchiveViewModelTests.swift */,
 				E2C2D41238C107D673A53CDF /* BTSFlowTests.swift */,
@@ -522,6 +533,7 @@
 				C5EB6C4196004851B251F321 /* Phase2FeatureTests.swift */,
 				0419E1B7E777D5F8FD093B2A /* PhotoLibraryWritePathTests.swift */,
 				C035884EA3B2B9DB84A89A50 /* PhotoMetadataInjectorTests.swift */,
+				7B2C3D4E5F60718293A4B5C6 /* FeedDayGroupTests.swift */,
 				706A7274F260EA460A887F3C /* ReduceMotionTests.swift */,
 				07931FE867FFA30A0320CB99 /* ResumeGateTests.swift */,
 				A86B85306E9B8C57B8C42523 /* SameDayFlipbookTests.swift */,
@@ -850,6 +862,8 @@
 				7E97C2F911CD63819710B81A /* PressDipStyle.swift in Sources */,
 				98E12ACAA27676F8118027FE /* ReducedMotion.swift in Sources */,
 				1DECEE918B1F4286C69BB28A /* SameDayFlipbook.swift in Sources */,
+				7A2B3C4D5E6F708192A3B4C5 /* FeedDayGroup.swift in Sources */,
+				4A9B2D3C0E1F5B6C7D8E9F0A /* AspectFitRect.swift in Sources */,
 				4ED67FE454E1BB3FC03BC2F7 /* ScaledFont.swift in Sources */,
 				E26897587A47E3148A5194C4 /* ScrollableAtAccessibilitySizes.swift in Sources */,
 				A31930AA78BD5E3DAFE695CD /* SequentialCaptureService.swift in Sources */,
@@ -880,6 +894,7 @@
 			files = (
 				7F5F90519DE12436C2DDE5C1 /* AlbumTests.swift in Sources */,
 				956C1799F6865DC7B0B2B1C9 /* AppIconTests.swift in Sources */,
+				6C1D4F5E2A3B7D8E9F0A1B2C /* AspectFitRectTests.swift in Sources */,
 				A27747CA220A81F61074B8C7 /* ArchiveSectionTests.swift in Sources */,
 				161F97091524A8928369080E /* ArchiveViewModelTests.swift in Sources */,
 				4E31275E6D7C270EEBA35CC2 /* BTSFlowTests.swift in Sources */,
@@ -896,6 +911,7 @@
 				A7AE29B08C3B84BD814A12C3 /* DynamicTypeTests.swift in Sources */,
 				6260543FF69E58BEF3018870 /* FrameWaitDiagnostics.swift in Sources */,
 				7DE10F6283151E4C88A9D9A7 /* HapticFeedbackTests.swift in Sources */,
+				8B3C4D5E6F708192A3B4C5D6 /* FeedDayGroupTests.swift in Sources */,
 				BA18B7831DE29F9F25345A46 /* LiveCaptureRunGuard.swift in Sources */,
 				511E1387F92595CA9F14D137 /* LiveCaptureTests.swift in Sources */,
 				AF4B5A80BCFCBB8A9E21CAAE /* LivePhotoLibraryTests.swift in Sources */,

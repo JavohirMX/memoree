@@ -213,6 +213,41 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         movieOutput
     }
 
+    /// Microphone input for Behind-the-Scenes, separate from the camera input.
+    ///
+    /// **Not torn down by `attachInput`.** Camera swaps remove only `activeInput`
+    /// (video). Audio must survive rear↔front so a mid-moment swap does not mute
+    /// the second segment. Cleared on `rebuildSession` with the doomed session.
+    private var audioInput: AVCaptureDeviceInput?
+
+    /// Whether BTS asked for a mic input on this session (mic authorized).
+    ///
+    /// Survives rebuilds the same way `wantsMovieOutput` does — the flag is the
+    /// intent; attaching is best-effort and may fail without blocking capture.
+    /// `LiveBTSRecorder` sets `hasAudio` from the return value of
+    /// `syncAudioInput`, not from auth alone — auth without an attached input
+    /// still produces a silent file.
+    private var wantsAudioInput = false
+
+    /// Attaches or removes the microphone input for BTS recording.
+    ///
+    /// **Best-effort.** A missing mic device or `canAddInput == false` leaves the
+    /// session video-only and returns `false` — ADR-013's silent clip, never a
+    /// blocked moment. Call after lazy mic authorization, before
+    /// `startRecording`.
+    ///
+    /// - Returns: `true` when an audio input is on the session after the call.
+    @discardableResult
+    func syncAudioInput(authorized: Bool) async -> Bool {
+        await withCheckedContinuation { c in
+            queue.async {
+                self.wantsAudioInput = authorized && self.wantsMovieOutput
+                let attached = self.applyAudioInput()
+                c.resume(returning: attached)
+            }
+        }
+    }
+
     private var activeInput: AVCaptureDeviceInput?
 
     /// The live camera, once a session is configured.
@@ -655,12 +690,16 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
                 // controller owns rather than the one that happened to break.
                 movieOutput = nil
                 activeInput = nil
+                // Audio input belonged to the doomed session; re-apply after
+                // configure if BTS still wants it (`wantsAudioInput` survives).
+                audioInput = nil
 
                 do {
                     // Reopens on whichever camera is live, so a rebuild after a
                     // failed swap restores the camera the user was composing
                     // with rather than a default.
                     try configureSession(startingAt: activePosition)
+                    _ = applyAudioInput()
                     session.startRunning()
                     state = .running
                     c.resume()
@@ -963,6 +1002,61 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
 
         try attachInput(at: position)
         try applyFormat(for: activePosition)
+        // Mic may already be authorized from a prior BTS open; attach now so a
+        // rebuild mid-recording regains audio without waiting for startRecording.
+        _ = applyAudioInput()
+    }
+
+    /// Adds or removes the microphone input. Must run on `queue`.
+    ///
+    /// Returns whether an audio input is attached afterwards. Failure is
+    /// swallowed — photographs still commit; the clip is silent (ADR-013).
+    @discardableResult
+    private func applyAudioInput() -> Bool {
+        // Drop a stale reference if the session no longer holds it (rebuild).
+        if let existing = audioInput {
+            let stillAttached = session.inputs.contains { ($0 as AnyObject) === existing }
+            if !stillAttached {
+                audioInput = nil
+            }
+        }
+
+        let shouldHaveAudio = wantsAudioInput && wantsMovieOutput
+
+        if !shouldHaveAudio {
+            if let existing = audioInput {
+                session.beginConfiguration()
+                session.removeInput(existing)
+                session.commitConfiguration()
+                audioInput = nil
+            }
+            return false
+        }
+
+        if audioInput != nil {
+            return true
+        }
+
+        guard let device = AVCaptureDevice.default(for: .audio) else {
+            return false
+        }
+
+        let input: AVCaptureDeviceInput
+        do {
+            input = try AVCaptureDeviceInput(device: device)
+        } catch {
+            return false
+        }
+
+        session.beginConfiguration()
+        guard session.canAddInput(input) else {
+            session.commitConfiguration()
+            return false
+        }
+        session.addInput(input)
+        session.commitConfiguration()
+        audioInput = input
+        return true
     }
 
     /// Adds `output` to the session, unless it is already there.

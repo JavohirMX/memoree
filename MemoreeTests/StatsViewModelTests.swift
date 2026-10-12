@@ -297,7 +297,8 @@ struct StatsViewModelTests {
         #expect(model.days.count == 3)
 
         let middle = model.days[1]
-        try model.delete(middle)
+        model.delete(middle)
+        #expect(model.deleteError == nil)
 
         #expect(model.days.count == 2)
         #expect(!model.days.contains { $0.id == middle.id })

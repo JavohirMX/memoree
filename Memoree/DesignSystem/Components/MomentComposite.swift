@@ -78,11 +78,15 @@ struct MomentComposite: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
                     .contentShape(Rectangle())
-                    .onTapGesture(count: 2) {
-                        onDoubleTapLarge?()
-                    }
-                    .onTapGesture(count: 1) {
-                        onTapLarge?()
+                    .onTapGesture {
+                        // Single tap only — double-tap flip was undiscoverable.
+                        // Prefer `onTapLarge`; fall back to legacy double-tap
+                        // handler only when no single-tap action is wired.
+                        if let onTapLarge {
+                            onTapLarge()
+                        } else {
+                            onDoubleTapLarge?()
+                        }
                     }
             } else {
                 Theme.Color.canvas
@@ -92,48 +96,52 @@ struct MomentComposite: View {
                 insetLayer(inset)
             }
 
-            if let onPlayBTS {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onPlayBTS()
-                } label: {
-                    Image(systemName: "play.fill")
-                        .font(Theme.Typography.retakePill)
-                        .foregroundStyle(Theme.Color.textPrimary)
-                        .padding(Theme.Spacing.s)
-                        .background(Theme.Color.canvas.opacity(0.6))
-                        .clipShape(Circle())
-                        .overlay {
-                            Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
-                        }
+            // Flip (leading) and BTS (trailing) are independent — both can show.
+            HStack(spacing: Theme.Spacing.s) {
+                if let onFlip {
+                    compositeChromeButton(
+                        systemName: "arrow.triangle.2.circlepath",
+                        label: "Flip camera angles",
+                        action: onFlip
+                    )
                 }
-                .buttonStyle(.pressDip)
-                .padding(Theme.Spacing.m)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .accessibilityLabel("Play Behind the Scenes clip")
-            } else if let onFlip {
-                Button {
-                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                    onFlip()
-                } label: {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(Theme.Typography.retakePill)
-                        .foregroundStyle(Theme.Color.textPrimary)
-                        .padding(Theme.Spacing.s)
-                        .background(Theme.Color.canvas.opacity(0.6))
-                        .clipShape(Circle())
-                        .overlay {
-                            Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
-                        }
+                Spacer(minLength: 0)
+                if let onPlayBTS {
+                    compositeChromeButton(
+                        systemName: "play.fill",
+                        label: "Play Behind the Scenes clip",
+                        action: onPlayBTS
+                    )
                 }
-                .buttonStyle(.pressDip)
-                .padding(Theme.Spacing.m)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-                .accessibilityLabel("Flip camera angles")
             }
+            .padding(Theme.Spacing.m)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipped()
+    }
+
+    private func compositeChromeButton(
+        systemName: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
+            Image(systemName: systemName)
+                .font(Theme.Typography.retakePill)
+                .foregroundStyle(Theme.Color.textPrimary)
+                .padding(Theme.Spacing.s)
+                .background(Theme.Color.canvas.opacity(0.6))
+                .clipShape(Circle())
+                .overlay {
+                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                }
+        }
+        .buttonStyle(.pressDip)
+        .accessibilityLabel(label)
     }
 
     @ViewBuilder

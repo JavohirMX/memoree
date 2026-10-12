@@ -116,11 +116,7 @@ struct SettingsView: View {
                 // Explains the mechanic per ADR-023, ADR-032, and ADR-036:
                 // capturing is permitted at any time, every memory counts,
                 // and the window decides the spontaneous prompt.
-                Text("""
-                    Memoree picks one random moment inside this window each day \
-                    and sends a spontaneous prompt. You can capture memories at \
-                    any time—every memory counts toward your streak.
-                    """)
+                Text("Random daily prompt inside this window. Capture anytime — every day counts.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -152,18 +148,8 @@ struct SettingsView: View {
             SettingsCard {
                 // Stated as a consequence, not a warning (ADR-036).
                 Text(remindersAuthorized
-                    ? """
-                      Memoree sends a spontaneous daily prompt, plus an evening \
-                      streak-saver reminder at 21:00 if you haven't captured a \
-                      memory yet. Your phone does the scheduling; nothing is \
-                      sent over the network.
-                      """
-                    : """
-                      Notifications are off, so Memoree cannot alert you when \
-                      your spontaneous moment arrives. This app can only ask \
-                      once, so re-enabling them has to happen in the system \
-                      Settings app.
-                      """)
+                    ? "Daily prompt at a random time, plus a 21:00 nudge if you haven’t shot yet. Scheduled on-device only."
+                    : "Notifications are off. Memoree can only ask once — turn them back on in system Settings.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -211,14 +197,21 @@ struct SettingsView: View {
             SettingsSectionHeader("Archive & Data", icon: "archivebox")
 
             SettingsCard {
-                Text("""
-                    A complete record of every moment: dates, timestamps, and \
-                    streak status. The photographs are not in it—they already live \
-                    in your Photos library.
-                    """)
+                Text("JSON of dates and streak facts. Photos stay in your library — this is a record, not a restore.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
+
+                DisclosureGroup("About export") {
+                    Text("The file cannot rebuild your photographs. It only lists what Memoree remembers about each moment.")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Theme.Spacing.xs)
+                }
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .tint(Theme.Color.textSecondary)
 
                 if let failure = exportFailure {
                     Text(failure)
@@ -303,11 +296,7 @@ struct SettingsView: View {
             SettingsSectionHeader("Behind the Scenes", icon: "video")
 
             SettingsCard {
-                Text("""
-                    Records a few seconds of video around the shutter, so you can see \
-                    the moment rather than only the picture. Off by default—turning \
-                    it on is the only thing that asks for the microphone.
-                    """)
+                Text("Short clip around the shutter. Off by default — enabling asks for the microphone.")
                     .font(Theme.Typography.metadata)
                     .foregroundStyle(Theme.Color.textSecondary)
 
@@ -507,20 +496,16 @@ struct SettingsView: View {
 
                 SettingsDivider()
 
-                VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
-                    Text("Permanence")
-                        .font(Theme.Typography.body)
-                        .foregroundStyle(Theme.Color.textPrimary)
-
-                    Text("""
-                        Memoree holds add-only permission. It never deletes from \
-                        your Photos library, and all photographs remain in your \
-                        library even if you delete the app.
-                        """)
+                DisclosureGroup("About Photos permission") {
+                    Text("Add-only access. Memoree never deletes from Photos. Your pictures stay if you delete the app.")
                         .font(Theme.Typography.metadata)
                         .foregroundStyle(Theme.Color.textSecondary)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Theme.Spacing.xs)
                 }
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .tint(Theme.Color.textSecondary)
             }
         }
     }

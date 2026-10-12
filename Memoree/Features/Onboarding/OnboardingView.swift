@@ -57,11 +57,8 @@ struct OnboardingView: View {
             stepBody(
                 title: "Memoree",
                 body: """
-                One photograph of your actual life, taken at a moment you \
-                cannot predict, saved to the library you already own.
-
-                Nothing to sign up for. Nothing to share. Nothing that isn't \
-                yours.
+                A daily photo of your life — no account, no feed. \
+                Saved to the Photos library you already own.
                 """
             )
 
@@ -69,11 +66,8 @@ struct OnboardingView: View {
             stepBody(
                 title: "When should we interrupt you?",
                 body: """
-                Once a day, at a random moment inside your window, \
-                Memoree will ask for a photo.
-
-                You can photograph whenever you like — only a photo taken \
-                during that moment counts towards your streak.
+                Once a day Memoree asks for a photo at a random time in your window. \
+                Capture anytime; every day you shoot counts. The window only times the reminder.
                 """
             )
 
@@ -81,10 +75,8 @@ struct OnboardingView: View {
             stepBody(
                 title: "The camera",
                 body: """
-                Your moment is two photographs: the scene with the rear camera, \
-                and you with the front. Taken together, kept unedited.
-
-                Photos never leave this device.
+                Two photographs each moment: the scene, and you. Unedited. \
+                Nothing leaves this device.
                 """
             )
 
@@ -116,11 +108,11 @@ struct OnboardingView: View {
     /// predictable.
     ///
     /// The window sets **when the notification arrives** and nothing else
-    /// (ADR-023). Capture is permitted at any time; only a photograph taken
-    /// inside the resulting two minutes grows the streak. Which is why this
-    /// screen can be shown at all — asking someone to narrow the band that
-    /// decides when they get asked is a real preference, and it would be a
-    /// strange thing to collect if it had no effect.
+    /// (ADR-023, ADR-032). Capture is permitted at any time; every capture day
+    /// counts toward the streak. Which is why this screen can be shown at all —
+    /// asking someone to narrow the band that decides when they get asked is a
+    /// real preference, and it would be a strange thing to collect if it had no
+    /// effect.
     ///
     /// The picker itself is `WindowPicker`, shared with Settings. The reason it
     /// can be shared is that on first run there is nothing to re-derive: no

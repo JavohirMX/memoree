@@ -228,7 +228,7 @@ struct CameraView: View {
     /// system.
     private func focus(_ model: CameraViewModel, at location: CGPoint) {
         focusFadeTask?.cancel()
-        withAnimation(.none) {
+        withAppAnimation(.none) {
             focusPoint = location
             isFocusRingVisible = true
         }
@@ -238,7 +238,7 @@ struct CameraView: View {
             try? await Task.sleep(for: .seconds(1.2))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                withAnimation(.easeOut(duration: 0.35)) { isFocusRingVisible = false }
+                withAppAnimation(.easeOut(duration: 0.35)) { isFocusRingVisible = false }
             }
             // Kept on screen at low opacity rather than removed, because a ring
             // that vanishes and reappears on each tap is jumpier than one that
@@ -424,7 +424,7 @@ struct CameraView: View {
     private func triggerShutterFlash() {
         isShutterFlashing = true
         shutterFlashOpacity = 0.85
-        withAnimation(.easeOut(duration: 0.1)) {
+        withAppAnimation(.easeOut(duration: 0.1)) {
             shutterFlashOpacity = 0
         }
         Task {
@@ -545,7 +545,10 @@ struct CameraView: View {
 
             TextField(
                 "Add a note...",
-                text: $bindableModel.draftNote,
+                text: Binding(
+                    get: { bindableModel.draftNote },
+                    set: { bindableModel.draftNote = String($0.prefix(CameraViewModel.noteCharacterLimit)) }
+                ),
                 prompt: Text("Add a note...").foregroundStyle(Theme.Color.textSecondary)
             )
             .font(Theme.Typography.body)
@@ -554,9 +557,13 @@ struct CameraView: View {
             .submitLabel(.done)
 
             if !model.draftNote.isEmpty {
-                Text("\(model.draftNote.count)/80")
+                Text("\(model.draftNote.count)/\(CameraViewModel.noteCharacterLimit)")
                     .font(Theme.Typography.retakePill)
-                    .foregroundStyle(model.draftNote.count > 80 ? Theme.Color.destructive : Theme.Color.textTertiary)
+                    .foregroundStyle(
+                        model.draftNote.count >= CameraViewModel.noteCharacterLimit
+                            ? Theme.Color.textSecondary
+                            : Theme.Color.textTertiary
+                    )
             }
         }
         .padding(.horizontal, Theme.Spacing.m)

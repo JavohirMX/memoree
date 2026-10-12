@@ -135,6 +135,11 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
             deactivateAudioSession()
         }
 
+        // Auth alone does not put audio on the movie file — the session needs an
+        // `AVCaptureDeviceInput` for `.audio`. Attach (or drop) before recording;
+        // `hasAudio` follows what actually attached, not the permission bit.
+        let audioAttached = await controller.syncAudioInput(authorized: wantsAudio)
+
         try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
         let fileURL = Self.directory.appendingPathComponent("bts-\(UUID().uuidString).mov")
 
@@ -153,7 +158,7 @@ final class LiveBTSRecorder: BTSRecorder, @unchecked Sendable {
         }
 
         lock.withLock {
-            startedWithAudio = wantsAudio
+            startedWithAudio = audioAttached
             isSessionOpen = true
             completedSegments = []
             activeFileURL = fileURL

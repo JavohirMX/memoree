@@ -581,7 +581,10 @@ final class CameraViewModel {
 
     // MARK: - Micro-Journal Note
 
-    /// User's micro-journal note entered on the review screen (max 80 chars).
+    /// Hard limit for the review-screen note — UI and save path agree on this.
+    static let noteCharacterLimit = 80
+
+    /// User's micro-journal note entered on the review screen (max `noteCharacterLimit` chars).
     var draftNote: String = ""
 
     // MARK: - Review
@@ -801,7 +804,9 @@ final class CameraViewModel {
         }
 
         let trimmedNote = draftNote.trimmingCharacters(in: .whitespacesAndNewlines)
-        let noteToSave = trimmedNote.isEmpty ? nil : String(trimmedNote.prefix(80))
+        let noteToSave = trimmedNote.isEmpty
+            ? nil
+            : String(trimmedNote.prefix(Self.noteCharacterLimit))
 
         try await record(
             CommittedCapture(

@@ -453,8 +453,13 @@ segment until photo 2 is captured.
 
 At commit, the segments are stitched together end-to-end using `AVMutableComposition` and trimmed to the user-configured clip duration (default 5s, split evenly across segments with borrowing for shorter segments) via `AVAssetExportSession`, standardized to portrait 3:4 Full HD (1080×1440) using uniform aspect-preserving transforms to eliminate lag and prevent distortion. If composition fails, passthrough export serves as a safety fallback.
 
-Audio requires the microphone permission. Request it lazily, only when BTS is enabled for the
-first time, and degrade to a silent clip if denied rather than blocking the moment.
+Audio requires the microphone permission **and** an `AVCaptureDeviceInput` for `.audio` on the
+same `AVCaptureSession` as the movie output. `AVAudioSession` alone does not put a track on the
+file. Request mic access lazily, only when BTS is enabled for the first time;
+`CaptureSessionController.syncAudioInput(authorized:)` attaches (or removes) the mic input
+before recording starts. Mic denied, missing device, or `canAddInput == false` yields a silent
+clip rather than blocking the moment (ADR-013). Camera swaps tear down only the video input —
+audio survives rear↔front. Mute still defaults on at playback (ADR-039).
 
 #### Ordering: the output is asked for before the session, the recording after
 
@@ -630,8 +635,11 @@ The screen offers a **dual-view toggle**:
 2. **Monthly Calendar View (`ArchiveCalendarView`)**: A 7-column monthly calendar layout mapping
    days to photo thumbnails or subtle empty day slots, derived purely from `ArchiveSection.calendarDays()`.
    Captures can be opened with the same tactile feedback, sharing the exact same thumbnail streaming pipeline.
-   When a day has more than one moment (ADR-030), the cell shows the newest thumbnail and a count badge
-   (`CalendarDayItem.momentCount`); VoiceOver announces the count.
+   The **day-of-month number sits below** the photo circle (not overlaid on it). When a day has more
+   than one moment (ADR-030), the cell shows the newest thumbnail and a top-leading `×N` badge
+   (`CalendarDayItem.momentCount`) so the count cannot be read as a second date; VoiceOver announces
+   the count. Grid/calendar mode and Export Timelapse are separate trailing toolbar items with
+   shared toolbar background hidden so they do not merge into one capsule.
 
 An understated **collection summary header** at the top displays total moment count and the chronological
 date span (e.g. `48 moments · Jun 2026 – Oct 2026`).
@@ -640,9 +648,10 @@ date span (e.g. `48 moments · Jun 2026 – Oct 2026`).
 
 Archive can export the **entire library** as a stop-motion timelapse via
 `PhotoLibraryService.exportFlipbookVideo(for:framesPerSecond:)`. `PhotoKitLibrary` loads each
-moment's rear asset, writes an H.264 `.mov` at 1080×1440 / 2 fps, then saves the file into Photos
-(add-only). Features never imports AVFoundation for this path — encoding stays in the photo-library
-service.
+moment's rear asset (aspect-fit), draws it letterboxed on an opaque black 1080×1440 canvas
+(`AspectFitRect` — no stretch, no crop), writes an H.264 `.mov` at 2 fps, then saves the file
+into Photos (add-only). Features never imports AVFoundation for this path — encoding stays in
+the photo-library service.
 
 **This day across years (ADR-038).** When the same calendar month/day spans at least two distinct
 years, Today’s ON THIS DAY section offers a quiet outline control that exports that subset through
@@ -716,6 +725,12 @@ tests do not require the suite to be provisioned.
 The Today screen is a pure function of `(now, moment, latest Moment)`. Enumerating the states
 exhaustively prevents the "what if both the window has passed and I've never posted" gap that
 plagues this kind of UI.
+
+**Chronological feed is grouped by calendar day.** `FeedDayGroup.grouping` buckets
+`chronologicalFeedMoments` (newest day first). Each section titles the day once (`Today` /
+`Yesterday` / medium date relative to the view-model clock); cards under it show **time only**
+so multi-capture days (ADR-030) do not repeat the date on every card. ON THIS DAY / flashbacks
+stay their own block and still use the full relative header per card.
 
 | State | Condition | UI |
 | --- | --- | --- |
@@ -867,6 +882,11 @@ it says it in exactly one way. Settings' export row was a solid white pill compe
 amber "Open Settings" button two sections below it. An invariant fails on any
 `background(Theme.Color.textPrimary)` outside `Components.swift`.
 
+**User-facing motion goes through Reduce Motion.** Prefer `View.appAnimation` for
+`.animation(_:value:)` and `withAppAnimation` for transactional updates. Raw `withAnimation` in
+Features is a regression — under Reduce Motion the change must be immediate, not merely faster
+(ADR-039 for BTS; same rule for UI chrome).
+
 **Times are rendered by the device, never by format string.** `"HH:mm"` and
 `String(format: "%02d:%02d")` were both in the app, on the screen that tells the user when to be
 ready and on the screen where they set their window. A user in the United States read a 24-hour
@@ -945,6 +965,7 @@ upload.
 | PhotoKit | Simulator for permission flows; real device for actual writes and EXIF verification |
 | Network-free | Airplane-mode test on device; `nm -u` binary audit; a unit test asserting no `URLSession` is constructed by any production type |
 | Archive grouping | Pure-function tests on `ArchiveSection.grouping(_:calendar:)` against a **pinned** calendar. The boundary cases are the tests that matter: a moment on the far side of the month boundary from UTC in both directions, a DST transition inside a month, interleaved input, and "every moment appears exactly once". Calendar multi-capture: `momentCount` / newest thumbnail when ADR-030 leaves more than one moment on a day |
+| Today feed day groups | Pure-function tests on `FeedDayGroup.grouping` / `title(now:)`: empty, same-day collapse, newest-first day order, Today/Yesterday/dated titles against a pinned clock |
 | BTS Reduce Motion | Pure-value tests on `BTSPlaybackMotionPolicy` (no autoplay/loop when reduced; mute default independent). Device check for actual AVPlayer behaviour |
 | Same-day flipbook | Pure-function tests on `SameDayFlipbook.moments` / `isExportable`: month-day match across years (including current), leap-day exact match, local calendar vs UTC, multi-capture same year does not unlock export, year-span does |
 | Design system | Source-scan invariants: no hardcoded colour, no hardcoded dimension, no `accessibility` symbol escaping the design system, and — see below — what a test asserting about design *cannot* catch |

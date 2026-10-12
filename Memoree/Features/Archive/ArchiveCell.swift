@@ -201,7 +201,7 @@ struct ArchiveGrid: View {
             }
             .onChange(of: targetMonth) { _, newMonth in
                 if let newMonth {
-                    withAnimation(.easeInOut(duration: 0.3)) {
+                    withAppAnimation(.easeInOut(duration: 0.3)) {
                         proxy.scrollTo(newMonth, anchor: .top)
                     }
                     targetMonth = nil
