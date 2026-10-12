@@ -110,20 +110,22 @@ struct CameraView: View {
     }
 
     private func portraitLive(_ model: CameraViewModel) -> some View {
-        VStack(spacing: 0) {
+        VStack(spacing: Theme.Spacing.s) {
             previewWithInset(model)
                 .overlay(alignment: .topLeading) {
                     backButton
                         .padding(Theme.Spacing.m)
                 }
-
-            Spacer(minLength: 0)
+                .overlay(alignment: .bottom) {
+                    zoomRow(model)
+                        .padding(.bottom, Theme.Spacing.m)
+                }
 
             if !model.progressDescription.isEmpty {
                 Text(model.progressDescription)
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
-                    .padding(.bottom, Theme.Spacing.l)
+                    .padding(.bottom, Theme.Spacing.s)
             } else if model.captured.count == 1 {
                 HStack(spacing: Theme.Spacing.xs) {
                     Image(systemName: "camera.rotate")
@@ -136,11 +138,10 @@ struct CameraView: View {
                 .padding(.vertical, Theme.Spacing.xs)
                 .background(Theme.Color.surface)
                 .clipShape(Capsule())
-                .padding(.bottom, Theme.Spacing.m)
                 .transition(.opacity)
             }
 
-            shutterRow(model)
+            captureControlsRow(model)
         }
     }
 
@@ -163,7 +164,9 @@ struct CameraView: View {
                         .foregroundStyle(Theme.Color.textSecondary)
                 }
 
-                shutterRow(model)
+                zoomRow(model)
+
+                captureControlsRow(model)
 
                 Spacer()
             }
@@ -180,12 +183,10 @@ struct CameraView: View {
                 .scaledDisplayFont(Theme.Size.headerIcon, weight: .semibold)
                 .foregroundStyle(Theme.Color.textPrimary)
                 .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
-                .background(Circle().fill(Theme.Color.canvas.opacity(0.6)))
-                .overlay {
-                    Circle().strokeBorder(Theme.Color.textSecondary.opacity(0.3), lineWidth: 1)
-                }
+                .background(Circle().fill(Theme.Color.canvas.opacity(0.65)))
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressDip)
         .accessibilityLabel("Back")
         .accessibilityHint("Closes the camera. Discards in-progress capture")
     }
@@ -315,58 +316,24 @@ struct CameraView: View {
                     .allowsHitTesting(false)
             }
         }
-        .aspectRatio(3.0 / 4.0, contentMode: .fit)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
         .padding(.horizontal, Theme.Spacing.m)
     }
 
-    /// The 0.5× / 1× / 2× row, under the shutter.
-    ///
-    /// ## Why under the shutter and not above it
-    ///
-    /// A row of buttons competes with the shutter for attention, and the shutter
-    /// is the only action that matters. Underneath, the zoom is the second thing
-    /// you reach for and the first thing you stop thinking about.
-    ///
-    /// ## Why it shows all three even on the front camera
-    ///
-    /// **0.5× is disabled on the front, not hidden.** The front has one lens, so
-    /// there is nothing to reach — but a row whose *count* changes when you swap
-    /// cameras makes the control look broken rather than constrained, and the
-    /// reason is right there in grey next to it. The row keeps its shape and the
-    /// camera swap does not move anything on screen.
+    /// The 0.5× / 1× / 2× zoom capsule, styled like native iOS camera.
     private func zoomRow(_ model: CameraViewModel) -> some View {
-        // **Filtered, not disabled.** The front has no telephoto, so 2x there is
-        // a digital crop of one cheek and the stock camera omits it too. Showing a
-        // permanently disabled button is clutter that changes nothing, and the row
-        // simply reads "0.5x 1x" on the front.
-        //
-        // The row does change length when the camera changes, which is the honest
-        // consequence and not an oversight.
         let offered = CameraZoom.offered(on: model.livePosition)
-        return HStack(spacing: Theme.Spacing.s) {
+        return HStack(spacing: Theme.Spacing.xs) {
             ForEach(offered, id: \.self) { zoom in
                 zoomButton(zoom, model)
             }
         }
+        .padding(Theme.Spacing.xs)
+        .background(Capsule().fill(Theme.Color.canvas.opacity(0.65)))
     }
 
-    /// A zoom button, styled as a **circle** rather than a full-width capsule.
-    ///
-    /// ## Why a circle, and why not full width
-    ///
-    /// The stock camera draws each magnification as a small circle and fills only
-    /// the selected one. Three equal capsules stretched across the width read as
-    /// three buttons competing with the shutter above them, and the selection is a
-    /// large filled slab rather than a small filled dot — which is the difference
-    /// between "a zoom control" and "three more things on this screen".
-    ///
-    /// ## The tap target is not the circle
-    ///
-    /// **A 34pt circle with a 44pt target around it.** The circle is what you see;
-    /// the frame is what you hit. Shrinking the visible dot to the minimum touch
-    /// size would make the row dominate the shutter, which is the one control this
-    /// screen exists to offer.
+    /// A zoom button inside the native camera zoom pill.
     private func zoomButton(_ zoom: CameraZoom, _ model: CameraViewModel) -> some View {
         let isSelected = model.zoom == zoom
         let isAvailable = zoom.isAvailable(on: model.livePosition)
@@ -383,43 +350,33 @@ struct CameraView: View {
                 .background {
                     if isSelected {
                         Circle().fill(Theme.Color.textPrimary)
-                    } else {
-                        Circle().strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
                     }
                 }
-                .opacity(isAvailable ? 1 : 0.35)
+                .opacity(isAvailable ? 1 : 0.4)
         }
         .buttonStyle(.plain)
         .disabled(!isAvailable)
-        // The visible circle inside a minimum target, not the other way round.
-        .frame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget)
-        .contentShape(.rect)
-        // **Selected is a trait on the button**, so VoiceOver says which of three
-        // identical labels is in force.
+        .contentShape(Circle())
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
         .accessibilityHint(isAvailable ? "" : "Not available on the front camera")
     }
 
-    private func shutterRow(_ model: CameraViewModel) -> some View {
-        VStack(spacing: Theme.Spacing.m) {
-            zoomRow(model)
+    private func captureControlsRow(_ model: CameraViewModel) -> some View {
+        HStack {
+            // Torch toggle on the leading side
+            torchButton(model)
 
-            HStack {
-                // Torch toggle on the leading side
-                torchButton(model)
+            Spacer()
 
-                Spacer()
+            shutterButton(model)
 
-                shutterButton(model)
+            Spacer()
 
-                Spacer()
-
-                // Working camera flip button on the side
-                cameraFlipButton(model)
-            }
-            .padding(.horizontal, Theme.Spacing.xl)
+            // Working camera flip button on the side
+            cameraFlipButton(model)
         }
-        .padding(.vertical, Theme.Spacing.m)
+        .padding(.horizontal, Theme.Spacing.xl)
+        .padding(.vertical, Theme.Spacing.s)
     }
 
     private func torchButton(_ model: CameraViewModel) -> some View {
