@@ -15,6 +15,7 @@ struct ArchiveCalendarView: View {
     let missing: Set<UUID>
     let onOpen: (MomentFacts) -> Void
     let onDayVisible: (DayIdentifier) -> Void
+    @Binding var targetMonth: MonthKey?
 
     private static let columns = Array(
         repeating: GridItem(.flexible(), spacing: Theme.Spacing.xs),
@@ -26,19 +27,30 @@ struct ArchiveCalendarView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
-                ForEach(sections) { section in
-                    Section {
-                        monthGrid(for: section)
-                            .padding(.horizontal, Theme.Spacing.m)
-                            .padding(.bottom, Theme.Spacing.xl)
-                    } header: {
-                        header(for: section)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
+                    ForEach(sections) { section in
+                        Section {
+                            monthGrid(for: section)
+                                .padding(.horizontal, Theme.Spacing.m)
+                                .padding(.bottom, Theme.Spacing.xl)
+                        } header: {
+                            header(for: section)
+                                .id(section.id)
+                        }
                     }
                 }
+                .padding(.top, Theme.Spacing.s)
             }
-            .padding(.top, Theme.Spacing.s)
+            .onChange(of: targetMonth) { _, newMonth in
+                if let newMonth {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(newMonth, anchor: .top)
+                    }
+                    targetMonth = nil
+                }
+            }
         }
     }
 
@@ -93,7 +105,9 @@ struct ArchiveCalendarView: View {
     }
 
     private func capturedCell(item: CalendarDayItem, moment: MomentFacts) -> some View {
-        Button {
+        let isToday = item.date.map { Calendar.current.isDateInToday($0) } ?? false
+
+        return Button {
             onOpen(moment)
         } label: {
             ZStack {
@@ -113,7 +127,7 @@ struct ArchiveCalendarView: View {
             .clipShape(Circle())
             .overlay {
                 Circle()
-                    .strokeBorder(Theme.Color.divider, lineWidth: 1)
+                    .strokeBorder(isToday ? Theme.Color.textPrimary : Theme.Color.divider, lineWidth: 1)
             }
             .contentShape(Circle())
             .overlay(alignment: .bottomTrailing) {
@@ -130,17 +144,28 @@ struct ArchiveCalendarView: View {
                 }
             }
             .overlay(alignment: .topTrailing) {
-                if moment.hasBTS {
-                    Image(systemName: "video.fill")
-                        .font(Theme.Typography.retakePill)
-                        .foregroundStyle(Theme.Color.textPrimary)
-                        .padding(.horizontal, Theme.Spacing.xs)
-                        .padding(.vertical, 2)
-                        .background(Theme.Color.canvas.opacity(0.6))
-                        .clipShape(Capsule())
-                        .padding(Theme.Spacing.xs)
-                        .accessibilityHidden(true)
+                HStack(spacing: Theme.Spacing.xs) {
+                    if moment.hasBTS {
+                        Image(systemName: "video.fill")
+                            .font(Theme.Typography.retakePill)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                            .padding(.horizontal, Theme.Spacing.xs)
+                            .padding(.vertical, 2)
+                            .background(Theme.Color.canvas.opacity(0.6))
+                            .clipShape(Capsule())
+                    }
+                    if let note = moment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Image(systemName: "text.bubble.fill")
+                            .font(Theme.Typography.retakePill)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                            .padding(.horizontal, Theme.Spacing.xs)
+                            .padding(.vertical, 2)
+                            .background(Theme.Color.canvas.opacity(0.6))
+                            .clipShape(Capsule())
+                    }
                 }
+                .padding(Theme.Spacing.xs)
+                .accessibilityHidden(true)
             }
         }
         .buttonStyle(.pressDip)
@@ -155,21 +180,31 @@ struct ArchiveCalendarView: View {
     }
 
     private func emptyCell(item: CalendarDayItem) -> some View {
-        ZStack {
+        let isToday = item.date.map { Calendar.current.isDateInToday($0) } ?? false
+
+        return ZStack {
             Theme.Color.surface.opacity(item.isFuture ? 0.25 : 0.5)
             if let dayNumber = item.dayNumber {
                 Text("\(dayNumber)")
                     .font(Theme.Typography.retakePill)
-                    .foregroundStyle(item.isFuture ? Theme.Color.textTertiary.opacity(0.4) : Theme.Color.textTertiary)
+                    .foregroundStyle(
+                        isToday ? Theme.Color.textPrimary : (item.isFuture ? Theme.Color.textTertiary.opacity(0.4) : Theme.Color.textTertiary)
+                    )
             }
         }
         .aspectRatio(1, contentMode: .fit)
         .clipShape(Circle())
+        .overlay {
+            if isToday {
+                Circle()
+                    .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             item.isFuture
                 ? "Future day"
-                : "No moment captured"
+                : (isToday ? "Today, no moment captured yet" : "No moment captured")
         )
     }
 
@@ -200,6 +235,9 @@ struct ArchiveCalendarView: View {
         var label = isMissing ? "\(base). No longer in your photo library." : base
         if moment.hasBTS {
             label += ". Includes Behind the Scenes video."
+        }
+        if let note = moment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            label += ". Includes journal note."
         }
         return label
     }

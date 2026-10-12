@@ -423,4 +423,73 @@ struct ArchiveViewModelTests {
         #expect(UIImage(data: Self.pixelPNG) != nil,
                 "otherwise every missing-photograph test passes for the wrong reason")
     }
+
+    // MARK: - Filtering
+
+    @Test("Filters moments by all, bts video, and micro-journal notes")
+    func filterMoments() async throws {
+        let now = try #require(DayIdentifier(string: "2026-10-01", calendar: calendar)).date
+        let harness = try makeHarness(now: now)
+
+        let d1 = DayIdentifier(date: now, calendar: calendar).offset(by: -1, calendar: calendar)
+        let s1 = d1.date.addingTimeInterval(14 * 3600)
+        try harness.store.record(
+            day: d1,
+            interval: MomentInterval(start: s1, end: s1.addingTimeInterval(120)),
+            capturedAt: s1.addingTimeInterval(30),
+            retakeCount: 0,
+            backAssetIdentifier: "b1",
+            frontAssetIdentifier: "f1",
+            hasBTS: true,
+            btsAssetIdentifier: "video1",
+            note: nil
+        )
+
+        let d2 = DayIdentifier(date: now, calendar: calendar).offset(by: -2, calendar: calendar)
+        let s2 = d2.date.addingTimeInterval(14 * 3600)
+        try harness.store.record(
+            day: d2,
+            interval: MomentInterval(start: s2, end: s2.addingTimeInterval(120)),
+            capturedAt: s2.addingTimeInterval(30),
+            retakeCount: 0,
+            backAssetIdentifier: "b2",
+            frontAssetIdentifier: "f2",
+            hasBTS: false,
+            btsAssetIdentifier: nil,
+            note: "Coffee in the morning"
+        )
+
+        let d3 = DayIdentifier(date: now, calendar: calendar).offset(by: -3, calendar: calendar)
+        let s3 = d3.date.addingTimeInterval(14 * 3600)
+        try harness.store.record(
+            day: d3,
+            interval: MomentInterval(start: s3, end: s3.addingTimeInterval(120)),
+            capturedAt: s3.addingTimeInterval(30),
+            retakeCount: 0,
+            backAssetIdentifier: "b3",
+            frontAssetIdentifier: "f3",
+            hasBTS: true,
+            btsAssetIdentifier: "video3",
+            note: "Sunset walk"
+        )
+
+        let model = ArchiveViewModel(environment: harness.environment)
+        model.load()
+
+        #expect(model.moments.count == 3)
+        #expect(model.count(for: .all) == 3)
+        #expect(model.count(for: .bts) == 2)
+        #expect(model.count(for: .notes) == 2)
+
+        model.selectedFilter = .all
+        #expect(model.filteredMoments.count == 3)
+
+        model.selectedFilter = .bts
+        #expect(model.filteredMoments.count == 2)
+        #expect(model.filteredMoments.allSatisfy { $0.hasBTS })
+
+        model.selectedFilter = .notes
+        #expect(model.filteredMoments.count == 2)
+        #expect(model.filteredMoments.allSatisfy { $0.note != nil })
+    }
 }

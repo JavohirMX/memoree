@@ -41,7 +41,7 @@ struct ArchiveCell: View {
             .clipped()
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.thumbnail))
             .overlay(alignment: .topLeading) { dayBadge }
-            .overlay(alignment: .topTrailing) { btsBadge }
+            .overlay(alignment: .topTrailing) { topTrailingBadges }
             // One label per cell, composed rather than read image by image. A grid
             // of 500 unlabelled images is 500 VoiceOver stops that all say
             // "image", which is the same dead end as a button that does nothing.
@@ -82,20 +82,31 @@ struct ArchiveCell: View {
             .accessibilityHidden(true)
     }
 
-    /// Behind-the-Scenes indicator, top-right.
+    /// Behind-the-Scenes and micro-journal badges, top-right.
     @ViewBuilder
-    private var btsBadge: some View {
-        if moment.hasBTS {
-            Image(systemName: "video.fill")
-                .font(Theme.Typography.retakePill)
-                .foregroundStyle(Theme.Color.textPrimary)
-                .padding(.horizontal, Theme.Spacing.xs)
-                .padding(.vertical, 2)
-                .background(Theme.Color.canvas.opacity(0.6))
-                .clipShape(Capsule())
-                .padding(Theme.Spacing.xs)
-                .accessibilityHidden(true)
+    private var topTrailingBadges: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            if moment.hasBTS {
+                Image(systemName: "video.fill")
+                    .font(Theme.Typography.retakePill)
+                    .foregroundStyle(Theme.Color.textPrimary)
+                    .padding(.horizontal, Theme.Spacing.xs)
+                    .padding(.vertical, 2)
+                    .background(Theme.Color.canvas.opacity(0.6))
+                    .clipShape(Capsule())
+            }
+            if let note = moment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Image(systemName: "text.bubble.fill")
+                    .font(Theme.Typography.retakePill)
+                    .foregroundStyle(Theme.Color.textPrimary)
+                    .padding(.horizontal, Theme.Spacing.xs)
+                    .padding(.vertical, 2)
+                    .background(Theme.Color.canvas.opacity(0.6))
+                    .clipShape(Capsule())
+            }
         }
+        .padding(Theme.Spacing.xs)
+        .accessibilityHidden(true)
     }
 
     /// "Photograph from 30 September, 4:12 in the afternoon."
@@ -112,6 +123,9 @@ struct ArchiveCell: View {
         var text = isMissing ? "\(base). No longer in your photo library." : base
         if moment.hasBTS {
             text += ". Includes Behind the Scenes video."
+        }
+        if let note = moment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            text += ". Includes journal note."
         }
         return text
     }
@@ -150,20 +164,8 @@ struct ArchiveGrid: View {
     let images: [UUID: UIImage]
     let missing: Set<UUID>
     let onOpen: (MomentFacts) -> Void
-
-    /// Reports which day has scrolled into view, so the view model can warm
-    /// Photos' cache ahead of the user.
-    ///
-    /// Driven by each cell's `onAppear` rather than by a scroll-position reader.
-    /// `onScrollVisibilityChange` is the right API and it is iOS 18; the
-    /// deployment floor here is 17, and a cell appearing *is* the signal that
-    /// matters — it is the moment a thumbnail is about to be needed, which is
-    /// exactly what prefetching is for.
-    ///
-    /// Per-cell rather than per-grid because a lazy container only ever knows
-    /// which cells exist, not which are on screen, and a single callback at the
-    /// top would fire once and never again.
     let onDayVisible: (DayIdentifier) -> Void
+    @Binding var targetMonth: MonthKey?
 
     private static let columns = Array(
         repeating: GridItem(.flexible(), spacing: Theme.Size.gridSpacing),
@@ -177,23 +179,34 @@ struct ArchiveGrid: View {
     var sections: [ArchiveSection] { ArchiveSection.grouping(moments) }
 
     var body: some View {
-        ScrollView {
-            LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
-                ForEach(sections) { section in
-                    Section {
-                        LazyVGrid(columns: Self.columns, spacing: Theme.Size.gridSpacing) {
-                            ForEach(section.moments) { moment in
-                                cell(moment)
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0, pinnedViews: .sectionHeaders) {
+                    ForEach(sections) { section in
+                        Section {
+                            LazyVGrid(columns: Self.columns, spacing: Theme.Size.gridSpacing) {
+                                ForEach(section.moments) { moment in
+                                    cell(moment)
+                                }
                             }
+                            .padding(.horizontal, Theme.Spacing.s)
+                            .padding(.bottom, Theme.Spacing.xl)
+                        } header: {
+                            header(for: section)
+                                .id(section.id)
                         }
-                        .padding(.horizontal, Theme.Spacing.s)
-                        .padding(.bottom, Theme.Spacing.xl)
-                    } header: {
-                        header(for: section)
                     }
                 }
+                .padding(.top, Theme.Spacing.s)
             }
-            .padding(.top, Theme.Spacing.s)
+            .onChange(of: targetMonth) { _, newMonth in
+                if let newMonth {
+                    withAnimation(.easeInOut(duration: 0.3)) {
+                        proxy.scrollTo(newMonth, anchor: .top)
+                    }
+                    targetMonth = nil
+                }
+            }
         }
     }
 

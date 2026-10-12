@@ -164,6 +164,9 @@ final class CameraViewModel {
     /// is when the pair was most recently whole. See `CommittedCapture.capturedAt`.
     private var lastCaptureAt: Date?
 
+    /// Background task that pre-trims the BTS clip while the user is on the review screen.
+    private var pretrimBTSTask: Task<CommittedBTS?, Never>?
+
     // MARK: - Init
 
     init(
@@ -679,7 +682,14 @@ final class CameraViewModel {
         // cannot be lost by a retry because it is recomputed from a recording that
         // `finishBTS` has not yet discarded. Doing it before the Photos write means
         // the ordering is preserved and the clip costs the moment nothing.
-        let clip = await finishBTS(clipDuration: BTSTrim.validatedClipDuration(clipDuration()))
+        let clip: CommittedBTS?
+        if let pretrimBTSTask {
+            clip = await pretrimBTSTask.value
+        } else if committedBTS != nil {
+            clip = committedBTS
+        } else {
+            clip = await finishBTS(clipDuration: BTSTrim.validatedClipDuration(clipDuration()))
+        }
         committedBTS = clip
 
         do {
@@ -865,8 +875,9 @@ final class CameraViewModel {
     private let clipDuration: () -> TimeInterval
 
     /// Forgets any library write, because the pair it covered no longer exists.
-    /// Forgets any library write, because the pair it covered no longer exists.
     private func invalidateCommit() {
+        pretrimBTSTask?.cancel()
+        pretrimBTSTask = nil
         writtenAssets = nil
         writtenBTS = nil
         committedBTS = nil
@@ -888,6 +899,10 @@ final class CameraViewModel {
     /// entirely. The cost is one hop on a path that is already asynchronous and
     /// already shows a working phase, so nothing the user sees changes.
     private func abandonCapture() async {
+        let task = pretrimBTSTask
+        pretrimBTSTask = nil
+        task?.cancel()
+        _ = await task?.result
         abandonBTS()
         invalidateCommit()
     }
@@ -970,6 +985,22 @@ final class CameraViewModel {
         // The photograph taken last is the one they were looking at, so it is
         // the large one until they say otherwise.
         prominentPosition = livePosition
+        pretrimBTS()
+    }
+
+    /// Trims the BTS recording in the background during review so saving doesn't block on export.
+    private func pretrimBTS() {
+        guard btsRecorder != nil, pretrimBTSTask == nil else { return }
+        let duration = BTSTrim.validatedClipDuration(clipDuration())
+        pretrimBTSTask = Task { [weak self] in
+            guard let self else { return nil }
+            return await self.finishBTS(clipDuration: duration)
+        }
+    }
+
+    /// Triggers the commit completion haptic immediately for responsive user feedback.
+    func triggerCommitHaptic() {
+        haptics.committed()
     }
 
     var isFailed: Bool {

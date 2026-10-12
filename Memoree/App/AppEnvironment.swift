@@ -439,6 +439,32 @@ final class AppEnvironment {
         pendingCameraRequest = false
     }
 
+    // MARK: - Background Save
+
+    /// Whether an accepted moment is currently being written to Photos and the archive in the background.
+    private(set) var isSavingMomentInBackground = false
+
+    /// Background save failure, if one occurred during background commit.
+    private(set) var backgroundSaveError: String?
+
+    /// Retains the in-flight background save task so camera dismissal cannot cancel it.
+    private var inFlightSaveTask: Task<Void, Never>?
+
+    /// Launches and retains a background save operation, updating `isSavingMomentInBackground`.
+    func beginBackgroundSave(_ operation: @escaping @MainActor () async throws -> Void) {
+        isSavingMomentInBackground = true
+        backgroundSaveError = nil
+        inFlightSaveTask = Task { @MainActor [weak self] in
+            do {
+                try await operation()
+            } catch {
+                self?.backgroundSaveError = error.localizedDescription
+            }
+            self?.isSavingMomentInBackground = false
+            self?.inFlightSaveTask = nil
+        }
+    }
+
     // An earlier version of the archive took a "scroll to this day" request
     // through the environment, so tapping today's composite could open the grid
     // at today rather than at the top. It was thirty lines for no behaviour:

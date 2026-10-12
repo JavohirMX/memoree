@@ -12,8 +12,15 @@ import UIKit
 struct CameraView: View {
 
     /// Injected by `CameraHostView`, which can read the environment. A `@State`
+    /// Injected by `CameraHostView`, which can read the environment. A `@State`
     /// initialiser cannot, which is why this is not created here.
     @Environment(CameraViewModel.self) private var model
+    @Environment(AppEnvironment.self) private var environment: AppEnvironment?
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+
+    @State private var isSaving = false
+    @State private var isShutterFlashing = false
+    @State private var shutterFlashOpacity: Double = 0
 
     private let onDismiss: () -> Void
 
@@ -41,7 +48,6 @@ struct CameraView: View {
         }
         .task(id: model.phase) {
             if model.phase == .saved {
-                try? await Task.sleep(nanoseconds: 1_200_000_000)
                 onDismiss()
             }
         }
@@ -109,6 +115,20 @@ struct CameraView: View {
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .padding(.bottom, Theme.Spacing.l)
+            } else if model.captured.count == 1 {
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "camera.rotate")
+                        .font(Theme.Typography.retakePill)
+                    Text("2 of 2 • \(model.livePositionDescription)")
+                        .font(Theme.Typography.retakePill)
+                }
+                .foregroundStyle(Theme.Color.textSecondary)
+                .padding(.horizontal, Theme.Spacing.m)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(Theme.Color.surface)
+                .clipShape(Capsule())
+                .padding(.bottom, Theme.Spacing.m)
+                .transition(.opacity)
             }
 
             shutterRow(model)
@@ -225,6 +245,12 @@ struct CameraView: View {
             }
 
             focusRing
+
+            if isShutterFlashing {
+                Theme.Color.textPrimary
+                    .opacity(shutterFlashOpacity)
+                    .allowsHitTesting(false)
+            }
         }
         .overlay(alignment: .topTrailing) {
             if let inset = model.insetPhoto,
@@ -239,10 +265,12 @@ struct CameraView: View {
                             .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
                     }
                     .padding(Theme.Spacing.m)
+                    .transition(.scale.combined(with: .opacity))
                     .accessibilityHidden(true)
                     .allowsHitTesting(false)
             }
         }
+        .appAnimation(model.insetPhoto?.data) { .spring(response: 0.35, dampingFraction: 0.8) }
         .overlay {
             if model.torchMode == .on, model.livePosition == .front {
                 RoundedRectangle(cornerRadius: Theme.Radius.card)
@@ -251,8 +279,9 @@ struct CameraView: View {
                     .allowsHitTesting(false)
             }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
+        .aspectRatio(3.0 / 4.0, contentMode: .fit)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+        .padding(.horizontal, Theme.Spacing.m)
     }
 
     /// The 0.5× / 1× / 2× row, under the shutter.
@@ -390,8 +419,23 @@ struct CameraView: View {
         .accessibilityHint(model.livePositionDescription)
     }
 
+    private func triggerShutterFlash() {
+        isShutterFlashing = true
+        shutterFlashOpacity = 0.85
+        withAnimation(.easeOut(duration: 0.1)) {
+            shutterFlashOpacity = 0
+        }
+        Task {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+            await MainActor.run {
+                isShutterFlashing = false
+            }
+        }
+    }
+
     private func shutterButton(_ model: CameraViewModel) -> some View {
         Button {
+            triggerShutterFlash()
             Task { await model.shutterPressed() }
         } label: {
             Circle()
@@ -421,6 +465,10 @@ struct CameraView: View {
     private func review(_ model: CameraViewModel) -> some View {
         VStack(spacing: 0) {
             composite(model)
+                .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                .padding(.horizontal, Theme.Spacing.m)
+                .frame(maxHeight: verticalSizeClass == .compact ? Theme.Size.compositeLandscapeMaxHeight : nil)
 
             Spacer(minLength: Theme.Spacing.s)
 
@@ -436,6 +484,7 @@ struct CameraView: View {
             }
 
             reviewActions(model)
+                .padding(.horizontal, Theme.Spacing.xl)
                 .padding(.bottom, Theme.Spacing.xl)
         }
     }
@@ -479,19 +528,37 @@ struct CameraView: View {
     /// draws the same thing, and two copies of a composite is how one of them
     /// ends up with a different inset width.
     private func composite(_ model: CameraViewModel) -> some View {
-        MomentComposite(
-            large: model.prominentPhoto.flatMap { UIImage(data: $0.data) },
-            inset: model.insetReviewPhoto.flatMap { UIImage(data: $0.data) },
-            insetWidth: Theme.Size.insetCamera,
-            onTapInset: { model.swapProminent() }
-        )
-        // Interactive here and only here: this is the one caller where a double tap
-        // swaps the two photographs. The archive and Today versions must not
-        // announce as buttons, so the hint and the trait come from the same place
-        // as the label — see `CompositeAccessibility`.
+        ZStack(alignment: .bottomTrailing) {
+            MomentComposite(
+                large: model.prominentPhoto.flatMap { UIImage(data: $0.data) },
+                inset: model.insetReviewPhoto.flatMap { UIImage(data: $0.data) },
+                insetWidth: Theme.Size.insetCamera,
+                onTapInset: { model.swapProminent() }
+            )
+            .onTapGesture(count: 2) {
+                model.swapProminent()
+            }
+
+            // Direct angle toggle button overlay
+            Button {
+                model.swapProminent()
+            } label: {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .scaledDisplayFont(Theme.Size.headerIcon, weight: .regular)
+                    .foregroundStyle(Theme.Color.textPrimary)
+                    .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                    .background(Circle().fill(Theme.Color.canvas.opacity(0.6)))
+                    .overlay {
+                        Circle().strokeBorder(Theme.Color.textSecondary.opacity(0.3), lineWidth: 1)
+                    }
+            }
+            .buttonStyle(.plain)
+            .padding(Theme.Spacing.m)
+            .accessibilityLabel("Swap photo angle")
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(CompositeAccessibility.label)
-        .accessibilityHint("Double tap to swap which photo is large")
+        .accessibilityHint("Double tap or press flip to swap which photo is large")
         .accessibilityAddTraits(.isButton)
     }
 
@@ -502,12 +569,23 @@ struct CameraView: View {
     /// with two meanings would make the common action unpredictable.
     private func reviewActions(_ model: CameraViewModel) -> some View {
         VStack(spacing: Theme.Spacing.m) {
-            PrimaryButton(title: model.isCommitting ? "Saving…" : "Save") {
-                Task { await model.commit() }
+            PrimaryButton(title: isSaving ? "Saved" : (model.isCommitting ? "Saving…" : "Save")) {
+                isSaving = true
+                model.triggerCommitHaptic()
+                if let environment {
+                    environment.beginBackgroundSave {
+                        await model.commit()
+                    }
+                    onDismiss()
+                } else {
+                    Task {
+                        await model.commit()
+                    }
+                }
             }
-            .disabled(model.isCommitting)
+            .disabled(isSaving || model.isCommitting)
 
-            if !model.isCommitting {
+            if !isSaving && !model.isCommitting {
                 Menu {
                     ForEach(CameraPosition.allCases, id: \.self) { position in
                         Button(position == .front ? "Reshoot front" : "Reshoot back") {

@@ -105,8 +105,9 @@ struct PhotoKitLibrary: PhotoLibraryService {
             throw LibraryError.authorizationDenied
         }
 
-        let back = try PhotoMetadataInjector.applying(location: location, to: backData)
-        let front = try PhotoMetadataInjector.applying(location: location, to: frontData)
+        async let backProcessed = PhotoMetadataInjector.applying(location: location, to: backData)
+        async let frontProcessed = PhotoMetadataInjector.applying(location: location, to: frontData)
+        let (back, front) = try await (backProcessed, frontProcessed)
 
         return try await withCheckedThrowingContinuation { continuation in
             // A reference box rather than captured `var`s: the PhotoKit change

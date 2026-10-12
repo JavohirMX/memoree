@@ -22,6 +22,39 @@ final class ArchiveViewModel {
     /// Every live moment, newest first.
     private(set) var moments: [MomentFacts] = []
 
+    /// Current filter applied to the archive.
+    var selectedFilter: ArchiveFilter = .all
+
+    /// Moments filtered according to `selectedFilter`.
+    var filteredMoments: [MomentFacts] {
+        switch selectedFilter {
+        case .all:
+            return moments
+        case .bts:
+            return moments.filter(\.hasBTS)
+        case .notes:
+            return moments.filter {
+                guard let note = $0.note else { return false }
+                return !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+        }
+    }
+
+    /// Count of moments matching a specific filter.
+    func count(for filter: ArchiveFilter) -> Int {
+        switch filter {
+        case .all:
+            return moments.count
+        case .bts:
+            return moments.filter(\.hasBTS).count
+        case .notes:
+            return moments.filter {
+                guard let note = $0.note else { return false }
+                return !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }.count
+        }
+    }
+
     /// Decoded thumbnails, keyed by moment.
     private(set) var images: [UUID: UIImage] = [:]
 
@@ -264,5 +297,30 @@ final class ArchiveViewModel {
         let scale = UIScreen.main.scale
         let side = max(UIScreen.main.bounds.width, UIScreen.main.bounds.height)
         return CGSize(width: (side * scale).rounded(), height: (side * scale).rounded())
+    }
+}
+
+/// Archive filter options for viewing moments.
+enum ArchiveFilter: String, CaseIterable, Identifiable, Sendable {
+    case all = "All"
+    case bts = "Video"
+    case notes = "Notes"
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .all: return "All"
+        case .bts: return "Video"
+        case .notes: return "Notes"
+        }
+    }
+
+    var iconName: String? {
+        switch self {
+        case .all: return nil
+        case .bts: return "video.fill"
+        case .notes: return "text.bubble.fill"
+        }
     }
 }

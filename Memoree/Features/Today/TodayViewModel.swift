@@ -298,6 +298,15 @@ final class TodayViewModel {
         }
     }
 
+    /// User-friendly label for flashback items (e.g. "1 year ago today").
+    func flashbackDescription(for moment: MomentFacts) -> String {
+        let calendar = Calendar.current
+        let currentYear = calendar.component(.year, from: now)
+        let momentYear = calendar.component(.year, from: moment.capturedAt)
+        let diff = max(1, currentYear - momentYear)
+        return "\(diff) \(diff == 1 ? "year" : "years") ago today"
+    }
+
     /// Streams today's photographs back out of Photos.
     private func loadTodayImages() async {
         guard !todayMoments.isEmpty else {

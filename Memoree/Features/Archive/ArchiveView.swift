@@ -18,6 +18,9 @@ struct ArchiveView: View {
 
     @State private var model: ArchiveViewModel?
     @State private var viewMode: ArchiveViewMode = .grid
+    @State private var targetMonth: MonthKey?
+    @State private var isShowingTimelapsePreview = false
+    @State private var showExportSuccessAlert = false
 
     /// The moment being opened, held by the view rather than the view model.
     ///
@@ -48,20 +51,13 @@ struct ArchiveView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     if let model, !model.moments.isEmpty {
-                        if model.isExporting {
-                            ProgressView()
-                                .tint(Theme.Color.textPrimary)
-                        } else {
-                            Button {
-                                Task {
-                                    _ = await model.exportFlipbook()
-                                }
-                            } label: {
-                                Label("Export Timelapse", systemImage: "film")
-                                    .foregroundStyle(Theme.Color.textPrimary)
-                            }
-                            .accessibilityLabel("Export Timelapse Flipbook Video")
+                        Button {
+                            isShowingTimelapsePreview = true
+                        } label: {
+                            Label("Export Timelapse", systemImage: "film")
+                                .foregroundStyle(Theme.Color.textPrimary)
                         }
+                        .accessibilityLabel("Export Timelapse Flipbook Video")
                     }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -115,25 +111,30 @@ struct ArchiveView: View {
             empty
         } else {
             VStack(spacing: 0) {
-                summaryHeader(model.moments)
+                summaryHeader(model)
+                filterPillBar(model)
                 Divider()
                     .overlay(Theme.Color.divider)
 
-                if viewMode == .grid {
+                if model.filteredMoments.isEmpty {
+                    filterEmpty(model)
+                } else if viewMode == .grid {
                     ArchiveGrid(
-                        moments: model.moments,
+                        moments: model.filteredMoments,
                         images: model.images,
                         missing: model.missing,
                         onOpen: { selected = $0 },
-                        onDayVisible: { model.noteVisible(day: $0) }
+                        onDayVisible: { model.noteVisible(day: $0) },
+                        targetMonth: $targetMonth
                     )
                 } else {
                     ArchiveCalendarView(
-                        moments: model.moments,
+                        moments: model.filteredMoments,
                         images: model.images,
                         missing: model.missing,
                         onOpen: { selected = $0 },
-                        onDayVisible: { model.noteVisible(day: $0) }
+                        onDayVisible: { model.noteVisible(day: $0) },
+                        targetMonth: $targetMonth
                     )
                 }
             }
@@ -149,21 +150,49 @@ struct ArchiveView: View {
                 )
                 .environment(appEnvironment)
             }
+            .sheet(isPresented: $isShowingTimelapsePreview) {
+                TimelapsePreviewSheet(
+                    moments: model.moments,
+                    isExporting: model.isExporting,
+                    exportError: model.exportError,
+                    onExport: {
+                        Task {
+                            let success = await model.exportFlipbook()
+                            if success {
+                                isShowingTimelapsePreview = false
+                                showExportSuccessAlert = true
+                            }
+                        }
+                    }
+                )
+            }
+            .alert("Timelapse Saved", isPresented: $showExportSuccessAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Your stop-motion timelapse flipbook video has been saved to your Photos library.")
+            }
         }
     }
 
-    // MARK: - Summary Header
+    // MARK: - Summary Header & Filter Pills
 
-    private func summaryHeader(_ moments: [MomentFacts]) -> some View {
-        let count = moments.count
+    private func summaryHeader(_ model: ArchiveViewModel) -> some View {
+        let count = model.filteredMoments.count
         let countString = "\(count) \(count == 1 ? "moment" : "moments")"
-        let spanString = dateSpan(for: moments)
+        let spanString = dateSpan(for: model.filteredMoments)
+        let sections = ArchiveSection.grouping(model.filteredMoments)
 
         return HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-                Text(countString)
-                    .font(Theme.Typography.screenTitle)
-                    .foregroundStyle(Theme.Color.textPrimary)
+                HStack(spacing: Theme.Spacing.s) {
+                    Text(countString)
+                        .font(Theme.Typography.screenTitle)
+                        .foregroundStyle(Theme.Color.textPrimary)
+
+                    if sections.count > 1 {
+                        monthJumpMenu(sections: sections)
+                    }
+                }
                 if let spanString {
                     Text(spanString)
                         .font(Theme.Typography.metadata)
@@ -175,7 +204,115 @@ struct ArchiveView: View {
         }
         .padding(.horizontal, Theme.Spacing.m)
         .padding(.top, Theme.Spacing.s)
+        .padding(.bottom, Theme.Spacing.s)
+    }
+
+    private func monthJumpMenu(sections: [ArchiveSection]) -> some View {
+        Menu {
+            ForEach(sections) { section in
+                Button {
+                    targetMonth = section.id
+                } label: {
+                    HStack {
+                        Text(section.title)
+                        Spacer()
+                        Text(section.countDescription)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: "calendar")
+                    .font(Theme.Typography.retakePill)
+                Text("Jump")
+                    .font(Theme.Typography.retakePill)
+                Image(systemName: "chevron.down")
+                    .font(Theme.Typography.retakePill)
+            }
+            .foregroundStyle(Theme.Color.textSecondary)
+            .padding(.horizontal, Theme.Spacing.s)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(Theme.Color.surface)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule()
+                    .strokeBorder(Theme.Color.divider, lineWidth: 1)
+            }
+        }
+    }
+
+    private func filterPillBar(_ model: ArchiveViewModel) -> some View {
+        HStack(spacing: Theme.Spacing.s) {
+            ForEach(ArchiveFilter.allCases) { filter in
+                let isSelected = model.selectedFilter == filter
+                let count = model.count(for: filter)
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.15)) {
+                        model.selectedFilter = filter
+                    }
+                } label: {
+                    HStack(spacing: Theme.Spacing.xs) {
+                        if let icon = filter.iconName {
+                            Image(systemName: icon)
+                                .font(Theme.Typography.retakePill)
+                        }
+                        Text(filter.title)
+                            .font(Theme.Typography.retakePill)
+                        Text("\(count)")
+                            .font(Theme.Typography.retakePill)
+                            .foregroundStyle(isSelected ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+                    }
+                    .foregroundStyle(isSelected ? Theme.Color.textPrimary : Theme.Color.textSecondary)
+                    .padding(.horizontal, Theme.Spacing.m)
+                    .padding(.vertical, Theme.Spacing.xs)
+                    .background(isSelected ? Theme.Color.divider : Theme.Color.surface)
+                    .clipShape(Capsule())
+                    .overlay {
+                        Capsule()
+                            .strokeBorder(isSelected ? Theme.Color.textSecondary : Theme.Color.divider, lineWidth: 1)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            Spacer()
+        }
+        .padding(.horizontal, Theme.Spacing.m)
         .padding(.bottom, Theme.Spacing.m)
+    }
+
+    private func filterEmpty(_ model: ArchiveViewModel) -> some View {
+        VStack(spacing: Theme.Spacing.m) {
+            Image(systemName: model.selectedFilter.iconName ?? "photo.stack")
+                .scaledDisplayFont(Theme.Size.iconStandalone, weight: .regular)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .accessibilityHidden(true)
+            Text(filterEmptyTitle(for: model.selectedFilter))
+                .font(Theme.Typography.screenTitle)
+                .foregroundStyle(Theme.Color.textPrimary)
+            Text(filterEmptyMessage(for: model.selectedFilter))
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textSecondary)
+                .multilineTextAlignment(.center)
+        }
+        .padding(Theme.Spacing.xl)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func filterEmptyTitle(for filter: ArchiveFilter) -> String {
+        switch filter {
+        case .all: return "No Moments"
+        case .bts: return "No Videos"
+        case .notes: return "No Notes"
+        }
+    }
+
+    private func filterEmptyMessage(for filter: ArchiveFilter) -> String {
+        switch filter {
+        case .all: return "No moments have been captured yet."
+        case .bts: return "None of your captured moments include Behind-the-Scenes video."
+        case .notes: return "None of your captured moments include micro-journal notes."
+        }
     }
 
     private func dateSpan(for moments: [MomentFacts]) -> String? {
@@ -283,4 +420,118 @@ enum ArchiveViewMode: String, CaseIterable, Identifiable {
     case calendar
 
     var id: String { rawValue }
+}
+
+/// Confirmation and information sheet before exporting a timelapse flipbook video.
+struct TimelapsePreviewSheet: View {
+    let moments: [MomentFacts]
+    let isExporting: Bool
+    let exportError: String?
+    let onExport: () -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    private var durationSeconds: Double {
+        Double(moments.count) / 2.0
+    }
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                CanvasBackground()
+
+                VStack(spacing: Theme.Spacing.l) {
+                    VStack(spacing: Theme.Spacing.s) {
+                        Image(systemName: "film.stack")
+                            .scaledDisplayFont(Theme.Size.iconStandalone, weight: .regular)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                            .padding(.top, Theme.Spacing.l)
+
+                        Text("Timelapse Flipbook")
+                            .font(Theme.Typography.screenTitle)
+                            .foregroundStyle(Theme.Color.textPrimary)
+
+                        Text("Create a stop-motion video of your entire archive in chronological order and save it directly to Photos.")
+                            .font(Theme.Typography.body)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, Theme.Spacing.l)
+                    }
+
+                    // Specs Card
+                    VStack(spacing: Theme.Spacing.m) {
+                        specRow(icon: "photo.stack", label: "Moments", value: "\(moments.count) captures")
+                        Divider().overlay(Theme.Color.divider)
+                        specRow(icon: "speedometer", label: "Frame Rate", value: "2 fps")
+                        Divider().overlay(Theme.Color.divider)
+                        specRow(icon: "clock", label: "Estimated Duration", value: String(format: "%.1f s", durationSeconds))
+                        Divider().overlay(Theme.Color.divider)
+                        specRow(icon: "square.and.arrow.down", label: "Destination", value: "Photos Library")
+                    }
+                    .padding(Theme.Spacing.m)
+                    .background(Theme.Color.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: Theme.Radius.card)
+                            .strokeBorder(Theme.Color.divider, lineWidth: 1)
+                    }
+                    .padding(.horizontal, Theme.Spacing.l)
+
+                    if let exportError {
+                        Text(exportError)
+                            .font(Theme.Typography.metadata)
+                            .foregroundStyle(Theme.Color.destructive)
+                            .multilineTextAlignment(.center)
+                            .padding(.horizontal, Theme.Spacing.l)
+                    }
+
+                    Spacer()
+
+                    if isExporting {
+                        HStack(spacing: Theme.Spacing.m) {
+                            ProgressView()
+                                .tint(Theme.Color.textPrimary)
+                            Text("Exporting to Photos...")
+                                .font(Theme.Typography.body)
+                                .foregroundStyle(Theme.Color.textSecondary)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .frame(minHeight: Theme.Size.tapTargetComfortable)
+                        .background(Theme.Color.surface)
+                        .clipShape(Capsule())
+                        .overlay {
+                            Capsule()
+                                .strokeBorder(Theme.Color.divider, lineWidth: 1)
+                        }
+                        .padding(.horizontal, Theme.Spacing.l)
+                        .padding(.bottom, Theme.Spacing.l)
+                    } else {
+                        PrimaryButton(title: "Export to Photos") {
+                            onExport()
+                        }
+                        .padding(.horizontal, Theme.Spacing.l)
+                        .padding(.bottom, Theme.Spacing.l)
+                    }
+                }
+            }
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                        .disabled(isExporting)
+                }
+            }
+        }
+    }
+
+    private func specRow(icon: String, label: String, value: String) -> some View {
+        HStack {
+            Label(label, systemImage: icon)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textSecondary)
+            Spacer()
+            Text(value)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textPrimary)
+        }
+    }
 }

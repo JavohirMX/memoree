@@ -65,6 +65,8 @@ struct MomentComposite: View {
     var insetWidth: CGFloat = 108
     var onTapInset: (() -> Void)?
     var onTapLarge: (() -> Void)?
+    var onDoubleTapLarge: (() -> Void)?
+    var onFlip: (() -> Void)?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -75,13 +77,39 @@ struct MomentComposite: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
                     .contentShape(Rectangle())
-                    .onTapGesture { onTapLarge?() }
+                    .onTapGesture(count: 2) {
+                        onDoubleTapLarge?()
+                    }
+                    .onTapGesture(count: 1) {
+                        onTapLarge?()
+                    }
             } else {
                 Theme.Color.canvas
             }
 
             if let inset {
                 insetLayer(inset)
+            }
+
+            if let onFlip {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onFlip()
+                } label: {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(Theme.Typography.retakePill)
+                        .foregroundStyle(Theme.Color.textPrimary)
+                        .padding(Theme.Spacing.s)
+                        .background(Theme.Color.canvas.opacity(0.6))
+                        .clipShape(Circle())
+                        .overlay {
+                            Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.pressDip)
+                .padding(Theme.Spacing.m)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .accessibilityLabel("Flip camera angles")
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

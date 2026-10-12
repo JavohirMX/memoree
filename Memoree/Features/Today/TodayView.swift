@@ -127,6 +127,11 @@ struct TodayView: View {
             guard !isShowing else { return }
             Task { await self.model?.reload() }
         }
+        .onChange(of: environment.isSavingMomentInBackground) { _, isSaving in
+            if !isSaving {
+                Task { await self.model?.reload() }
+            }
+        }
         .task {
             presentCameraIfRequested()
         }
@@ -152,6 +157,51 @@ struct TodayView: View {
         isShowingArchive = true
     }
 
+    // MARK: - Background Saving Status
+
+    @ViewBuilder
+    private var savingStatusPill: some View {
+        if environment.isSavingMomentInBackground {
+            HStack(spacing: Theme.Spacing.s) {
+                ProgressView()
+                    .tint(Theme.Color.textPrimary)
+                    .scaleEffect(0.8)
+
+                Text("Saving to Photos library…")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            .padding(.horizontal, Theme.Spacing.m)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(Theme.Color.surface)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule().strokeBorder(Theme.Color.divider, lineWidth: 1)
+            }
+            .padding(.vertical, Theme.Spacing.xs)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        } else if let error = environment.backgroundSaveError {
+            HStack(spacing: Theme.Spacing.s) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.destructive)
+
+                Text(error)
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+            }
+            .padding(.horizontal, Theme.Spacing.m)
+            .padding(.vertical, Theme.Spacing.xs)
+            .background(Theme.Color.surface)
+            .clipShape(Capsule())
+            .overlay {
+                Capsule().strokeBorder(Theme.Color.divider, lineWidth: 1)
+            }
+            .padding(.vertical, Theme.Spacing.xs)
+            .transition(.move(edge: .top).combined(with: .opacity))
+        }
+    }
+
     // MARK: - Content
 
     @ViewBuilder
@@ -171,6 +221,14 @@ struct TodayView: View {
                     .padding(.horizontal, Theme.Spacing.xl)
                     .padding(.top, Theme.Spacing.l)
                     .padding(.bottom, Theme.Spacing.s)
+                    .background(Theme.Color.canvas)
+                    .overlay(alignment: .bottom) {
+                        Theme.Color.divider
+                            .frame(height: 1)
+                            .accessibilityHidden(true)
+                    }
+
+                savingStatusPill
 
                 if model.feedMoments.isEmpty {
                     emptyState(model)
@@ -189,6 +247,7 @@ struct TodayView: View {
         HStack(spacing: Theme.Spacing.l) {
             VStack(spacing: Theme.Spacing.m) {
                 header(model)
+                savingStatusPill
                 Spacer()
 
                 footer(model)
@@ -214,15 +273,18 @@ struct TodayView: View {
         VStack(spacing: Theme.Spacing.xl) {
             Spacer()
 
-            VStack(spacing: Theme.Spacing.m) {
-                Image(systemName: "camera")
-                    .scaledDisplayFont(Theme.Size.iconStandalone, weight: .light)
-                    .foregroundStyle(Theme.Color.textSecondary)
+            SettingsCard {
+                VStack(spacing: Theme.Spacing.m) {
+                    Image(systemName: "camera")
+                        .scaledDisplayFont(Theme.Size.iconStandalone, weight: .light)
+                        .foregroundStyle(Theme.Color.textPrimary)
+                        .padding(.top, Theme.Spacing.s)
 
-                primaryState(model)
+                    primaryState(model)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, Theme.Spacing.m)
             }
-
-
 
             Spacer()
 
@@ -256,24 +318,31 @@ struct TodayView: View {
     @ViewBuilder
     private func flashbackSection(_ model: TodayViewModel) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.m) {
-            HStack(spacing: Theme.Spacing.xs) {
+            HStack(spacing: Theme.Spacing.s) {
                 Image(systemName: "clock.arrow.circlepath")
                     .font(Theme.Typography.metadata)
                     .foregroundStyle(Theme.Color.textSecondary)
 
                 Text("ON THIS DAY")
-                    .font(Theme.Typography.metadata)
+                    .font(Theme.Typography.metadata.weight(.semibold))
                     .foregroundStyle(Theme.Color.textSecondary)
+
+                if let first = model.flashbackMoments.first {
+                    Text("· \(model.flashbackDescription(for: first))")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
             }
+            .padding(.horizontal, Theme.Spacing.xs)
 
             ForEach(model.flashbackMoments) { moment in
                 feedCard(for: moment, in: model)
             }
 
-            Rectangle()
-                .fill(Theme.Color.divider)
+            Theme.Color.divider
                 .frame(height: 1)
                 .padding(.vertical, Theme.Spacing.xs)
+                .accessibilityHidden(true)
         }
     }
 
@@ -281,14 +350,24 @@ struct TodayView: View {
     private func feedCard(for moment: MomentFacts, in model: TodayViewModel) -> some View {
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
             HStack(spacing: Theme.Spacing.s) {
-                Text(model.relativeHeader(for: moment))
-                    .font(Theme.Typography.metadata)
-                    .foregroundStyle(Theme.Color.textSecondary)
+                HStack(spacing: Theme.Spacing.xs) {
+                    Image(systemName: "clock")
+                        .font(Theme.Typography.retakePill)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                    Text(model.relativeHeader(for: moment))
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+                .padding(.horizontal, Theme.Spacing.s)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(Theme.Color.surface)
+                .clipShape(Capsule())
 
                 Spacer()
 
                 if moment.hasBTS {
                     Button {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
                         playingBTSMoment = moment
                     } label: {
                         Label("BTS", systemImage: "play.fill")
@@ -306,7 +385,11 @@ struct TodayView: View {
                 if moment.retakeCount > 0 {
                     Text("\(moment.retakeCount) \(moment.retakeCount == 1 ? "retake" : "retakes")")
                         .font(Theme.Typography.retakePill)
-                        .foregroundStyle(Theme.Color.textTertiary)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .padding(.horizontal, Theme.Spacing.s)
+                        .padding(.vertical, Theme.Spacing.xs)
+                        .background(Theme.Color.surface)
+                        .clipShape(Capsule())
                 }
             }
 
@@ -322,16 +405,16 @@ struct TodayView: View {
                     inset: inset,
                     insetWidth: Theme.Size.insetStandard,
                     onTapInset: {
-                        withAnimation(.easeInOut(duration: 0.25)) {
-                            if flippedMoments.contains(moment.id) {
-                                flippedMoments.remove(moment.id)
-                            } else {
-                                flippedMoments.insert(moment.id)
-                            }
-                        }
+                        toggleFlip(for: moment.id)
                     },
                     onTapLarge: {
                         fullScreenPair = (large, inset)
+                    },
+                    onDoubleTapLarge: {
+                        toggleFlip(for: moment.id)
+                    },
+                    onFlip: {
+                        toggleFlip(for: moment.id)
                     }
                 )
                 .aspectRatio(aspect(of: large), contentMode: .fit)
@@ -379,14 +462,34 @@ struct TodayView: View {
             }
 
             if let note = moment.note, !note.isEmpty {
-                Text(note)
-                    .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.textPrimary)
-                    .padding(.top, Theme.Spacing.xs)
+                HStack(alignment: .top, spacing: Theme.Spacing.s) {
+                    Image(systemName: "quote.opening")
+                        .font(Theme.Typography.retakePill)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                        .padding(.top, Theme.Spacing.xxs)
+                    Text(note)
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Color.textPrimary)
+                }
+                .padding(Theme.Spacing.m)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.Color.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
             }
         }
         .task {
             await model.loadImage(for: moment)
+        }
+    }
+
+    private func toggleFlip(for id: UUID) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.easeInOut(duration: 0.25)) {
+            if flippedMoments.contains(id) {
+                flippedMoments.remove(id)
+            } else {
+                flippedMoments.insert(id)
+            }
         }
     }
 
