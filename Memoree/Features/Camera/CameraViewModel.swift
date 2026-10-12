@@ -429,16 +429,43 @@ final class CameraViewModel {
     /// showing 0.5x selected while the camera is at 1x, which is a control lying
     /// about the state of the world.
     ///
+    /// Front 0.5× ↔ 1× stops the session (lens change). Pause BTS around that the
+    /// same way the shutter swap does, so the movie output is not writing into a
+    /// stopped session.
+    ///
     /// - Returns: whether the choice was accepted.
     @discardableResult
     func chooseZoom(_ zoom: CameraZoom) async -> Bool {
+        let changingLens = CameraZoom.requiresSessionReconfigure(
+            from: self.zoom,
+            to: zoom,
+            on: livePosition
+        )
+        if changingLens {
+            await pauseBTSForSwitch()
+        }
         do {
             try await service.applyZoom(zoom)
-            self.zoom = zoom
+            self.zoom = zoom.effective(for: livePosition)
+            if changingLens {
+                await resumeBTSAfterSwitch()
+            }
             return true
         } catch {
+            if changingLens {
+                await resumeBTSAfterSwitch()
+            }
             return false
         }
+    }
+
+    /// Keeps the zoom chrome honest after a front↔rear swap.
+    ///
+    /// Preference may still be rear 2× while the front can only show 1× — the
+    /// button row must follow `effective`, not the remembered preference.
+    private func syncZoomSelectionToLiveCamera() async {
+        let remembered = await service.currentZoom()
+        zoom = remembered.effective(for: livePosition)
     }
 
     func stop() async {
@@ -477,6 +504,7 @@ final class CameraViewModel {
         do {
             try await service.startSession(on: position)
             previewLayer = service.previewLayer
+            await syncZoomSelectionToLiveCamera()
             phase = .shooting
         } catch {
             phase = Self.phase(for: error)
@@ -508,12 +536,12 @@ final class CameraViewModel {
                 } else {
                     // Second press: bring up the camera they have not shot.
                     let next = CameraPosition.allCases.first { $0 != livePosition } ?? .front
-                    phase = .working
-                    await pauseBTSForSwitch()
-                    try await service.switchCamera(to: next)
-                    livePosition = next
+                    try await performLiveCameraSwitch(
+                        to: next,
+                        pauseBTS: true,
+                        restartBTS: false
+                    )
                     phase = .shooting
-                    await resumeBTSAfterSwitch()
                     // **No haptic for the switch.** One press photographs *and*
                     // swaps, so buzzing here would tell the user two things
                     // happened when they pressed once. A haptic describes what
@@ -530,6 +558,7 @@ final class CameraViewModel {
                 phase = .shooting
             }
         } catch {
+            isCameraTransitioning = false
             phase = Self.phase(for: error)
         }
     }
@@ -544,16 +573,57 @@ final class CameraViewModel {
         guard canFlipCamera else { return }
         let target = livePosition.opposite
         phase = .working
-        abandonBTS()
         do {
-            try await service.switchCamera(to: target)
-            livePosition = target
+            try await performLiveCameraSwitch(
+                to: target,
+                pauseBTS: false,
+                restartBTS: true
+            )
             firstPosition = target
             phase = .shooting
-            await startBTSIfEnabled()
             haptics.cameraSwitched()
         } catch {
+            isCameraTransitioning = false
             phase = Self.phase(for: error)
+        }
+    }
+
+    /// Stops the session graph on one lens and opens the other, with a preview fade.
+    ///
+    /// - Parameters:
+    ///   - pauseBTS: Mid-moment swap — pause the current segment, resume after.
+    ///   - restartBTS: Pre-shutter flip — abandon and start a fresh clip on the new lens.
+    private func performLiveCameraSwitch(
+        to next: CameraPosition,
+        pauseBTS: Bool,
+        restartBTS: Bool
+    ) async throws {
+        withAppAnimation(.easeInOut(duration: 0.2)) {
+            isCameraTransitioning = true
+        }
+        // Let the fade-out paint before the preview freezes on a stopped session.
+        if !UIAccessibility.isReduceMotionEnabled {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
+
+        if restartBTS {
+            abandonBTS()
+        } else if pauseBTS {
+            await pauseBTSForSwitch()
+        }
+
+        try await service.switchCamera(to: next)
+        livePosition = next
+        await syncZoomSelectionToLiveCamera()
+
+        withAppAnimation(.easeInOut(duration: 0.28)) {
+            isCameraTransitioning = false
+        }
+
+        if restartBTS {
+            await startBTSIfEnabled()
+        } else if pauseBTS {
+            await resumeBTSAfterSwitch()
         }
     }
 
@@ -616,6 +686,7 @@ final class CameraViewModel {
         do {
             try await service.switchCamera(to: position)
             livePosition = position
+            await syncZoomSelectionToLiveCamera()
             captured = [position.opposite: kept]
             prominentPosition = nil
             // **The recording is re-established, not just closed.** See
@@ -641,6 +712,7 @@ final class CameraViewModel {
 
         do {
             try await service.switchCamera(to: opening)
+            await syncZoomSelectionToLiveCamera()
             // **The recording is re-established, not just closed.** See
             // `resumeShootingAfterDiscard`.
             await resumeShootingAfterDiscard()
@@ -1052,11 +1124,22 @@ final class CameraViewModel {
         return captured[other]
     }
 
-    /// Progress copy, which names the step rather than apologising for it.
+    /// True while the live input is swapping (front↔rear).
+    ///
+    /// Drives the preview crossfade so a session stop does not read as a freeze
+    /// with "Capturing…" under the frame. The shutter path and the flip button
+    /// share this flag.
+    private(set) var isCameraTransitioning = false
+
+    /// Progress copy for session open / save — not for the mid-moment switch.
+    ///
+    /// Capture is the shutter flash; the lens swap is `isCameraTransitioning`.
+    /// Naming those under the preview made a deliberate ~0.5s reconfigure feel
+    /// like a hang (PRD: make the switch feel intentional, not apologetic).
     var progressDescription: String {
         switch phase {
         case .starting: return "Opening the camera"
-        case .working: return captured.isEmpty ? "Capturing…" : "Switching camera…"
+        case .working where isCommitting: return "Saving…"
         default: return ""
         }
     }

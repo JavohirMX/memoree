@@ -381,12 +381,36 @@ let best = device.formats
 
 3:4 portrait matches BeReal's own published ad spec (rear 768×1024, front inset 234×314) and
 matches what the camera roll is overwhelmingly full of, so assets sit naturally in the library.
-`.builtInWideAngleCamera` for both positions — not the tele or ultra-wide.
+
+**Zoom / lenses.** The rear prefers `.builtInDualWideCamera` when it offers 3:4, and selects
+0.5× / 1× / 2× via `videoZoomFactor` (native UW → switch-over wide → 2× on wide). The front
+offers 0.5× and 1× only: 0.5× attaches `.builtInUltraWideCamera` (discovery fallback if
+`default` is nil; **never** a silent wide stand-in), 1× re-attaches `.builtInWideAngleCamera`
+(bidirectional). UW format selection prefers the widest `videoFieldOfView` among 3:4
+candidates so a max-pixel centre crop does not erase the ultra-wide look. Physical lenses
+park at `minAvailableVideoZoomFactor` (the button chooses the device, not a DualWide
+multiplier). Remembered rear 2× applies as 1× on the front (`CameraZoom.effective`).
+DualWide absent: rear 0.5× is refused. Front lens changes wait for a delivered frame and
+pause BTS around the stop.
 
 Set `photoOutput.maxPhotoDimensions` to the chosen format's dimensions (this replaces the
 deprecated `isHighResolutionPhotoEnabled` on iOS 16+). Set
 `photoQualityPrioritization = .speed` — latency matters inside a two-minute window and there
 is no benefit to `.quality` here.
+
+### 5.3a Live preview geometry
+
+The camera preview is a **3:4 viewport** fitted inside the available layout (canvas
+letterboxing around it), not a full-bleed fill of the phone screen. The still is
+encoded 3:4; filling a taller screen with `resizeAspectFill` cropped the left and
+right of that frame, so ultra-wide looked tighter in preview than in the saved
+photo. Matching review/composite aspect keeps compose ≈ capture.
+
+**Front↔rear handoff.** The session must stop to swap inputs (ADR-003). The UI
+does not label that freeze as "Capturing…" / "Switching camera…". Instead
+`isCameraTransitioning` fades and slightly scales the 3:4 preview out, runs the
+swap, then fades back in (honours Reduce Motion). The shutter flash still marks
+the photograph itself.
 
 ### 5.4 Front-camera mirroring
 

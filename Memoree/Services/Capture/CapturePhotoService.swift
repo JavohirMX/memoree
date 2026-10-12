@@ -124,6 +124,12 @@ protocol CapturePhotoService: AnyObject, Sendable {
     /// the same framing.
     func applyZoom(_ zoom: CameraZoom) async throws
 
+    /// The zoom preference in force (may be rear 2× while the front shows 1×).
+    ///
+    /// UI should display `currentZoom().effective(for: livePosition)` so a
+    /// remembered telephoto never appears selected on the front.
+    func currentZoom() async -> CameraZoom
+
     /// Sets the torch mode on the active device, if supported.
     func setTorchMode(_ mode: TorchMode) async throws
 

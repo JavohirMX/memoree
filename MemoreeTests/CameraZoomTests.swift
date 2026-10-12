@@ -93,6 +93,43 @@ struct CameraZoomTests {
         }
     }
 
+    @Test("Front 0.5x to 1x and back both need a session reconfigure")
+    func frontUltraWideSwapIsBidirectional() {
+        // The bug: needsNewLens only fired when *entering* UW, so 1× stayed on
+        // the ultra-wide at factor 1.0 (FOV still 0.5× while the UI said 1×).
+        #expect(CameraZoom.requiresSessionReconfigure(
+            from: .wide, to: .ultraWide, on: .front
+        ))
+        #expect(CameraZoom.requiresSessionReconfigure(
+            from: .ultraWide, to: .wide, on: .front
+        ))
+        #expect(!CameraZoom.requiresSessionReconfigure(
+            from: .wide, to: .wide, on: .front
+        ))
+        #expect(!CameraZoom.requiresSessionReconfigure(
+            from: .ultraWide, to: .wide, on: .back
+        ), "rear never swaps physical lenses for zoom")
+        #expect(!CameraZoom.requiresSessionReconfigure(
+            from: .wide, to: .doubleWide, on: .back
+        ))
+    }
+
+    @Test("Remembered rear 2x becomes 1x on the front without losing the preference case")
+    func effectiveZoomOnFrontDropsTelephoto() {
+        #expect(CameraZoom.doubleWide.effective(for: .front) == .wide)
+        #expect(CameraZoom.doubleWide.effective(for: .back) == .doubleWide)
+        #expect(CameraZoom.ultraWide.effective(for: .front) == .ultraWide)
+        #expect(CameraZoom.wide.effective(for: .front) == .wide)
+    }
+
+    @Test("Virtual device factor respects a live switch-over")
+    func virtualFactorUsesSwitchOver() {
+        #expect(CameraZoom.wide.virtualDeviceZoomFactor(switchOver: 2.0) == 2.0)
+        #expect(CameraZoom.wide.virtualDeviceZoomFactor(switchOver: 2.5) == 2.5)
+        #expect(CameraZoom.ultraWide.virtualDeviceZoomFactor(switchOver: 2.0) == 1.0)
+        #expect(CameraZoom.doubleWide.virtualDeviceZoomFactor(switchOver: 2.0) == 4.0)
+    }
+
     @Test("The labels are the ones a person recognises")
     func labelsAreTheCameraConventions() {
         // **Not localised, deliberately.** These are camera conventions rather than

@@ -1101,13 +1101,20 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         for position: CameraPosition,
         zoom: CameraZoom
     ) -> AVCaptureDevice? {
+        let effective = zoom.effective(for: position)
         if position == .front {
-            let type: AVCaptureDevice.DeviceType = zoom.requiresItsOwnDevice(on: position)
-                ? .builtInUltraWideCamera
-                : .builtInWideAngleCamera
-            let device = AVCaptureDevice.default(type, for: .video, position: .front)
-            if let device, CaptureFormatSelector.selectFormat(for: device) != nil {
-                return device
+            // Front 0.5× must be the ultra-wide lens. Falling back to wide here
+            // used to succeed with UI still on 0.5× — FOV looked like 1×.
+            if effective.requiresItsOwnDevice(on: position) {
+                return frontUltraWideDevice()
+            }
+            let wide = AVCaptureDevice.default(
+                .builtInWideAngleCamera,
+                for: .video,
+                position: .front
+            )
+            if let wide, CaptureFormatSelector.selectFormat(for: wide) != nil {
+                return wide
             }
             return CaptureFormatSelector.wideAngleDevice(for: position)
         }
@@ -1121,6 +1128,26 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
             return dualWide
         }
         return CaptureFormatSelector.wideAngleDevice(for: position)
+    }
+
+    /// Front ultra-wide with a usable 3:4 format, or `nil` (never a silent wide stand-in).
+    private static func frontUltraWideDevice() -> AVCaptureDevice? {
+        let position = AVCaptureDevice.Position.front
+        if let device = AVCaptureDevice.default(
+            .builtInUltraWideCamera,
+            for: .video,
+            position: position
+        ), CaptureFormatSelector.selectFormat(for: device) != nil {
+            return device
+        }
+        // `default` is nil on some OS/hardware combos that still expose the lens
+        // through discovery — try before giving up.
+        let discovered = AVCaptureDevice.DiscoverySession(
+            deviceTypes: [.builtInUltraWideCamera],
+            mediaType: .video,
+            position: position
+        ).devices
+        return discovered.first { CaptureFormatSelector.selectFormat(for: $0) != nil }
     }
 
     /// Opens and attaches the input for `position`. Must run on `queue`.
@@ -1139,8 +1166,9 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// operation ADR-003 measured four times to be the thing that leaves the frame
     /// output dead. Zoom must not add another instance of it mid-moment.
     ///
-    /// **The front keeps a single physical lens**, because there is only one, and
-    /// a virtual device there would add cost and a failure surface for no reach.
+    /// **The front switches between wide and ultra-wide lenses** for 1× / 0.5× —
+    /// there is no virtual dual-wide at the front. The rear stays one DualWide
+    /// input for its whole range.
     ///
     /// Falls back to the wide lens if the virtual device reports no 3:4 format,
     /// so a phone without one still captures rather than failing.
@@ -1224,7 +1252,8 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         // **Zoom is reapplied here, not just on a button press.** The input has
         // just been rebuilt and comes back at 1.0, so a user who chose 0.5× would
         // otherwise get a wide photograph for one half of their moment.
-        try? applyZoomOnDevice(currentZoom)
+        // Prefer `effective` so a rear-remembered 2× never digitally crops the front.
+        try? applyZoomOnDevice(currentZoom.effective(for: position))
     }
 
     // MARK: - Focus
@@ -1317,51 +1346,97 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
     /// dual-wide input with a different `videoZoomFactor`, so this is one line
     /// under `lockForConfiguration` and the frame output is never touched.
     ///
-    /// **The front's 0.5× is a lens change.** There is no virtual device at the
-    /// front, so this is `stopRunning` → `removeInput` → `addInput` →
+    /// **Front 0.5× ↔ 1× is a lens change both ways.** There is no virtual device
+    /// at the front, so this is `stopRunning` → `removeInput` → `addInput` →
     /// `startRunning` → wait for a delivered frame — the same cycle as the
-    /// front↔rear swap, which is the *known-good* shape. **Reconfiguring while
-    /// running is the one that kills the frame output**, so this deliberately
-    /// stops first.
+    /// front↔rear swap. Leaving ultra-wide for 1× must re-attach wide; writing
+    /// `videoZoomFactor = 1` on the ultra-wide leaves the FOV at 0.5× while the
+    /// UI says 1×.
     ///
     /// ## Refuses rather than clamps
     ///
-    /// 2× does not exist on the front, and pressing a button that cannot work
-    /// should do nothing rather than quietly become 1×.
+    /// 2× does not exist on the front, and rear 0.5× on a non–DualWide fallback
+    /// would only clamp to the same FOV as 1× — both throw `zoomUnavailable`.
     func applyZoom(_ zoom: CameraZoom) async throws {
-        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+        enum ZoomStep: Sendable {
+            case unavailable(CameraPosition)
+            case propertyWrite
+            case lensChange
+        }
+
+        let step: ZoomStep = await withCheckedContinuation { c in
             queue.async { [self] in
-                guard zoom.isAvailable(on: activePosition) else {
-                    c.resume(throwing: CaptureError.zoomUnavailable(zoom, activePosition))
+                let position = activePosition
+                guard zoom.isAvailable(on: position) else {
+                    c.resume(returning: .unavailable(position))
                     return
                 }
-
-                // The rear is never here: it is one virtual device for its whole
-                // range, so every rear zoom is a property write.
-                let needsNewLens = zoom.requiresItsOwnDevice(on: activePosition)
-                    && attachedLens != zoom
+                // Single-wide rear fallback: 0.5× cannot change FOV — refuse rather
+                // than pretend the button did something.
+                if position == .back,
+                   zoom == .ultraWide,
+                   activeInput?.device.deviceType != .builtInDualWideCamera {
+                    c.resume(returning: .unavailable(position))
+                    return
+                }
+                let effective = zoom.effective(for: position)
+                let wantUltraWide = effective.requiresItsOwnDevice(on: position)
+                let haveUltraWide = attachedLens == .ultraWide
+                let needsNewLens = position == .front
                     && activeInput != nil
-                currentZoom = zoom
+                    && wantUltraWide != haveUltraWide
+                c.resume(returning: needsNewLens ? .lensChange : .propertyWrite)
+            }
+        }
 
+        if case .unavailable(let position) = step {
+            throw CaptureError.zoomUnavailable(zoom, position)
+        }
+
+        let changingLens = {
+            if case .lensChange = step { return true }
+            return false
+        }()
+
+        if changingLens {
+            _ = await beginSwapGeneration()
+        }
+
+        try await withCheckedThrowingContinuation { (c: CheckedContinuation<Void, Error>) in
+            queue.async { [self] in
+                let previousZoom = currentZoom
+                let effective = zoom.effective(for: activePosition)
                 do {
-                    if needsNewLens {
-                        // **Stopped first**, like every other reconfiguration
-                        // here. The frame output dies if this runs while running.
+                    if changingLens {
+                        // Preference must be visible to `captureDevice` before attach.
+                        currentZoom = zoom
                         session.stopRunning()
                         try attachInput(at: activePosition)
+                        // Defence: never leave a wide lens labelled as 0.5×.
+                        if effective.requiresItsOwnDevice(on: activePosition),
+                           activeInput?.device.deviceType != .builtInUltraWideCamera {
+                            throw CaptureError.zoomUnavailable(zoom, activePosition)
+                        }
                         try applyFormat(for: activePosition)
                         session.startRunning()
                     } else {
-                        try applyZoomOnDevice(zoom)
+                        try applyZoomOnDevice(effective)
+                        currentZoom = zoom
                     }
                     c.resume()
                 } catch {
-                    // Leave the session running whatever happened, so a refused
-                    // zoom cannot present a frozen preview with no error.
+                    currentZoom = previousZoom
+                    // Best-effort restore of the previous lens after a failed UW/wide swap.
+                    try? attachInput(at: activePosition)
+                    try? applyFormat(for: activePosition)
                     if state == .running { session.startRunning() }
                     c.resume(throwing: Self.map(error, at: self.activePosition))
                 }
             }
+        }
+
+        if changingLens {
+            try await waitForDeliveredFrame()
         }
     }
 
@@ -1383,14 +1458,22 @@ final class CaptureSessionController: NSObject, @unchecked Sendable {
         // unclamped write would be accepted by AVFoundation and produce a
         // rectangle of pixels.
         let ceiling = device.activeFormat.videoMaxZoomFactor
-        // A virtual dual-wide camera's 1.0 is its ultra-wide lens, so wide 1x sits
-        // at 2.0 (virtualDeviceZoomFactor). On front cameras and single-lens devices,
-        // 1.0 is already native 1x, so applying 2.0 was a 2x digital zoom crop.
+        // A virtual dual-wide camera's 1.0 is its ultra-wide lens; wide 1× sits
+        // at the switch-over factor. Prefer the live device's reported handoff
+        // over the surveyed 2.0 default.
+        //
+        // **Physical lenses (front UW / front wide / rear wide fallback):** the
+        // button chooses *which device*, not a multiplier. Using `zoom.factor`
+        // (0.5 for UW) is a DualWide UI number — on a single lens it either
+        // clamps to min (harmless) or, if the lens ever accepted it oddly,
+        // fights native FOV. Always park at the device's native minimum.
         let requested: CGFloat
         if device.deviceType == .builtInDualWideCamera {
-            requested = zoom.virtualDeviceZoomFactor
+            let switchOver = device.virtualDeviceSwitchOverVideoZoomFactors.first
+                .map { CGFloat(truncating: $0) } ?? 2.0
+            requested = zoom.virtualDeviceZoomFactor(switchOver: switchOver)
         } else {
-            requested = zoom.factor
+            requested = device.minAvailableVideoZoomFactor
         }
         device.videoZoomFactor = min(max(requested, device.minAvailableVideoZoomFactor), ceiling)
     }

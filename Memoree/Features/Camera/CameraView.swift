@@ -269,65 +269,83 @@ struct CameraView: View {
     /// it is what the user is composing with — and promoting the inset would
     /// cover the camera they are about to shoot. Tapping to swap is the review
     /// behaviour, where both slots are photographs.
+    ///
+    /// **3:4 viewport, not full-bleed.** The saved still is 3:4. Filling the
+    /// whole (taller) phone screen with `.resizeAspectFill` crops the left and
+    /// right of that frame — so ultra-wide looked tight in preview and wide in
+    /// the photo. Matching the review/composite aspect keeps WYSIWYG.
     private func previewWithInset(_ model: CameraViewModel) -> some View {
-        ZStack(alignment: .topLeading) {
-            if let layer = model.previewLayer {
-                CameraPreview(layer: layer)
-                    // **Tap to focus, and it is a `.simultaneousGesture` rather than
-                    // the inset's own tap.** The inset is non-interactive here on
-                    // purpose (see the documentation below), so there is nothing to
-                    // conflict with — but `simultaneous` is what keeps a future
-                    // gesture on the preview from silently swallowing this one.
-                    .simultaneousGesture(
-                        SpatialTapGesture().onEnded { value in focus(model, at: value.location) }
-                    )
-                    // The view is the only thing that knows the preview's size,
-                    // and `focus(at:)` needs it to normalise a tap.
-                    .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
-                        model.previewSize = size
-                    }
-            } else {
-                Theme.Color.canvas
-            }
+        ZStack {
+            Theme.Color.canvas
 
-            focusRing
+            ZStack(alignment: .topLeading) {
+                if let layer = model.previewLayer {
+                    CameraPreview(layer: layer)
+                        // **Tap to focus, and it is a `.simultaneousGesture` rather than
+                        // the inset's own tap.** The inset is non-interactive here on
+                        // purpose (see the documentation below), so there is nothing to
+                        // conflict with — but `simultaneous` is what keeps a future
+                        // gesture on the preview from silently swallowing this one.
+                        .simultaneousGesture(
+                            SpatialTapGesture().onEnded { value in focus(model, at: value.location) }
+                        )
+                        // The view is the only thing that knows the preview's size,
+                        // and `focus(at:)` needs it to normalise a tap.
+                        .onGeometryChange(for: CGSize.self) { $0.size } action: { size in
+                            model.previewSize = size
+                        }
+                } else {
+                    Theme.Color.canvas
+                }
 
-            if isShutterFlashing {
-                Theme.Color.textPrimary
-                    .opacity(shutterFlashOpacity)
-                    .allowsHitTesting(false)
+                focusRing
+
+                if isShutterFlashing {
+                    Theme.Color.textPrimary
+                        .opacity(shutterFlashOpacity)
+                        .allowsHitTesting(false)
+                }
             }
-        }
-        .overlay(alignment: .topTrailing) {
-            if let inset = model.insetPhoto,
-               let image = UIImage(data: inset.data) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: Theme.Size.insetStandard, height: Theme.Size.insetStandard)
-                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inset))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: Theme.Radius.inset)
-                            .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
-                    }
-                    .padding(Theme.Spacing.m)
-                    .transition(.scale.combined(with: .opacity))
-                    .accessibilityHidden(true)
-                    .allowsHitTesting(false)
+            .overlay(alignment: .topTrailing) {
+                if let inset = model.insetPhoto,
+                   let image = UIImage(data: inset.data) {
+                    Image(uiImage: image)
+                        .resizable()
+                        .scaledToFill()
+                        .frame(width: Theme.Size.insetStandard, height: Theme.Size.insetStandard)
+                        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.inset))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: Theme.Radius.inset)
+                                .strokeBorder(Theme.Color.textPrimary, lineWidth: 1)
+                        }
+                        .padding(Theme.Spacing.m)
+                        .transition(.scale.combined(with: .opacity))
+                        .accessibilityHidden(true)
+                        .allowsHitTesting(false)
+                }
             }
-        }
-        .appAnimation(model.insetPhoto?.data) { .spring(response: 0.35, dampingFraction: 0.8) }
-        .overlay {
-            if model.torchMode == .on, model.livePosition == .front {
-                RoundedRectangle(cornerRadius: Theme.Radius.card)
-                    .strokeBorder(Theme.Color.textPrimary.opacity(0.8), lineWidth: 4)
-                    .padding(Theme.Spacing.xs)
-                    .allowsHitTesting(false)
+            .appAnimation(model.insetPhoto?.data) { .spring(response: 0.35, dampingFraction: 0.8) }
+            .overlay {
+                if model.torchMode == .on, model.livePosition == .front {
+                    RoundedRectangle(cornerRadius: Theme.Radius.card)
+                        .strokeBorder(Theme.Color.textPrimary.opacity(0.8), lineWidth: 4)
+                        .padding(Theme.Spacing.xs)
+                        .allowsHitTesting(false)
+                }
             }
+            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            // Front↔rear reconfigure freezes the layer for ~0.3–1s. Fade and a
+            // slight scale read as an intentional handoff (PRD), not a hang —
+            // and they replace the old "Capturing…" / "Switching camera…" line.
+            .opacity(model.isCameraTransitioning ? 0 : 1)
+            .scaleEffect(model.isCameraTransitioning ? 0.97 : 1)
+            .appAnimation(model.isCameraTransitioning) {
+                .easeInOut(duration: 0.25)
+            }
+            .padding(.horizontal, Theme.Spacing.m)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-        .padding(.horizontal, Theme.Spacing.m)
     }
 
     /// The 0.5× / 1× / 2× zoom capsule, styled like native iOS camera.

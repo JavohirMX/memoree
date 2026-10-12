@@ -24,12 +24,11 @@ import Foundation
 /// knows what 2× means and does not know what a "telephoto" is, and the button's
 /// job is to be read at a glance while the camera is open.
 ///
-/// ## Why `.front` has no `ultraWide`
+/// ## Front: 0.5× and 1×, never 2×
 ///
-/// **The front camera has one lens, so `ultraWide` is refused there.** Returning
-/// `nil` rather than clamping to `.wide` is deliberate: silently giving the user
-/// something other than what they pressed is how a control becomes a liar, and
-/// the front of a phone genuinely has no wide-angle option on any iPhone.
+/// Front 0.5× is a **different physical camera** (`.builtInUltraWideCamera`), not
+/// a zoom factor — see `requiresItsOwnDevice`. Front 2× is refused: it would be a
+/// digital crop of a selfie. The rear offers all three on one virtual dual-wide.
 enum CameraZoom: String, Sendable, Equatable, CaseIterable {
 
     case ultraWide
@@ -75,10 +74,10 @@ enum CameraZoom: String, Sendable, Equatable, CaseIterable {
     /// virtual device is used at all.
     ///
     /// A dual-wide device's **1.0 is its own widest field of view** — the
-    /// ultra-wide's. Its wide lens sits at 2.0, which is exactly the switch-over
-    /// factor the survey measured. So:
+    /// ultra-wide's. Its wide lens sits at the switch-over factor (survey: 2.00).
+    /// So button FOV × switch-over is the device factor:
     ///
-    /// | Button | Device zoom | Which lens |
+    /// | Button | Device zoom (switch-over 2) | Which lens |
     /// | --- | --- | --- |
     /// | 0.5× | 1.0 | ultra-wide, native |
     /// | 1× | 2.0 | wide at native field of view |
@@ -89,9 +88,38 @@ enum CameraZoom: String, Sendable, Equatable, CaseIterable {
     /// `AVCaptureSession` is the operation ADR-003 measured four times to be the
     /// thing that kills the frame output, and switching lenses the obvious way
     /// would add an instance of it to the middle of every moment.
+    ///
+    /// - Parameter switchOver: First entry of
+    ///   `virtualDeviceSwitchOverVideoZoomFactors` when known; defaults to the
+    ///   surveyed 2.0 so tests and cold paths stay deterministic.
+    func virtualDeviceZoomFactor(switchOver: CGFloat = 2.0) -> CGFloat {
+        factor * switchOver
+    }
+
+    /// Convenience for the surveyed default switch-over (2.0).
     var virtualDeviceZoomFactor: CGFloat {
-        // Derived by doubling, so the relationship to `factor` is stated once.
-        factor * 2
+        virtualDeviceZoomFactor(switchOver: 2.0)
+    }
+
+    /// Zoom to apply on `position` without becoming a liar.
+    ///
+    /// Front 2× is not offered; a preference remembered from the rear must not
+    /// digitally crop the selfie when the input is rebuilt. Preference stays
+    /// `.doubleWide` in storage so returning to the rear restores 2×.
+    func effective(for position: CameraPosition) -> CameraZoom {
+        if position == .front, self == .doubleWide { return .wide }
+        return self
+    }
+
+    /// Whether moving from `from` to `to` on `position` must stop and re-attach
+    /// a different physical lens (front UW ↔ wide only).
+    static func requiresSessionReconfigure(
+        from: CameraZoom,
+        to: CameraZoom,
+        on position: CameraPosition
+    ) -> Bool {
+        guard position == .front else { return false }
+        return from.requiresItsOwnDevice(on: position) != to.requiresItsOwnDevice(on: position)
     }
 
     /// The nearest case to `factor`, for reading back a device that has been set

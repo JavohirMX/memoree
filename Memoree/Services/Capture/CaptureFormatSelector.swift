@@ -124,12 +124,27 @@ enum CaptureFormatSelector {
 
     /// The format to record at on `device`, or `nil` when nothing qualifies.
     ///
-    /// `.builtInWideAngleCamera` only — never the telephoto or ultra-wide. The
-    /// pair is supposed to read as "the scene" and "you", and a 5× lens is
-    /// neither (TRD §5.3).
+    /// Called for whichever device is attached — including front ultra-wide.
+    /// (The older "wide only" note was about *which lens to open*, not about
+    /// refusing formats on an ultra-wide that is already open.)
     static func selectFormat(for device: AVCaptureDevice) -> AVCaptureDevice.Format? {
         let qualifying = device.formats.filter { format in
             supportsMinimumFrameRate(format) && isThreeByFour(dimensions(of: format))
+        }
+        guard !qualifying.isEmpty else { return nil }
+
+        // Ultra-wide: prefer the widest field of view among 3:4 candidates.
+        // Max pixel area alone can pick a heavy centre crop of a square UW
+        // sensor that barely reads wider than the front wide lens — which is
+        // how "0.5× doesn't look ultra-wide" shows up with a correctly attached
+        // UW device.
+        if device.deviceType == .builtInUltraWideCamera {
+            return qualifying.max { lhs, rhs in
+                if abs(lhs.videoFieldOfView - rhs.videoFieldOfView) > 0.05 {
+                    return lhs.videoFieldOfView < rhs.videoFieldOfView
+                }
+                return area(of: dimensions(of: lhs)) < area(of: dimensions(of: rhs))
+            }
         }
 
         guard let best = bestDimensions(from: qualifying.map(dimensions(of:))) else {
