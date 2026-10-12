@@ -1,28 +1,58 @@
 import SwiftUI
 import UIKit
 
-/// A full-screen, interactive zoomable image viewer.
+/// A full-screen, interactive zoomable image viewer for single images or moment pairs.
 ///
 /// Features:
+/// - Supports single image or a pair of images (front and back)
+/// - Tap to flip or horizontal swipe to switch between the pair when at 1x scale
 /// - Pinch-to-zoom up to 5x with smooth spring physics
 /// - Pan gesture while zoomed in to inspect details
 /// - Double-tap gesture to toggle between 1x and 2.5x zoom
 /// - Swipe-down to dismiss when at 1x scale
+/// - Subtle page indicator dots (1/2) when a pair is present
 /// - Pure black canvas background (#000000)
 public struct FullScreenImageViewer: View {
 
-    let image: UIImage
+    let primary: UIImage
+    let secondary: UIImage?
     let onDismiss: () -> Void
 
+    @State private var selectedIndex: Int = 0
     @State private var scale: CGFloat = 1.0
     @State private var lastScale: CGFloat = 1.0
     @State private var offset: CGSize = .zero
     @State private var lastOffset: CGSize = .zero
     @State private var dragDismissOffset: CGFloat = 0
 
-    public init(image: UIImage, onDismiss: @escaping () -> Void) {
-        self.image = image
+    public init(
+        image: UIImage,
+        secondary: UIImage? = nil,
+        onDismiss: @escaping () -> Void
+    ) {
+        self.primary = image
+        self.secondary = secondary
         self.onDismiss = onDismiss
+    }
+
+    public init(
+        pair: (primary: UIImage, secondary: UIImage),
+        onDismiss: @escaping () -> Void
+    ) {
+        self.primary = pair.primary
+        self.secondary = pair.secondary
+        self.onDismiss = onDismiss
+    }
+
+    private var activeImage: UIImage {
+        if selectedIndex == 1, let secondary {
+            return secondary
+        }
+        return primary
+    }
+
+    private var hasPair: Bool {
+        secondary != nil
     }
 
     public var body: some View {
@@ -33,7 +63,7 @@ public struct FullScreenImageViewer: View {
 
             GeometryReader { proxy in
                 let size = proxy.size
-                Image(uiImage: image)
+                Image(uiImage: activeImage)
                     .resizable()
                     .scaledToFit()
                     .frame(width: size.width, height: size.height)
@@ -44,9 +74,14 @@ public struct FullScreenImageViewer: View {
                     .onTapGesture(count: 2) {
                         toggleZoom()
                     }
+                    .onTapGesture(count: 1) {
+                        if scale <= 1.0 && hasPair {
+                            togglePair()
+                        }
+                    }
             }
 
-            // Close button in top-trailing corner
+            // Top close button
             VStack {
                 HStack {
                     Spacer()
@@ -63,7 +98,35 @@ public struct FullScreenImageViewer: View {
                 }
                 Spacer()
             }
+
+            // Bottom page indicator dots if viewing a pair
+            if hasPair {
+                VStack {
+                    Spacer()
+                    pageIndicator
+                        .opacity(scale > 1.0 || dragDismissOffset > 0 ? 0.0 : 1.0)
+                        .padding(.bottom, Theme.Spacing.xl)
+                }
+            }
         }
+    }
+
+    @ViewBuilder
+    private var pageIndicator: some View {
+        HStack(spacing: Theme.Spacing.s) {
+            Circle()
+                .fill(selectedIndex == 0 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+                .frame(width: Theme.Size.pageIndicatorDot, height: Theme.Size.pageIndicatorDot)
+
+            Circle()
+                .fill(selectedIndex == 1 ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+                .frame(width: Theme.Size.pageIndicatorDot, height: Theme.Size.pageIndicatorDot)
+        }
+        .padding(.horizontal, Theme.Spacing.m)
+        .padding(.vertical, Theme.Spacing.s)
+        .background(Capsule().fill(Theme.Color.surface.opacity(0.75)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(selectedIndex == 0 ? "Photo 1 of 2" : "Photo 2 of 2")
     }
 
     private var backgroundOpacity: Double {
@@ -109,8 +172,8 @@ public struct FullScreenImageViewer: View {
                         height: min(max(proposedY, -maxOffsetY), maxOffsetY)
                     )
                 } else {
-                    // Drag down to dismiss when at 1x
-                    if value.translation.height > 0 {
+                    // Drag down to dismiss when primarily vertical
+                    if value.translation.height > 0 && abs(value.translation.height) > abs(value.translation.width) {
                         dragDismissOffset = value.translation.height
                     }
                 }
@@ -119,8 +182,15 @@ public struct FullScreenImageViewer: View {
                 if scale > 1.0 {
                     lastOffset = offset
                 } else {
+                    // Check if drag was a dismiss gesture
                     if value.translation.height > 100 || value.velocity.height > 600 {
                         onDismiss()
+                    } else if hasPair && abs(value.translation.width) > 50 && abs(value.translation.width) > abs(value.translation.height) {
+                        // Horizontal swipe between pairs
+                        togglePair()
+                        withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
+                            dragDismissOffset = 0
+                        }
                     } else {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) {
                             dragDismissOffset = 0
@@ -128,6 +198,12 @@ public struct FullScreenImageViewer: View {
                     }
                 }
             }
+    }
+
+    private func togglePair() {
+        withAnimation(.easeInOut(duration: 0.2)) {
+            selectedIndex = (selectedIndex == 0) ? 1 : 0
+        }
     }
 
     private func toggleZoom() {

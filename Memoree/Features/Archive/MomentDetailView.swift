@@ -25,7 +25,7 @@ struct MomentDetailView: View {
     @State private var isFrontLarge = false
     @State private var imagesCache: [UUID: (large: UIImage?, inset: UIImage?)] = [:]
     @State private var missingCache: Set<UUID> = []
-    @State private var fullScreenImage: UIImage?
+    @State private var fullScreenPair: (primary: UIImage, secondary: UIImage)?
 
     init(
         moment: MomentFacts,
@@ -81,12 +81,12 @@ struct MomentDetailView: View {
             }
         }
         .fullScreenCover(isPresented: Binding(
-            get: { fullScreenImage != nil },
-            set: { if !$0 { fullScreenImage = nil } }
+            get: { fullScreenPair != nil },
+            set: { if !$0 { fullScreenPair = nil } }
         )) {
-            if let image = fullScreenImage {
-                FullScreenImageViewer(image: image) {
-                    fullScreenImage = nil
+            if let pair = fullScreenPair {
+                FullScreenImageViewer(pair: pair) {
+                    fullScreenPair = nil
                 }
             }
         }
@@ -221,7 +221,7 @@ struct MomentDetailView: View {
                     }
                 },
                 onTapLarge: {
-                    fullScreenImage = large
+                    fullScreenPair = (large, inset)
                 }
             )
             .aspectRatio(aspect(of: large), contentMode: .fit)

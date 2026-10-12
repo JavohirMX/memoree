@@ -145,6 +145,9 @@ enum Theme {
         /// The Today header's icon buttons.
         static let headerIcon: CGFloat = 20
 
+        /// Dot indicator diameter in full-screen pair viewer.
+        static let pageIndicatorDot: CGFloat = 6
+
         /// A standalone icon with no text beside it — the "not in Photos" glyph.
         static let iconStandalone: CGFloat = 32
 

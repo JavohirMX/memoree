@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Testing
+import UIKit
 
 @testable import Memoree
 
@@ -104,5 +105,18 @@ struct Phase2FeatureTests {
         let success = await model.exportFlipbook()
         #expect(success == true)
         #expect(model.exportError == nil)
+    }
+
+    @Test("FullScreenImageViewer initializes with a photo pair")
+    @MainActor
+    func fullScreenImageViewerPairInit() {
+        let size = CGSize(width: 10, height: 10)
+        let renderer = UIGraphicsImageRenderer(size: size)
+        let img1 = renderer.image { ctx in ctx.fill(CGRect(origin: .zero, size: size)) }
+        let img2 = renderer.image { ctx in ctx.fill(CGRect(origin: .zero, size: size)) }
+
+        let viewer = FullScreenImageViewer(pair: (primary: img1, secondary: img2), onDismiss: {})
+        #expect(viewer.primary === img1)
+        #expect(viewer.secondary === img2)
     }
 }

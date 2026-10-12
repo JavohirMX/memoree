@@ -20,7 +20,7 @@ struct TodayView: View {
     @State private var isShowingStats = false
     @State private var selectedMomentForDetail: MomentFacts?
     @State private var carouselIndex = 0
-    @State private var fullScreenImage: UIImage?
+    @State private var fullScreenPair: (primary: UIImage, secondary: UIImage)?
     @State private var flippedMoments: Set<UUID> = []
     @State private var playingBTSMoment: MomentFacts?
 
@@ -97,12 +97,12 @@ struct TodayView: View {
             .presentationDetents([.large])
         }
         .fullScreenCover(isPresented: Binding(
-            get: { fullScreenImage != nil },
-            set: { if !$0 { fullScreenImage = nil } }
+            get: { fullScreenPair != nil },
+            set: { if !$0 { fullScreenPair = nil } }
         )) {
-            if let image = fullScreenImage {
-                FullScreenImageViewer(image: image) {
-                    fullScreenImage = nil
+            if let pair = fullScreenPair {
+                FullScreenImageViewer(pair: pair) {
+                    fullScreenPair = nil
                 }
             }
         }
@@ -331,7 +331,7 @@ struct TodayView: View {
                         }
                     },
                     onTapLarge: {
-                        fullScreenImage = large
+                        fullScreenPair = (large, inset)
                     }
                 )
                 .aspectRatio(aspect(of: large), contentMode: .fit)
