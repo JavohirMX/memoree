@@ -176,18 +176,21 @@ struct CameraView: View {
 
     // MARK: - Leaving
 
-    /// The camera's way out: a top-left back arrow button.
+    /// The camera's way out: a top-left close button, styled like native iOS 27 Liquid Glass.
     private var backButton: some View {
         Button(action: onDismiss) {
-            Image(systemName: "chevron.left")
+            Image(systemName: "xmark")
                 .scaledDisplayFont(Theme.Size.headerIcon, weight: .semibold)
                 .foregroundStyle(Theme.Color.textPrimary)
                 .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
-                .background(Circle().fill(Theme.Color.canvas.opacity(0.65)))
+                .background(Circle().fill(Theme.Color.surface.opacity(0.85)))
+                .overlay {
+                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                }
                 .contentShape(Circle())
         }
         .buttonStyle(.pressDip)
-        .accessibilityLabel("Back")
+        .accessibilityLabel("Close")
         .accessibilityHint("Closes the camera. Discards in-progress capture")
     }
 
