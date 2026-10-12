@@ -35,6 +35,20 @@
                ReferencedContainer = "container:Memoree.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "4D80B42CBAE32537B4B4F5DE"
+               BuildableName = "MemoreeWidget.appex"
+               BlueprintName = "MemoreeWidget"
+               ReferencedContainer = "container:Memoree.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
       </BuildActionEntries>
    </BuildAction>
    <TestAction

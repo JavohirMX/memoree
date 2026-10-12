@@ -254,6 +254,7 @@ final class TodayViewModel {
     /// Full refresh: state, streak, notification diagnostics, and today's pair.
     func reload() async {
         refreshNow()
+        environment.refreshWidgetSnapshot()
         let today = DayIdentifier(date: now)
         let all = environment.momentStore.facts().sorted { $0.capturedAt > $1.capturedAt }
         feedMoments = all

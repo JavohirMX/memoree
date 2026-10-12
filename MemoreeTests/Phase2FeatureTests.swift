@@ -71,12 +71,14 @@ struct Phase2FeatureTests {
     @Test("AppIntent requests camera on shared environment")
     @MainActor
     func captureIntentRequestsCamera() async throws {
+        _ = WidgetCameraHandoff.consume()
         let env = try AppEnvironment(
             photoLibrary: InMemoryPhotoLibraryService(),
             captureService: InMemoryCaptureService(),
             haptics: InMemoryHapticFeedback()
         )
         #expect(AppEnvironment.shared === env)
+        env.consumeCameraRequest()
         #expect(env.pendingCameraRequest == false)
 
         let intent = CaptureMomentIntent()
@@ -85,6 +87,25 @@ struct Phase2FeatureTests {
         #expect(env.pendingCameraRequest == true)
         env.consumeCameraRequest()
         #expect(env.pendingCameraRequest == false)
+    }
+
+    @Test("AppIntent camera handoff survives cold start before environment exists")
+    @MainActor
+    func captureIntentColdStartHandoff() async throws {
+        WidgetCameraHandoff.onRequest = nil
+        _ = WidgetCameraHandoff.consume()
+        #expect(WidgetCameraHandoff.consume() == false)
+
+        let intent = CaptureMomentIntent()
+        _ = try await intent.perform()
+
+        let env = try AppEnvironment(
+            photoLibrary: InMemoryPhotoLibraryService(),
+            captureService: InMemoryCaptureService(),
+            haptics: InMemoryHapticFeedback()
+        )
+        #expect(env.pendingCameraRequest == true)
+        env.consumeCameraRequest()
     }
 
     @Test("Flipbook export calls library service")

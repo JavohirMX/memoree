@@ -135,6 +135,30 @@ final class AppEnvironment {
         self.haptics = haptics ?? SystemHapticFeedback()
         Self.shared = self
 
+        // Widget snapshot + camera handoff (ADR-040). Wired here so Persistence
+        // never imports WidgetKit, and so a cold-launched CaptureMomentIntent
+        // still opens the camera once bootstrap finishes.
+        momentStore.onMomentsDidChange = { [weak self] in
+            guard let self else { return }
+            WidgetSnapshotPublisher.publish(from: self.momentStore)
+        }
+        WidgetSnapshotPublisher.publish(from: momentStore)
+        WidgetCameraHandoff.onRequest = { [weak self] in
+            self?.requestCamera()
+        }
+        if WidgetCameraHandoff.consume() {
+            pendingCameraRequest = true
+        }
+        cameraHandoffObserver = NotificationCenter.default.addObserver(
+            forName: WidgetCameraHandoff.didRequestNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.absorbCameraHandoff()
+            }
+        }
+
         // **The crash sweep, once, here.** Everywhere else that would be is too
         // late: a launch that dies before the camera opens still left bytes behind,
         // and this launch is the only moment the app can know the previous one did
@@ -396,6 +420,25 @@ final class AppEnvironment {
     /// Called from the notification delegate.
     func requestCamera() {
         pendingCameraRequest = true
+    }
+
+    /// Observer for warm-path widget / intent camera handoffs (ADR-040).
+    private var cameraHandoffObserver: NSObjectProtocol?
+
+    /// Consumes an App Group camera request into `pendingCameraRequest`.
+    ///
+    /// Called on bootstrap, on the Darwin-local notification from
+    /// `WidgetCameraHandoff.request()`, and when the scene becomes active so a
+    /// cold-launched intent cannot be missed.
+    func absorbCameraHandoff() {
+        if WidgetCameraHandoff.consume() {
+            pendingCameraRequest = true
+        }
+    }
+
+    /// Publishes the Home Screen widget snapshot from the current archive.
+    func refreshWidgetSnapshot() {
+        WidgetSnapshotPublisher.publish(from: momentStore)
     }
 
     /// A note about the last moment that could not be filed into the album.

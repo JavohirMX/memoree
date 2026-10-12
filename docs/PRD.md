@@ -80,6 +80,7 @@ post from a device they did not capture it on. Every one of those requires a ser
 | F15 | Stats | Days captured, streaks, average retakes, BTS count, busiest hour — no on-time / late row (ADR-032) |
 | F16 | Share sheet | Both originals + an optional combined composite, no watermark |
 | F17 | Export | App metadata as JSON; photos via share sheet |
+| F18 | Home Screen widget | Small + medium: streak + layout-is-state (shutter ring vs huge number); week strip on medium; tap opens camera. Metadata only — no photos (ADR-040) |
 
 ### 4.2 Explicitly out of scope
 

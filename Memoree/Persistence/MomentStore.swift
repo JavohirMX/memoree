@@ -20,6 +20,12 @@ final class MomentStore {
     private let context: ModelContext
     private let calendar: Calendar
 
+    /// Fired after a live moment is recorded or tombstoned.
+    ///
+    /// Used to refresh the Home Screen widget snapshot (ADR-040) without
+    /// Persistence importing WidgetKit.
+    var onMomentsDidChange: (() -> Void)?
+
     init(context: ModelContext, calendar: Calendar = .current) {
         self.context = context
         self.calendar = calendar
@@ -207,6 +213,7 @@ final class MomentStore {
         )
         context.insert(moment)
         try save()
+        onMomentsDidChange?()
         return moment
     }
 
@@ -260,6 +267,7 @@ final class MomentStore {
     func delete(_ moment: Moment) throws {
         moment.deletedAt = Date()
         try save()
+        onMomentsDidChange?()
     }
 
     // MARK: - Day records

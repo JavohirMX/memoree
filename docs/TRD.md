@@ -123,7 +123,14 @@ Memoree/
 │       ├── DayIdentifier.swift
 │       ├── TimeWindow.swift
 │       ├── CountdownFormatter.swift
-│       └── Log.swift
+│       ├── CaptureMomentIntent.swift
+│       ├── WidgetSnapshot*.swift      # App Group snapshot (ADR-040)
+│       └── WidgetCameraHandoff.swift
+├── MemoreeWidget/                     # WidgetKit extension (ADR-040)
+│   ├── MemoreeWidget.swift            # small + medium, layout-is-state
+│   ├── WidgetTheme.swift
+│   ├── Info.plist
+│   └── MemoreeWidget.entitlements
 └── MemoreeTests/
     ├── …
 ```
@@ -687,6 +694,22 @@ Three rules that are easy to get wrong and are therefore pinned by tests:
    by evening (ADR-010).
 3. **Deleted moments recompute.** Tombstoning removes the row from `allMoments`, so the streak
    falls immediately with no cache invalidation step.
+
+### 7.1 Home Screen widget (ADR-040)
+
+`MemoreeWidget` is a WidgetKit extension. It does **not** open SwiftData. The app publishes a
+`WidgetSnapshot` into the App Group (`group.com.javohirmx.memoree`) via
+`WidgetSnapshotPublisher` after `MomentStore.record` / `delete` and on Today foreground reload.
+Pure derivation lives in `WidgetSnapshotBuilder` (unit-tested).
+
+| Family | Waiting (no moment today) | Done (moment today) |
+| --- | --- | --- |
+| Small | Empty shutter ring centered; compact streak bottom-leading | Huge centered streak |
+| Medium | Ring + compact streak; week strip | Large streak; week strip |
+
+Tap → `CaptureMomentIntent` → App Group camera handoff → `AppEnvironment.pendingCameraRequest`.
+No photographs on the widget. App Group flakiness on Simulator is a device-check concern; logic
+tests do not require the suite to be provisioned.
 
 ## 8. App states
 

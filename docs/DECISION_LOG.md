@@ -1673,6 +1673,41 @@ exceptions into the model.
 
 ---
 
+## ADR-040 — Home Screen widget is a metadata snapshot, not shared SwiftData
+
+**Status:** Accepted · **Date:** 2026-10-12 · **Consequence of:** ADR-001, ADR-007, ADR-010, ADR-032
+
+**Context.** A Home Screen widget answers “have I captured today?” and shows the streak without
+opening the app. The widget extension is a separate process: it cannot use in-process
+`AppEnvironment` / `@MainActor MomentStore`, and opening the default SwiftData store from two
+processes is a concurrency foot-gun. Putting photograph bytes (or even thumbnails) in an App Group
+would violate ADR-007’s “no image bytes in app storage.”
+
+**Decision.**
+1. **App Group snapshot.** The app writes a tiny Codable `WidgetSnapshot` (`dayIdentifier`,
+   `capturedToday`, `currentStreak`, `lastSevenDays`, `updatedAt`) into
+   `group.com.javohirmx.memoree` after moment record/delete and on foreground reload. The widget
+   only reads that payload.
+2. **No photographs in the widget.** Layout-is-state: waiting = empty shutter ring + compact
+   streak; done = huge centered streak. Medium adds a seven-dot week strip. No status slogans.
+3. **Tap opens the camera.** The whole widget is a `Button(intent: CaptureMomentIntent())`. The
+   intent sets an App Group camera handoff (and a local notification) rather than calling
+   `AppEnvironment.shared` directly, so cold launch still opens the camera once bootstrap finishes.
+4. **Stale midnight.** If the snapshot’s `dayIdentifier` ≠ the widget’s today, treat
+   `capturedToday` as false and keep the last known streak until the app refreshes.
+
+**Alternatives considered.**
+- Shared SwiftData store in the App Group — rejected; cross-process SwiftData without a clear
+  ownership story is more risk than a 7-bool snapshot.
+- PhotoKit thumbnails in the widget — rejected; ADR-007 and add-only Photos posture. Thumbnails
+  need a new ADR and a justified cache policy.
+- Lock Screen accessories in v1 — deferred; same snapshot could feed them later.
+
+**Reversal trigger.** If users demand a photo on the widget strongly enough to justify a bounded
+thumbnail cache in the App Group, supersede this ADR — do not smuggle bytes in without one.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

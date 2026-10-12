@@ -34,11 +34,15 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Memoree
+    dependencies:
+      - target: MemoreeWidget
+        embed: true
     settings:
       base:
         PRODUCT_NAME: Memoree
         PRODUCT_BUNDLE_IDENTIFIER: com.javohirmx.memoree
         INFOPLIST_FILE: Memoree/Resources/Info.plist
+        CODE_SIGN_ENTITLEMENTS: Memoree/Resources/Memoree.entitlements
         CODE_SIGN_STYLE: Automatic
         # The team of the Apple ID actually signed in to this machine, which is
         # the `OU` on the local "Apple Development" certificate — not the
@@ -73,6 +77,32 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
 
+  MemoreeWidget:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: MemoreeWidget
+      - path: Memoree/Support/WidgetAppGroup.swift
+      - path: Memoree/Support/WidgetSnapshot.swift
+      - path: Memoree/Support/WidgetSnapshotStore.swift
+      - path: Memoree/Support/WidgetCameraHandoff.swift
+      - path: Memoree/Support/CaptureMomentIntent.swift
+    settings:
+      base:
+        PRODUCT_NAME: MemoreeWidget
+        PRODUCT_BUNDLE_IDENTIFIER: com.javohirmx.memoree.widget
+        INFOPLIST_FILE: MemoreeWidget/Info.plist
+        CODE_SIGN_ENTITLEMENTS: MemoreeWidget/MemoreeWidget.entitlements
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: MBBD9BRZ67
+        CODE_SIGN_IDENTITY: Apple Development
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+        SKIP_INSTALL: YES
+
   MemoreeTests:
     type: bundle.unit-test
     platform: iOS
@@ -97,6 +127,7 @@ schemes:
     build:
       targets:
         Memoree: all
+        MemoreeWidget: all
         MemoreeTests: [test]
     run:
       config: Debug

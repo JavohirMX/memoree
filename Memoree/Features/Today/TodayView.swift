@@ -13,6 +13,7 @@ struct TodayView: View {
 
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.scenePhase) private var scenePhase
     @State private var model: TodayViewModel?
     @State private var isShowingCamera = false
     @State private var isShowingSettings = false
@@ -161,6 +162,12 @@ struct TodayView: View {
             presentCameraIfRequested()
         }
         .onChange(of: environment.pendingCameraRequest) { _, _ in
+            presentCameraIfRequested()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            guard phase == .active else { return }
+            environment.absorbCameraHandoff()
+            environment.refreshWidgetSnapshot()
             presentCameraIfRequested()
         }
     }
