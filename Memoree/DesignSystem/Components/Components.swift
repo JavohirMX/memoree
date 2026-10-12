@@ -237,3 +237,57 @@ struct CanvasBackground: View {
             .ignoresSafeArea()
     }
 }
+
+// MARK: - Liquid Glass (iOS 27)
+
+/// Adopts Apple's iOS 27 Liquid Glass design language with backward compatibility.
+///
+/// In iOS 26 and iOS 27, Apple introduced the Liquid Glass visual material system.
+/// Interactive controls use `.buttonStyle(.glass)` with `.buttonBorderShape(.circle)`
+/// to produce dynamic optical lensing, light reflections, and fluid touch interactions.
+struct LiquidGlassCircleModifier: ViewModifier {
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content
+                .buttonStyle(.glass)
+                .buttonBorderShape(.circle)
+                .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+        } else {
+            content
+                .buttonStyle(.pressDip)
+                .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                .background(Circle().fill(Theme.Color.surface.opacity(0.85)))
+                .overlay {
+                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                }
+                .contentShape(Circle())
+        }
+    }
+}
+
+/// A container that groups adjacent Liquid Glass elements, enabling cohesive
+/// optical blending on iOS 26/27+ and standard layout on earlier iOS versions.
+struct LiquidGlassGroup<Content: View>: View {
+
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        if #available(iOS 26.0, *) {
+            GlassEffectContainer {
+                content()
+            }
+        } else {
+            content()
+        }
+    }
+}
+
+extension View {
+
+    /// Applies Apple's native Liquid Glass circular styling to an interactive control.
+    func liquidGlassCircle() -> some View {
+        modifier(LiquidGlassCircleModifier())
+    }
+}
+

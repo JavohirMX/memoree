@@ -538,44 +538,34 @@ struct TodayView: View {
 
             Spacer()
 
-            HStack(spacing: Theme.Spacing.s) {
-                Button {
-                    isShowingArchive = true
-                } label: {
-                    Image(systemName: "square.grid.3x3")
-                        .scaledDisplayFont(Theme.Size.headerIcon, weight: .semibold)
-                        .foregroundStyle(model.summary.totalMoments == 0 ? Theme.Color.textTertiary : Theme.Color.textPrimary)
-                        .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
-                        .background(Circle().fill(Theme.Color.surface.opacity(0.85)))
-                        .overlay {
-                            Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
-                        }
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.pressDip)
-                .disabled(model.summary.totalMoments == 0)
-                .opacity(model.summary.totalMoments == 0 ? 0.35 : 1)
-                .accessibilityLabel("Archive")
-                .accessibilityHint(model.summary.totalMoments == 0
-                    ? "No moments yet"
-                    : "Shows every moment you have captured")
+            LiquidGlassGroup {
+                HStack(spacing: Theme.Spacing.s) {
+                    Button {
+                        isShowingArchive = true
+                    } label: {
+                        Image(systemName: "square.grid.3x3")
+                            .scaledDisplayFont(Theme.Size.headerIcon, weight: .semibold)
+                            .foregroundStyle(model.summary.totalMoments == 0 ? Theme.Color.textTertiary : Theme.Color.textPrimary)
+                    }
+                    .liquidGlassCircle()
+                    .disabled(model.summary.totalMoments == 0)
+                    .opacity(model.summary.totalMoments == 0 ? 0.35 : 1)
+                    .accessibilityLabel("Archive")
+                    .accessibilityHint(model.summary.totalMoments == 0
+                        ? "No moments yet"
+                        : "Shows every moment you have captured")
 
-                Button {
-                    isShowingSettings = true
-                } label: {
-                    Image(systemName: "gearshape")
-                        .scaledDisplayFont(Theme.Size.headerIcon, weight: .semibold)
-                        .foregroundStyle(Theme.Color.textPrimary)
-                        .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
-                        .background(Circle().fill(Theme.Color.surface.opacity(0.85)))
-                        .overlay {
-                            Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
-                        }
-                        .contentShape(Circle())
+                    Button {
+                        isShowingSettings = true
+                    } label: {
+                        Image(systemName: "gearshape")
+                            .scaledDisplayFont(Theme.Size.headerIcon, weight: .semibold)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                    }
+                    .liquidGlassCircle()
+                    .accessibilityLabel("Settings")
+                    .accessibilityHint("Opens app settings")
                 }
-                .buttonStyle(.pressDip)
-                .accessibilityLabel("Settings")
-                .accessibilityHint("Opens app settings")
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
