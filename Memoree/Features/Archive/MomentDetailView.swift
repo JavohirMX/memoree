@@ -62,7 +62,7 @@ struct MomentDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
-                    Button("Close") { dismiss() }
+                    BackButton { dismiss() }
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     shareMenu(model: sharedPayload)

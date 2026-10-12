@@ -17,6 +17,7 @@ struct StatsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var model: StatsViewModel?
+    @State private var selectedMoment: MomentFacts?
 
     var body: some View {
         NavigationStack {
@@ -32,10 +33,20 @@ struct StatsView: View {
             .navigationTitle("Stats")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
+                ToolbarItem(placement: .topBarLeading) {
+                    BackButton { dismiss() }
                 }
             }
+        }
+        .sheet(item: $selectedMoment) { moment in
+            MomentDetailView(
+                moment: moment,
+                moments: model?.days ?? [moment],
+                onDelete: {
+                    selectedMoment = nil
+                    model?.load()
+                }
+            )
         }
         // Lifecycle on the outermost container, never on the `if let model`
         // branch — a `.task` there only runs once the model exists, so it never
@@ -52,94 +63,188 @@ struct StatsView: View {
         if model.isEmpty {
             empty
         } else {
-            VStack(alignment: .leading, spacing: Theme.Spacing.xl) {
-                headline(model)
-                figures(model)
-                history(model)
+            VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+                heroStreakCard(model)
+                rhythmCard(model)
+                activityCard(model)
+                recentHistoryCard(model)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Theme.Spacing.xl)
-            .padding(.vertical, Theme.Spacing.xl)
+            .padding(.horizontal, Theme.Spacing.l)
+            .padding(.vertical, Theme.Spacing.l)
         }
     }
 
-    /// The current streak, large, and nothing else competing with it.
-    private func headline(_ model: StatsViewModel) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
-            HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
-                Image(systemName: "flame.fill")
-                    // Scaled, and anchored to the same `.largeTitle` the numeral
-                    // uses, so the two stay in proportion. At the default setting
-                    // this is 28 — unchanged — and at AX5 it grows with the number
-                    // beside it instead of sitting there like a period.
-                    .scaledDisplayFont(28)
-                    .foregroundStyle(Theme.Color.textPrimary)
-                Text("\(model.summary.currentStreak)")
-                    // Scales with the user's text-size setting. `Typography` has
-                    // no 56pt text style, so it is the modifier's job — see
-                    // `ScaledFont.swift`.
-                    .scaledDisplayFont(56)
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.Color.textPrimary)
+    // MARK: - Hero Streak Card
+
+    /// The current streak, longest run, and recent 14-day habit continuity strip.
+    private func heroStreakCard(_ model: StatsViewModel) -> some View {
+        StatCard {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: Theme.Spacing.xs) {
+                    HStack(alignment: .firstTextBaseline, spacing: Theme.Spacing.s) {
+                        Image(systemName: "flame.fill")
+                            .scaledDisplayFont(28)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                        Text("\(model.summary.currentStreak)")
+                            .scaledDisplayFont(48)
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.Color.textPrimary)
+                    }
+                    Text(model.streakStatusDescription)
+                        .font(Theme.Typography.body)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: Theme.Spacing.xs) {
+                    Text("Longest run")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                    Text("\(model.summary.longestStreak)")
+                        .font(Theme.Typography.screenTitle)
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.Color.textPrimary)
+                    Text(model.longestStreakDescription)
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
             }
-            Text(model.currentStreakDescription + " in a row")
-                .font(Theme.Typography.body)
-                .foregroundStyle(Theme.Color.textSecondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                model.summary.currentStreak == 0
+                    ? "No current streak, longest run \(model.longestStreakDescription)"
+                    : "Streak of \(model.currentStreakDescription), longest run \(model.longestStreakDescription)"
+            )
+
+            Theme.Color.divider
+                .frame(height: 1)
+
+            // 14-day habit continuity strip
+            VStack(alignment: .leading, spacing: Theme.Spacing.s) {
+                HStack(spacing: Theme.Spacing.s) {
+                    ForEach(model.habitDays) { item in
+                        Circle()
+                            .fill(item.isCaptured ? Theme.Color.textPrimary : Theme.Color.divider)
+                            .frame(width: Theme.Size.habitDotSize, height: Theme.Size.habitDotSize)
+                            .overlay {
+                                if item.isToday && !item.isCaptured {
+                                    Circle()
+                                        .strokeBorder(Theme.Color.textSecondary, lineWidth: 1)
+                                }
+                            }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                HStack {
+                    Text("14 days ago")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                    Spacer()
+                    Text("Today")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Last 14 days activity strip")
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            model.summary.currentStreak == 0
-                ? "No current streak"
-                : "Streak of \(model.currentStreakDescription)"
-        )
     }
 
-    /// Every other number, as rows.
-    ///
-    /// `MetadataRow` rather than bespoke components, because the archive detail
-    /// already uses it and two row styles in one app is one more thing to keep
-    /// consistent. Amber appears **nowhere** in this screen: with the late badge
-    /// gone there is nothing to warn about, and the single reserved use is a
-    /// declined permission (ADR-025).
-    private func figures(_ model: StatsViewModel) -> some View {
-        VStack(spacing: Theme.Spacing.s) {
-            MetadataRow(label: "Photographs", value: "\(model.summary.totalMoments)")
+    // MARK: - Capture Rhythm Card
 
-            MetadataRow(label: "Days photographed", value: model.daysCapturedDescription)
-            MetadataRow(label: "Longest run", value: model.longestStreakDescription)
+    /// 24-hour minimalist capture distribution.
+    private func rhythmCard(_ model: StatsViewModel) -> some View {
+        StatCard {
+            Text("Rhythm")
+                .font(Theme.Typography.screenTitle)
+                .foregroundStyle(Theme.Color.textPrimary)
 
-            if let retakes = model.retakeDescription {
-                MetadataRow(label: "Retakes", value: retakes)
+            // Minimalist 24-hour bars
+            HStack(alignment: .bottom, spacing: Theme.Spacing.xs) {
+                ForEach(model.hourlyDistribution, id: \.hour) { bin in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(bin.count > 0 ? Theme.Color.textPrimary : Theme.Color.divider)
+                        .frame(
+                            width: Theme.Size.rhythmBarWidth,
+                            height: max(1, bin.ratio * Theme.Size.rhythmBarMaxHeight)
+                        )
+                }
             }
-            // **A count, not a percentage**, and hidden at zero — see the view
-            // model's note. This row was carried as "omitted, BTS has no recorder"
-            // from Phase 2 until Phase 10 gave the feature something to count.
-            if let clips = model.btsDescription {
-                MetadataRow(label: "Behind the Scenes", value: clips)
+            .frame(maxWidth: .infinity, alignment: .center)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                model.busiestHourDescription != nil
+                    ? "Hourly capture rhythm. Most captures at \(model.busiestHourDescription!)"
+                    : "Hourly capture rhythm"
+            )
+
+            HStack {
+                Text("00")
+                Spacer()
+                Text("06")
+                Spacer()
+                Text("12")
+                Spacer()
+                Text("18")
+                Spacer()
+                Text("24")
             }
+            .font(Theme.Typography.metadata)
+            .foregroundStyle(Theme.Color.textTertiary)
+
             if let hour = model.busiestHourDescription {
+                Theme.Color.divider
+                    .frame(height: 1)
                 MetadataRow(label: "Most often at", value: hour)
             }
-            if model.summary.missedDays > 0 {
-                MetadataRow(label: "Days", value: model.missedDescription)
+        }
+    }
+
+    // MARK: - Activity Card
+
+    /// Memory aggregates and journaling metrics.
+    private func activityCard(_ model: StatsViewModel) -> some View {
+        StatCard {
+            Text("Activity")
+                .font(Theme.Typography.screenTitle)
+                .foregroundStyle(Theme.Color.textPrimary)
+
+            VStack(spacing: Theme.Spacing.s) {
+                MetadataRow(label: "Photographs", value: "\(model.summary.totalMoments)")
+                MetadataRow(label: "Days photographed", value: model.daysCapturedDescription)
+
+                if let consistency = model.consistencyDescription {
+                    MetadataRow(label: "Consistency", value: consistency)
+                }
+                if let first = model.firstMemoryDescription {
+                    MetadataRow(label: "First photograph", value: first)
+                }
+                if let notes = model.notesDescription {
+                    MetadataRow(label: "Notes written", value: notes)
+                }
+                if let retakes = model.retakeDescription {
+                    MetadataRow(label: "Retakes", value: retakes)
+                }
+                if let clips = model.btsDescription {
+                    MetadataRow(label: "Behind the Scenes", value: clips)
+                }
+                if model.summary.missedDays > 0 {
+                    MetadataRow(label: "Days", value: model.missedDescription)
+                }
             }
         }
     }
 
-    /// The recent run of days, newest first.
-    ///
-    /// **A list, not a calendar.** A calendar grid would be a mostly-empty
-    /// month of grey squares with a handful of marks, and it would have to answer
-    /// "what does an empty square mean" — did you miss it, or photograph
-    /// off-window, or has the day not happened yet? Three states, one glyph, and
-    /// a legend. A row per day answers none of that: it is a photograph or it
-    /// is not there.
-    ///
-    /// Capped at thirty. A user with a year of history does not need 365 rows to
-    /// learn that they photograph most days, and rendering all of them is the
-    /// archive's job.
-    private func history(_ model: StatsViewModel) -> some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+    // MARK: - Recent History Card
+
+    private static let historyLimit = 30
+
+    /// Interactive list of past moments opening full detail view on tap.
+    private func recentHistoryCard(_ model: StatsViewModel) -> some View {
+        StatCard {
             Text("Recent")
                 .font(Theme.Typography.screenTitle)
                 .foregroundStyle(Theme.Color.textPrimary)
@@ -150,19 +255,36 @@ struct StatsView: View {
                         Theme.Color.divider
                             .frame(height: 1)
                     }
-                    historyRow(moment)
+                    Button {
+                        selectedMoment = moment
+                    } label: {
+                        historyRow(moment)
+                    }
+                    .buttonStyle(.plain)
                 }
             }
         }
     }
-
-    private static let historyLimit = 30
 
     private func historyRow(_ moment: MomentFacts) -> some View {
         HStack(spacing: Theme.Spacing.m) {
             Text(moment.day.date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))
                 .font(Theme.Typography.body)
                 .foregroundStyle(Theme.Color.textPrimary)
+
+            if let note = moment.note, !note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Image(systemName: "note.text")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .accessibilityLabel("Has note")
+            }
+
+            if moment.hasBTS {
+                Image(systemName: "video.fill")
+                    .font(Theme.Typography.metadata)
+                    .foregroundStyle(Theme.Color.textSecondary)
+                    .accessibilityLabel("Has video")
+            }
 
             Spacer()
 
@@ -177,10 +299,17 @@ struct StatsView: View {
                     .foregroundStyle(Theme.Color.textTertiary)
                     .accessibilityLabel("\(moment.retakeCount) retakes")
             }
+
+            Image(systemName: "chevron.right")
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textTertiary)
         }
         .padding(.vertical, Theme.Spacing.m)
+        .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
     }
+
+    // MARK: - Empty State
 
     /// Nothing captured yet.
     private var empty: some View {
@@ -198,5 +327,23 @@ struct StatsView: View {
         }
         .padding(Theme.Spacing.xl)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Card Container
+
+/// Elevated dark container card for statistics sections.
+private struct StatCard<Content: View>: View {
+
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+            content()
+        }
+        .padding(Theme.Spacing.l)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.Color.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous))
     }
 }

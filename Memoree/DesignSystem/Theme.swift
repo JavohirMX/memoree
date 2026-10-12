@@ -197,6 +197,24 @@ enum Theme {
         /// The clearance needed at the bottom of the feed scroll view so content
         /// is not obscured by the floating shutter button.
         static let feedBottomClearance: CGFloat = 96
+
+        /// The diameter of the play overlay indicator in BTS video playback.
+        static let btsPlayOverlaySize: CGFloat = 56
+
+        /// The thickness of the progress bar in BTS video playback.
+        static let btsProgressBarHeight: CGFloat = 3
+
+        /// Habit dot indicator diameter in the stats streak continuity strip.
+        static let habitDotSize: CGFloat = 8
+
+        /// Maximum bar height in the stats rhythm chart.
+        static let rhythmBarMaxHeight: CGFloat = 44
+
+        /// Bar width in the stats rhythm chart.
+        static let rhythmBarWidth: CGFloat = 6
+
+        /// Small indicator icon frame on stats recent rows.
+        static let recentRowIconSize: CGFloat = 14
     }
 
     // MARK: - Radius

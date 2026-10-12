@@ -50,6 +50,9 @@ struct ArchiveView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
+                    BackButton { dismiss() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     if let model, !model.moments.isEmpty {
                         Button {
                             isShowingTimelapsePreview = true
@@ -59,9 +62,6 @@ struct ArchiveView: View {
                         }
                         .accessibilityLabel("Export Timelapse Flipbook Video")
                     }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("Done") { dismiss() }
                 }
             }
         }

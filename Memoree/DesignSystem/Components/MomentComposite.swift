@@ -67,6 +67,7 @@ struct MomentComposite: View {
     var onTapLarge: (() -> Void)?
     var onDoubleTapLarge: (() -> Void)?
     var onFlip: (() -> Void)?
+    var onPlayBTS: (() -> Void)?
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -91,7 +92,26 @@ struct MomentComposite: View {
                 insetLayer(inset)
             }
 
-            if let onFlip {
+            if let onPlayBTS {
+                Button {
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    onPlayBTS()
+                } label: {
+                    Image(systemName: "play.fill")
+                        .font(Theme.Typography.retakePill)
+                        .foregroundStyle(Theme.Color.textPrimary)
+                        .padding(Theme.Spacing.s)
+                        .background(Theme.Color.canvas.opacity(0.6))
+                        .clipShape(Circle())
+                        .overlay {
+                            Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.pressDip)
+                .padding(Theme.Spacing.m)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                .accessibilityLabel("Play Behind the Scenes clip")
+            } else if let onFlip {
                 Button {
                     UIImpactFeedbackGenerator(style: .light).impactOccurred()
                     onFlip()

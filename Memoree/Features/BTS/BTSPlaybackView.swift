@@ -46,27 +46,96 @@ struct BTSPlaybackView: View {
     @State private var model: BTSPlaybackModel?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            player
-            controls
-        }
-        .task(id: assetIdentifier) { await prepare() }
-        // **Stop on disappear, not on a timer.** The player holds a file handle and
-        // a decode pipeline; leaving it running under a dismissed sheet is audio
-        // from a screen nobody is looking at.
-        .onDisappear { teardown() }
+        playerCard
+            .task(id: assetIdentifier) { await prepare() }
+            // **Stop on disappear, not on a timer.** The player holds a file handle and
+            // a decode pipeline; leaving it running under a dismissed sheet is audio
+            // from a screen nobody is looking at.
+            .onDisappear { teardown() }
     }
 
-    // MARK: - Player
+    // MARK: - Player Card
 
     @ViewBuilder
-    private var player: some View {
+    private var playerCard: some View {
         if let model, let player = model.player {
-            VideoPlayer(player: player)
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                .background(Theme.Color.canvas)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-                .accessibilityLabel("Behind the Scenes clip")
+            ZStack(alignment: .bottom) {
+                VideoPlayer(player: player)
+                    .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                    .allowsHitTesting(false)
+                    .accessibilityLabel("Behind the Scenes clip")
+
+                // Tap anywhere on video to toggle play / pause
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        model.togglePlayback()
+                    }
+
+                // Centered play overlay when paused
+                if !model.isPlaying {
+                    Circle()
+                        .fill(Theme.Color.canvas.opacity(0.6))
+                        .frame(width: Theme.Size.btsPlayOverlaySize, height: Theme.Size.btsPlayOverlaySize)
+                        .overlay {
+                            Image(systemName: "play.fill")
+                                .font(Theme.Typography.screenTitle)
+                                .foregroundStyle(Theme.Color.textPrimary)
+                                .offset(x: 1)
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                }
+
+                // Controls overlay: Mute button & Progress bar
+                VStack(spacing: Theme.Spacing.s) {
+                    HStack {
+                        Spacer()
+
+                        Button {
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                            model.toggleMute()
+                        } label: {
+                            Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+                                .font(Theme.Typography.metadata.weight(.semibold))
+                                .foregroundStyle(Theme.Color.textPrimary)
+                                .padding(Theme.Spacing.s)
+                                .background(Theme.Color.canvas.opacity(0.6))
+                                .clipShape(Circle())
+                                .overlay {
+                                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                                }
+                        }
+                        .buttonStyle(.pressDip)
+                        .accessibilityLabel(model.isMuted ? "Unmute video" : "Mute video")
+                    }
+                    .padding(.horizontal, Theme.Spacing.m)
+
+                    // Minimal horizontal progress bar
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule()
+                                .fill(Theme.Color.divider)
+                                .frame(height: Theme.Size.btsProgressBarHeight)
+
+                            Capsule()
+                                .fill(Theme.Color.textPrimary)
+                                .frame(width: max(0, proxy.size.width * CGFloat(model.progress)), height: Theme.Size.btsProgressBarHeight)
+                        }
+                    }
+                    .frame(height: Theme.Size.btsProgressBarHeight)
+                    .padding(.horizontal, Theme.Spacing.m)
+                    .padding(.bottom, Theme.Spacing.m)
+                }
+            }
+            .aspectRatio(3.0 / 4.0, contentMode: .fit)
+            .background(Theme.Color.canvas)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.card)
+                    .strokeBorder(Theme.Color.divider, lineWidth: 1)
+            }
+            .animation(.easeInOut(duration: 0.2), value: model.isPlaying)
         } else if model?.failure != nil {
             // **Said, not shown as a black rectangle.** A frame that will not play
             // looks like a rendering bug; the truth is that the clip is gone from
@@ -93,53 +162,6 @@ struct BTSPlaybackView: View {
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 .accessibilityHidden(true)
-        }
-    }
-
-    // MARK: - Controls
-
-    /// Play/pause and mute, and nothing else.
-    ///
-    /// **No scrubber, no volume, no full screen.** The clip is at most fifteen
-    /// seconds and it plays once; a full transport would be a video app wearing
-    /// this app's name, which is the objection `BTSTrim.maximumClipDuration` was
-    /// written with.
-    ///
-    /// **Mute is on by default and the control is offered anyway.** A clip with
-    /// sound plays silently until asked, because Memoree is a thing you open in a
-    /// queue, on a train, in a lecture. The control is not hidden behind the
-    /// default; it is right there.
-    @ViewBuilder
-    private var controls: some View {
-        if let model, model.player != nil {
-            HStack(spacing: Theme.Spacing.m) {
-                Button {
-                    model.togglePlayback()
-                } label: {
-                    // **Text, not a symbol.** "Play"/"Pause" as words is unambiguous
-                    // in every language, needs no accessibility override, and costs
-                    // nothing on a screen with one control on it.
-                    Text(model.isPlaying ? "Pause" : "Play")
-                        .font(Theme.Typography.metadata)
-                        .frame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Color.textPrimary)
-
-                Button {
-                    model.toggleMute()
-                } label: {
-                    Text(model.isMuted ? "Unmute" : "Mute")
-                        .font(Theme.Typography.metadata)
-                        .frame(minWidth: Theme.Size.tapTarget, minHeight: Theme.Size.tapTarget)
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(Theme.Color.textSecondary)
-
-                Spacer()
-            }
         }
     }
 
@@ -191,17 +213,11 @@ final class BTSPlaybackModel {
     private(set) var player: AVPlayer?
     private(set) var isPlaying = false
     private(set) var isMuted = true
+    private(set) var progress: Double = 0.0
     private(set) var failure: String?
 
-    /// Observes playback so the button label can say Pause rather than Play while
-    /// the clip is running.
-    ///
-    /// **A `timeObserver` and not `AVPlayerItem.status` polling**, because the thing
-    /// the label needs is "is it playing", and the item's status never changes
-    /// between playing and finished — it only ever goes ready, failed, or unknown.
-    /// A periodic observer is also what reports the end of the clip, which is what
-    /// puts `isPlaying` back to `false` on its own.
     private var timeObserver: Any?
+    private var endObserver: (any NSObjectProtocol)?
 
     init(library: PhotoLibraryService, assetIdentifier: String) {
         self.library = library
@@ -212,36 +228,45 @@ final class BTSPlaybackModel {
         do {
             let url = try await library.btsClipFile(for: assetIdentifier)
             let created = AVPlayer(url: url)
-            // **`isMuted` applied to the player, not to the view.** A `VideoPlayer`
-            // with a mute overlay looks muted until the overlay draws, which is
-            // after the first frame of audio has already been played.
             created.isMuted = isMuted
             player = created
 
-            // **`addPeriodicTimeObserver`, and the interval is a frame rather than a
-            // fraction of the clip.** Five seconds of clip at 0.05s intervals is
-            // 100 callbacks for a boolean that changes twice; at 0.25s it is 20 and
-            // the label is still well inside human reaction time.
-            //
-            // **`queue: .main`, named explicitly.** The observer delivers on the
-            // queue it is given, and the default is not stated anywhere I could
-            // rely on — so this passes the main queue on purpose and hops to
-            // `@MainActor` inside, rather than relying on a default and hoping. A
-            // boolean read by a SwiftUI button that is written off the main thread
-            // is a data race with the worst possible symptom: a label that does not
-            // update.
-            let interval = CMTime(seconds: 0.25, preferredTimescale: 600)
+            let interval = CMTime(seconds: 0.05, preferredTimescale: 600)
             timeObserver = created.addPeriodicTimeObserver(
                 forInterval: interval,
                 queue: .main
             ) { [weak self] time in
                 let duration = created.currentItem?.duration.seconds ?? 0
-                let finished = duration.isFinite && duration > 0
-                    && time.seconds >= duration - 0.05
+                let current = time.seconds
+                let calcProgress = (duration > 0 && duration.isFinite)
+                    ? min(max(current / duration, 0.0), 1.0)
+                    : 0.0
                 Task { @MainActor [weak self] in
-                    self?.isPlaying = !finished && created.rate != 0
+                    guard let self else { return }
+                    self.progress = calcProgress
+                    self.isPlaying = created.rate != 0
                 }
             }
+
+            if let item = created.currentItem {
+                endObserver = NotificationCenter.default.addObserver(
+                    forName: .AVPlayerItemDidPlayToEndTime,
+                    object: item,
+                    queue: .main
+                ) { [weak self] _ in
+                    Task { @MainActor [weak self] in
+                        guard let self, let player = self.player else { return }
+                        player.seek(to: .zero)
+                        player.play()
+                        self.isPlaying = true
+                        self.progress = 0.0
+                    }
+                }
+            }
+
+            // Autoplay immediately on load
+            created.play()
+            isPlaying = true
         } catch {
             failure = error is LibraryError
                 ? "This clip is no longer in your library."
@@ -255,10 +280,10 @@ final class BTSPlaybackModel {
             player.pause()
             isPlaying = false
         } else {
-            // **From the beginning, deliberately.** The clip is a few seconds of a
-            // moment already in the past; resuming from three-quarters through
-            // shows the user the last second of it and calls that playback.
-            player.seek(to: .zero)
+            if let duration = player.currentItem?.duration.seconds,
+               duration > 0, player.currentTime().seconds >= duration - 0.05 {
+                player.seek(to: .zero)
+            }
             player.play()
             isPlaying = true
         }
@@ -269,14 +294,11 @@ final class BTSPlaybackModel {
         player?.isMuted = isMuted
     }
 
-    /// Releases the player and its observer.
-    ///
-    /// **The observer has to go first.** `addPeriodicTimeObserver` retains its
-    /// closure, the closure captures the player, and removing the observer is the
-    /// only thing that breaks the cycle — a model that dropped only its own
-    /// reference would leak a decode pipeline per playback for the life of the
-    /// process.
     func stop() {
+        if let endObserver {
+            NotificationCenter.default.removeObserver(endObserver)
+        }
+        endObserver = nil
         if let timeObserver, let player {
             player.removeTimeObserver(timeObserver)
         }
@@ -284,5 +306,6 @@ final class BTSPlaybackModel {
         player?.pause()
         player = nil
         isPlaying = false
+        progress = 0.0
     }
 }

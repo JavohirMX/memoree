@@ -291,3 +291,23 @@ extension View {
     }
 }
 
+/// The standard navigation bar Back button used across sheets and navigation views.
+///
+/// Features a leading chevron and "Back" label, matching native iOS navigation style.
+struct BackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: Theme.Spacing.xs) {
+                Image(systemName: "chevron.left")
+                    .font(Theme.Typography.body.weight(.semibold))
+                Text("Back")
+                    .font(Theme.Typography.body)
+            }
+            .foregroundStyle(Theme.Color.textPrimary)
+        }
+        .accessibilityLabel("Back")
+    }
+}
+

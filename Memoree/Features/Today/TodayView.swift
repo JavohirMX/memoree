@@ -75,9 +75,9 @@ struct TodayView: View {
         .sheet(item: $playingBTSMoment) { moment in
             NavigationStack {
                 VStack(spacing: Theme.Spacing.l) {
+                    Spacer()
                     BTSPlaybackView(assetIdentifier: moment.btsAssetIdentifier)
                         .padding(.horizontal, Theme.Spacing.l)
-                        .padding(.top, Theme.Spacing.m)
                     Spacer()
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -85,11 +85,10 @@ struct TodayView: View {
                 .navigationTitle("Behind the Scenes")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("Done") {
+                    ToolbarItem(placement: .topBarLeading) {
+                        BackButton {
                             playingBTSMoment = nil
                         }
-                        .foregroundStyle(Theme.Color.textPrimary)
                     }
                 }
             }
@@ -365,23 +364,6 @@ struct TodayView: View {
 
                 Spacer()
 
-                if moment.hasBTS {
-                    Button {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        playingBTSMoment = moment
-                    } label: {
-                        Label("BTS", systemImage: "play.fill")
-                            .font(Theme.Typography.retakePill)
-                            .foregroundStyle(Theme.Color.textPrimary)
-                            .padding(.horizontal, Theme.Spacing.s)
-                            .padding(.vertical, Theme.Spacing.xs)
-                            .background(Theme.Color.divider)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Play Behind the Scenes clip")
-                }
-
                 if moment.retakeCount > 0 {
                     Text("\(moment.retakeCount) \(moment.retakeCount == 1 ? "retake" : "retakes")")
                         .font(Theme.Typography.retakePill)
@@ -413,9 +395,9 @@ struct TodayView: View {
                     onDoubleTapLarge: {
                         toggleFlip(for: moment.id)
                     },
-                    onFlip: {
-                        toggleFlip(for: moment.id)
-                    }
+                    onPlayBTS: moment.hasBTS ? {
+                        playingBTSMoment = moment
+                    } : nil
                 )
                 .aspectRatio(aspect(of: large), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
@@ -640,7 +622,10 @@ struct TodayView: View {
             MomentComposite(
                 large: images.large,
                 inset: images.inset,
-                insetWidth: Theme.Size.insetStandard
+                insetWidth: Theme.Size.insetStandard,
+                onPlayBTS: moment.hasBTS ? {
+                    playingBTSMoment = moment
+                } : nil
             )
             .aspectRatio(aspect(for: moment, in: model), contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
