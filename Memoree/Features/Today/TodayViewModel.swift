@@ -269,10 +269,10 @@ final class TodayViewModel {
         // a stale value here would be a Settings screen that appears not to work.
         notificationsAuthorized = await refreshAuthorization()
         pendingNotificationCount = await environment.notificationService.pendingCount()
-        // Cleared on every reload: the album may have been fixed by the user, or
-        // the add may have been turned off in Settings, and a footer that reports
-        // a problem the user has already resolved is noise.
-        albumFailure = environment.consumeAlbumFailure()
+        // Peek, do not consume: Settings also shows this note, and a one-shot
+        // handoff would race whichever screen reloads first. Cleared when the
+        // album preference changes (`AppEnvironment.clearAlbumFailure`).
+        albumFailure = environment.albumFailureNote
         await loadTodayImages()
     }
 

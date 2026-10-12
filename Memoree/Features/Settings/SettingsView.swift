@@ -492,6 +492,19 @@ struct SettingsView: View {
                     }
                 )
 
+                // Same copy Today shows in its footer: photographs are safe; the
+                // album add is what failed. Grey, not amber — this is not a
+                // declined permission (ADR-025), and not a destructive confirm.
+                if let albumFailure {
+                    SettingsDivider()
+
+                    Text(albumFailure)
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("settings.albumFailure")
+                }
+
                 SettingsDivider()
 
                 VStack(alignment: .leading, spacing: Theme.Spacing.xxs) {
@@ -565,6 +578,10 @@ struct SettingsView: View {
             .authorizationStatus().willDeliver
         pendingCount = await environment.notificationService.pendingCount()
         momentsCount = environment.momentStore.allMoments.count
+        // Peek, do not consume: Today shows the same note in its footer, and a
+        // one-shot handoff would race whichever screen reloads first. Cleared
+        // when the album preference changes.
+        albumFailure = environment.albumFailureNote
         refreshMicrophoneNote()
         prepareExport()
     }
@@ -609,7 +626,10 @@ struct SettingsView: View {
         let settings = environment.momentStore.settings()
         settings.saveToAlbum = enabled
         try? environment.momentStore.saveSettings(settings)
-        if enabled { albumFailure = nil }
+        // Preference changed: the failed ask is either withdrawn (off) or about
+        // to be retried on the next capture (on). Either way the note is stale.
+        environment.clearAlbumFailure()
+        albumFailure = nil
     }
 
     /// Applies a new window and reports whether anything moved.

@@ -143,6 +143,22 @@ struct ArchiveCalendarView: View {
                         .accessibilityHidden(true)
                 }
             }
+            .overlay(alignment: .bottomLeading) {
+                // ADR-030: more than one capture on the day. Count only — the
+                // cell still opens the newest moment; the detail carousel is
+                // how the rest are reached.
+                if item.hasMultipleMoments {
+                    Text("\(item.momentCount)")
+                        .font(Theme.Typography.retakePill)
+                        .foregroundStyle(Theme.Color.textPrimary)
+                        .padding(.horizontal, Theme.Spacing.xs)
+                        .padding(.vertical, 2)
+                        .background(Theme.Color.canvas.opacity(0.6))
+                        .clipShape(Capsule())
+                        .padding(Theme.Spacing.xs)
+                        .accessibilityHidden(true)
+                }
+            }
             .overlay(alignment: .topTrailing) {
                 HStack(spacing: Theme.Spacing.xs) {
                     if moment.hasBTS {
@@ -233,6 +249,9 @@ struct ArchiveCalendarView: View {
         let isMissing = missing.contains(moment.id)
         let base = "Photograph from \(dayString), \(timeString)"
         var label = isMissing ? "\(base). No longer in your photo library." : base
+        if item.hasMultipleMoments {
+            label += ". \(item.momentCount) moments this day."
+        }
         if moment.hasBTS {
             label += ". Includes Behind the Scenes video."
         }

@@ -106,7 +106,8 @@ struct ArchiveViewModelTests {
 
         // Tombstone the middle day.
         let middle = model.moments[1]
-        try model.delete(middle)
+        model.delete(middle)
+        #expect(model.deleteError == nil)
         #expect(model.moments.count == 2)
         #expect(!model.moments.contains { $0.id == middle.id })
 
@@ -145,7 +146,8 @@ struct ArchiveViewModelTests {
 
         let model = ArchiveViewModel(environment: harness.environment)
         model.load()
-        try model.delete(model.moments[0])
+        model.delete(model.moments[0])
+        #expect(model.deleteError == nil)
 
         let after = harness.store.summary(today: DayIdentifier(date: now, calendar: calendar))
         #expect(after.daysCaptured == 2)
@@ -166,10 +168,32 @@ struct ArchiveViewModelTests {
         let moment = try #require(model.moments.first)
         #expect(model.images[moment.id] != nil, "precondition: the image loaded")
 
-        try model.delete(moment)
+        model.delete(moment)
+        #expect(model.deleteError == nil)
 
         #expect(model.images[moment.id] == nil, "a deleted moment must not hold its image")
         #expect(!model.missing.contains(moment.id))
+    }
+
+    @Test("Deleting a moment already gone surfaces an error instead of swallowing")
+    func deleteMissingMomentSurfacesError() async throws {
+        let now = try #require(DayIdentifier(string: "2026-10-01", calendar: calendar)).date
+        let harness = try makeHarness(now: now)
+        try await recordHistory(harness, days: 1, endingAt: now)
+
+        let model = ArchiveViewModel(environment: harness.environment)
+        model.load()
+        let moment = try #require(model.moments.first)
+        model.delete(moment)
+        #expect(model.deleteError == nil)
+        #expect(model.moments.isEmpty)
+
+        // Second delete of the same facts: the store row is gone, so the grid
+        // must not pretend it worked — silent success was the audit bug.
+        model.delete(moment)
+        #expect(model.deleteError != nil)
+        model.clearDeleteError()
+        #expect(model.deleteError == nil)
     }
 
     // MARK: - The request budget

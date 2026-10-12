@@ -1635,6 +1635,44 @@ encoder quietly.
 
 ---
 
+## ADR-039 — BTS playback respects Reduce Motion; mute stays on by default
+
+**Status:** Accepted · **Date:** 2026-10-12 · **Consequence of:** ADR-029, Reduce Motion handling
+
+**Context.** `BTSPlaybackView` autoplayed and looped the Behind-the-Scenes clip. That is continuous
+motion on a black canvas. Reduce Motion exists because some people find motion physically
+unpleasant, not merely distracting — and Memoree already honours the setting for UI animation
+(`appAnimation`) and haptics. Leaving the only video surface as an exception would make the
+accessibility promise a lie for the one place that actually moves frames.
+
+Mute-on-by-default was already the product choice (queues, lectures, shared spaces). Reduce Motion
+must not reopen that: a paused clip that still starts audible is a different failure.
+
+**Decision.**
+1. **When Reduce Motion is on:** do not autoplay on load; do not loop at end-of-item. The clip
+   loads paused with the play overlay; a tap still plays, and end-of-item seeks to the start and
+   waits.
+2. **When Reduce Motion is off:** keep autoplay and loop — the prior behaviour.
+3. **Mute defaults on either way.** The mute toggle stays user-owned after load; the default is
+   not conditional on accessibility settings.
+4. **Policy is a pure value** (`BTSPlaybackMotionPolicy`) consulted by `BTSPlaybackModel`. The
+   view reads `@Environment(\.isReduceMotionEnabled)` once at prepare time. AVKit stays confined
+   to `BTSPlaybackView` (ADR-029).
+
+**Alternatives considered.**
+- Soften to a single play-through with autoplay — rejected; under Reduce Motion, starting motion
+  without a gesture is still motion the user did not ask for.
+- Open the clip in Photos instead when Reduce Motion is on — rejected; that abandons in-app
+  playback for an accessibility setting and reopens the half-feature ADR-029 closed.
+- Honour Reduce Motion for mute (force mute) — rejected; mute is a social/context default, not a
+  motion preference, and forcing it would fight a user who unmuted.
+
+**Reversal trigger.** If Apple documents a stronger expectation for autoplaying media under Reduce
+Motion (or Media Accessibility adds a distinct control), supersede this ADR rather than layering
+exceptions into the model.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

@@ -39,6 +39,7 @@ import SwiftUI
 struct BTSPlaybackView: View {
 
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.isReduceMotionEnabled) private var isReduceMotionEnabled
 
     /// The asset to play, or `nil` when the user deleted it in Photos.
     let assetIdentifier: String?
@@ -177,7 +178,8 @@ struct BTSPlaybackView: View {
         }
         let created = BTSPlaybackModel(
             library: environment.photoLibrary,
-            assetIdentifier: assetIdentifier
+            assetIdentifier: assetIdentifier,
+            motion: BTSPlaybackMotionPolicy(prefersReducedMotion: isReduceMotionEnabled)
         )
         model = created
         await created.load()
@@ -188,6 +190,18 @@ struct BTSPlaybackView: View {
         model = nil
         environment.photoLibrary.purgeBTSPlaybackFiles()
     }
+}
+
+/// Whether BTS playback may move on its own.
+///
+/// Reduce Motion asks for less movement. An autoplaying, looping clip is continuous
+/// motion — exactly what the setting declines. Manual play stays available either
+/// way; mute stays on by default either way (ADR-039).
+struct BTSPlaybackMotionPolicy: Equatable, Sendable {
+    let prefersReducedMotion: Bool
+
+    var autoplaysOnLoad: Bool { !prefersReducedMotion }
+    var loopsOnEnd: Bool { !prefersReducedMotion }
 }
 
 /// A player's state, kept out of the view.
@@ -208,6 +222,7 @@ final class BTSPlaybackModel {
 
     private let library: PhotoLibraryService
     private let assetIdentifier: String
+    private let motion: BTSPlaybackMotionPolicy
 
     /// `nil` until the clip file has been written, and `nil` again after `stop()`.
     private(set) var player: AVPlayer?
@@ -219,9 +234,14 @@ final class BTSPlaybackModel {
     private var timeObserver: Any?
     private var endObserver: (any NSObjectProtocol)?
 
-    init(library: PhotoLibraryService, assetIdentifier: String) {
+    init(
+        library: PhotoLibraryService,
+        assetIdentifier: String,
+        motion: BTSPlaybackMotionPolicy = BTSPlaybackMotionPolicy(prefersReducedMotion: false)
+    ) {
         self.library = library
         self.assetIdentifier = assetIdentifier
+        self.motion = motion
     }
 
     func load() async {
@@ -257,16 +277,24 @@ final class BTSPlaybackModel {
                     Task { @MainActor [weak self] in
                         guard let self, let player = self.player else { return }
                         player.seek(to: .zero)
-                        player.play()
-                        self.isPlaying = true
                         self.progress = 0.0
+                        // **Loop only when Reduce Motion is off.** Under the setting,
+                        // the clip stops at the start and waits for a tap (ADR-039).
+                        if self.motion.loopsOnEnd {
+                            player.play()
+                            self.isPlaying = true
+                        } else {
+                            player.pause()
+                            self.isPlaying = false
+                        }
                     }
                 }
             }
 
-            // Autoplay immediately on load
-            created.play()
-            isPlaying = true
+            if motion.autoplaysOnLoad {
+                created.play()
+                isPlaying = true
+            }
         } catch {
             failure = error is LibraryError
                 ? "This clip is no longer in your library."

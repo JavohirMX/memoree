@@ -173,6 +173,18 @@ struct VoiceOverTests {
                 "and a missing asset is stated rather than shown as an empty cell")
     }
 
+    @Test("The calendar cell announces multi-capture days")
+    func theCalendarCellAnnouncesMultiCapture() throws {
+        // ADR-030: a count badge is drawn, but VoiceOver never sees overlays
+        // marked accessibilityHidden — so the spoken label must carry the count.
+        let source = try String(
+            contentsOf: SourceScan.file(named: "ArchiveCalendarView.swift"),
+            encoding: .utf8
+        )
+        #expect(source.contains("moments this day"),
+                "multi-capture must be spoken, not only drawn as a badge")
+    }
+
     @Test("The missing-from-Photos case is announced, not just drawn")
     func missingFromPhotosIsAnnounced() throws {
         // The detail screen renders a "photo" glyph and a sentence. VoiceOver

@@ -96,6 +96,7 @@ struct ArchiveSection: Identifiable, Sendable, Hashable {
                 date: nil,
                 dayIdentifier: nil,
                 moment: nil,
+                momentCount: 0,
                 isFuture: false
             ))
         }
@@ -111,7 +112,9 @@ struct ArchiveSection: Identifiable, Sendable, Hashable {
             components.hour = 12
             guard let dayDate = calendar.date(from: components) else { continue }
             let dayId = DayIdentifier(date: dayDate, calendar: calendar)
-            let moment = momentsByDay[dayId]?.first
+            let dayMoments = momentsByDay[dayId] ?? []
+            // Newest thumbnail even if the section's array was not pre-sorted.
+            let moment = dayMoments.max(by: { $0.capturedAt < $1.capturedAt })
             let isFuture = calendar.startOfDay(for: dayDate) > startOfDayNow
 
             items.append(CalendarDayItem(
@@ -120,6 +123,7 @@ struct ArchiveSection: Identifiable, Sendable, Hashable {
                 date: dayDate,
                 dayIdentifier: dayId,
                 moment: moment,
+                momentCount: dayMoments.count,
                 isFuture: isFuture
             ))
         }
@@ -138,13 +142,21 @@ struct CalendarDayItem: Identifiable, Sendable, Hashable {
     let date: Date?
     /// Canonical DayIdentifier, or nil for blanks.
     let dayIdentifier: DayIdentifier?
-    /// The moment captured on this day, if one exists.
+    /// The newest moment captured on this day, if any.
+    ///
+    /// Calendar cells show one thumbnail; additional captures are signalled by
+    /// `momentCount` (ADR-030) rather than stacking frames in a 7-column grid.
     let moment: MomentFacts?
+    /// How many live moments fall on this day. Greater than one when the user
+    /// captured again the same day (ADR-030).
+    let momentCount: Int
     /// Whether this day is in the future relative to now.
     let isFuture: Bool
 
     var isBlank: Bool { dayNumber == nil }
     var hasMoment: Bool { moment != nil }
+    /// Whether the calendar cell should show a multi-capture count badge.
+    var hasMultipleMoments: Bool { momentCount > 1 }
 }
 
 /// A year and a month, as the calendar sees them.

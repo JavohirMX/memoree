@@ -169,4 +169,36 @@ struct BTSPlaybackTests {
         #expect(facts.btsAssetIdentifier == nil,
                 "and the identifier is what playback falls back on, not hasBTS")
     }
+
+    // MARK: - Reduce Motion (ADR-039)
+
+    @Test("Reduce Motion disables autoplay and loop")
+    func reduceMotionDisablesAutoplayAndLoop() {
+        // **The decision, not the player.** AVPlayer timing is not assertable in
+        // this bundle; the model consults this policy for both load and end-of-item.
+        let reduced = BTSPlaybackMotionPolicy(prefersReducedMotion: true)
+        #expect(!reduced.autoplaysOnLoad)
+        #expect(!reduced.loopsOnEnd)
+
+        let fullMotion = BTSPlaybackMotionPolicy(prefersReducedMotion: false)
+        #expect(fullMotion.autoplaysOnLoad)
+        #expect(fullMotion.loopsOnEnd)
+    }
+
+    @Test("Mute defaults on regardless of Reduce Motion")
+    func muteDefaultsOnRegardlessOfReduceMotion() {
+        let library = InMemoryPhotoLibraryService()
+        let reduced = BTSPlaybackModel(
+            library: library,
+            assetIdentifier: "bts-1",
+            motion: BTSPlaybackMotionPolicy(prefersReducedMotion: true)
+        )
+        let fullMotion = BTSPlaybackModel(
+            library: library,
+            assetIdentifier: "bts-1",
+            motion: BTSPlaybackMotionPolicy(prefersReducedMotion: false)
+        )
+        #expect(reduced.isMuted)
+        #expect(fullMotion.isMuted)
+    }
 }

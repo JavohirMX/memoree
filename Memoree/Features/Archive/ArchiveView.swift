@@ -31,6 +31,7 @@ struct ArchiveView: View {
     /// the detail is open.
     @State private var selected: MomentFacts?
     @State private var isConfirmingDelete = false
+    @State private var isShowingDeleteError = false
 
     var body: some View {
         NavigationStack {
@@ -92,6 +93,19 @@ struct ArchiveView: View {
             // (ADR-008), so a "delete" that leaves the photographs behind will
             // otherwise read as a bug rather than as the design (AGENTS.md §6).
             Text(Self.deleteMessage)
+        }
+        .alert(
+            "Couldn’t remove from archive",
+            isPresented: $isShowingDeleteError
+        ) {
+            Button("OK", role: .cancel) {
+                model?.clearDeleteError()
+            }
+        } message: {
+            Text(model?.deleteError ?? "Please try again.")
+        }
+        .onChange(of: model?.deleteError) { _, newValue in
+            isShowingDeleteError = newValue != nil
         }
     }
 
@@ -398,18 +412,12 @@ struct ArchiveView: View {
 
     private func deleteSelected() {
         guard let model, let selected else { return }
-        do {
-            try model.delete(selected)
-            // The detail is showing a moment that no longer exists, so it goes
-            // too. Left open it would show a photograph with no way back to the
-            // grid, which is the dead end AGENTS.md §6 is about.
+        model.delete(selected)
+        // Only dismiss the detail when the tombstone landed. A failed delete
+        // keeps the moment open so the alert is about the photograph still on
+        // screen, not a ghost after dismiss (AGENTS.md §6).
+        if model.deleteError == nil {
             self.selected = nil
-        } catch {
-            // A failed tombstone leaves the moment in the grid, which is the
-            // honest outcome: it is still in the archive because it is still
-            // there. No alert, because there is no recovery the user could
-            // choose differently — retrying is the only move, and the store
-            // will be asked again on the next launch.
         }
     }
 }

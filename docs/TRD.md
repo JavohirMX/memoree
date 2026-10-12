@@ -485,6 +485,12 @@ Playback is reachable from both the Archive's Moment Detail view and directly fr
 cards via a BTS header pill button and the card's context menu. Play/pause and mute only — no scrubber,
 no volume, no full screen. Mute is on by default; Memoree is opened in queues and lectures.
 
+**Reduce Motion (ADR-039).** When `@Environment(\.isReduceMotionEnabled)` is true,
+`BTSPlaybackMotionPolicy` disables autoplay-on-load and end-of-item looping. The clip loads paused;
+the user taps to play; when the item ends it seeks to the start and waits. When the setting is off,
+autoplay and loop remain. Mute still defaults on either way. The policy is a pure value tested
+without driving `AVPlayer`.
+
 Playback is the one thing under `Features/` that imports AVFoundation or AVKit (ADR-029). The
 `NoNetworkingTests` scan is why the local read uses `FileManager.contents(atPath:)` rather than
 `Data(contentsOf:)`, and why both source scans strip comments: a guard that fires on prose gets
@@ -564,6 +570,10 @@ When `settings.saveToAlbum`, lazily create or fetch an album named `Memoree` and
 placeholders via `PHAssetCollectionChangeRequest`. Guard with `albumCreationAttempted` so a
 user who deletes the album does not get it recreated on every capture.
 
+A failed album add **never fails the moment** — the photographs are already in Photos. The
+failure is noted on `AppEnvironment.albumFailureNote` and shown on both Today’s footer and
+Settings’ Photos section (grey metadata, not amber). Changing the album toggle clears the note.
+
 ### 6.5 Reading back for the archive
 
 Grid thumbnails use `PHCachingImageManager` with a request per visible cell, keyed by
@@ -585,6 +595,11 @@ moment in the archive.** The user may have deleted it from Photos deliberately, 
 during a grid read would delete an archive entry because of a *read* — irreversible from the
 user's side, and triggered by nothing they did in this app. `MomentStore.delete()` is the only
 tombstone path.
+
+**Archive remove failures are surfaced.** `ArchiveViewModel.delete` writes `deleteError` on a
+failed tombstone (or a missing row) and Archive presents an alert. Silent swallow left the detail
+dismissing while the row remained — a dead end AGENTS.md §6 forbids. Photos assets are never
+touched.
 
 **The grid is grouped into months, and the grouping is a pure function.** `ArchiveSection` lives
 in `Models`, takes `[MomentFacts]` and a `Calendar`, and returns sections keyed by a
@@ -608,6 +623,8 @@ The screen offers a **dual-view toggle**:
 2. **Monthly Calendar View (`ArchiveCalendarView`)**: A 7-column monthly calendar layout mapping
    days to photo thumbnails or subtle empty day slots, derived purely from `ArchiveSection.calendarDays()`.
    Captures can be opened with the same tactile feedback, sharing the exact same thumbnail streaming pipeline.
+   When a day has more than one moment (ADR-030), the cell shows the newest thumbnail and a count badge
+   (`CalendarDayItem.momentCount`); VoiceOver announces the count.
 
 An understated **collection summary header** at the top displays total moment count and the chronological
 date span (e.g. `48 moments · Jun 2026 – Oct 2026`).
@@ -904,7 +921,8 @@ upload.
 | Capture | `LiveCaptureTests` on device, including a 20-run reliability check. **Cannot be tested in the simulator** — `AVCaptureDevice.default` returns nil there and the camera does not exist. `LiveCaptureRunGuardTests` fails a simulator run so the skip cannot pass silently |
 | PhotoKit | Simulator for permission flows; real device for actual writes and EXIF verification |
 | Network-free | Airplane-mode test on device; `nm -u` binary audit; a unit test asserting no `URLSession` is constructed by any production type |
-| Archive grouping | Pure-function tests on `ArchiveSection.grouping(_:calendar:)` against a **pinned** calendar. The boundary cases are the tests that matter: a moment on the far side of the month boundary from UTC in both directions, a DST transition inside a month, interleaved input, and "every moment appears exactly once" |
+| Archive grouping | Pure-function tests on `ArchiveSection.grouping(_:calendar:)` against a **pinned** calendar. The boundary cases are the tests that matter: a moment on the far side of the month boundary from UTC in both directions, a DST transition inside a month, interleaved input, and "every moment appears exactly once". Calendar multi-capture: `momentCount` / newest thumbnail when ADR-030 leaves more than one moment on a day |
+| BTS Reduce Motion | Pure-value tests on `BTSPlaybackMotionPolicy` (no autoplay/loop when reduced; mute default independent). Device check for actual AVPlayer behaviour |
 | Same-day flipbook | Pure-function tests on `SameDayFlipbook.moments` / `isExportable`: month-day match across years (including current), leap-day exact match, local calendar vs UTC, multi-capture same year does not unlock export, year-span does |
 | Design system | Source-scan invariants: no hardcoded colour, no hardcoded dimension, no `accessibility` symbol escaping the design system, and — see below — what a test asserting about design *cannot* catch |
 

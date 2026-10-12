@@ -609,4 +609,32 @@ struct TodayViewModelTests {
         #expect(!model.showsMomentTime)
         #expect(model.timeUntilMoment == nil)
     }
+
+    // MARK: - Background save error pill
+
+    @Test("Background save error clears on dismiss without a retry")
+    func backgroundSaveErrorClearsOnDismiss() async throws {
+        let (now, start) = try dayAndStart()
+        let harness = try makeHarness(now: now, momentStart: start)
+
+        enum SaveFailure: LocalizedError {
+            case boom
+            var errorDescription: String? { "Couldn’t save to Photos" }
+        }
+
+        harness.environment.beginBackgroundSave {
+            throw SaveFailure.boom
+        }
+
+        // Yield until the retained task publishes the failure.
+        for _ in 0..<20 {
+            if harness.environment.backgroundSaveError != nil { break }
+            await Task.yield()
+        }
+        #expect(harness.environment.backgroundSaveError == "Couldn’t save to Photos")
+        #expect(harness.environment.isSavingMomentInBackground == false)
+
+        harness.environment.clearBackgroundSaveError()
+        #expect(harness.environment.backgroundSaveError == nil)
+    }
 }

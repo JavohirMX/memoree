@@ -206,22 +206,36 @@ struct TodayView: View {
             .padding(.vertical, Theme.Spacing.xs)
             .transition(.move(edge: .top).combined(with: .opacity))
         } else if let error = environment.backgroundSaveError {
-            HStack(spacing: Theme.Spacing.s) {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(Theme.Typography.metadata)
-                    .foregroundStyle(Theme.Color.destructive)
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) {
+                    environment.clearBackgroundSaveError()
+                }
+            } label: {
+                HStack(spacing: Theme.Spacing.s) {
+                    Image(systemName: "exclamationmark.triangle")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.destructive)
 
-                Text(error)
-                    .font(Theme.Typography.metadata)
-                    .foregroundStyle(Theme.Color.textSecondary)
+                    Text(error)
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .multilineTextAlignment(.leading)
+
+                    Image(systemName: "xmark")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textTertiary)
+                }
+                .padding(.horizontal, Theme.Spacing.m)
+                .padding(.vertical, Theme.Spacing.xs)
+                .background(Theme.Color.surface)
+                .clipShape(Capsule())
+                .overlay {
+                    Capsule().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                }
             }
-            .padding(.horizontal, Theme.Spacing.m)
-            .padding(.vertical, Theme.Spacing.xs)
-            .background(Theme.Color.surface)
-            .clipShape(Capsule())
-            .overlay {
-                Capsule().strokeBorder(Theme.Color.divider, lineWidth: 1)
-            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(error)
+            .accessibilityHint("Dismisses the save error")
             .padding(.vertical, Theme.Spacing.xs)
             .transition(.move(edge: .top).combined(with: .opacity))
         }

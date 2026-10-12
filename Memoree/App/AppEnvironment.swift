@@ -400,18 +400,31 @@ final class AppEnvironment {
 
     /// A note about the last moment that could not be filed into the album.
     ///
-    /// **Stored here and read once**, because the camera screen has already been
-    /// dismissed by the time anyone could react to it, and there is no other
-    /// object alive that outlives both. Consuming it clears it, so a footer that
-    /// reports it does not report it forever.
+    /// **Stored here because the camera screen is gone** by the time anyone can
+    /// react. Today and Settings both read `albumFailureNote` so opening either
+    /// after a failed album add still shows the truth. Cleared explicitly —
+    /// turning the album preference on or off — so a resolved ask does not
+    /// linger, without a one-shot consume that races the two screens.
     private var pendingAlbumFailure: String?
+
+    /// The pending album-failure note, if any.
+    var albumFailureNote: String? { pendingAlbumFailure }
 
     /// Records a failure from the capture screen's album add.
     func noteAlbumFailure(_ message: String) {
         pendingAlbumFailure = message
     }
 
+    /// Clears the pending album-failure note.
+    func clearAlbumFailure() {
+        pendingAlbumFailure = nil
+    }
+
     /// Takes the pending album failure, if any, and clears it.
+    ///
+    /// Prefer reading `albumFailureNote` and calling `clearAlbumFailure()` when
+    /// both Today and Settings need to show the same note. Kept for call sites
+    /// that still want a one-shot handoff.
     func consumeAlbumFailure() -> String? {
         defer { pendingAlbumFailure = nil }
         return pendingAlbumFailure
@@ -449,6 +462,14 @@ final class AppEnvironment {
 
     /// Retains the in-flight background save task so camera dismissal cannot cancel it.
     private var inFlightSaveTask: Task<Void, Never>?
+
+    /// Clears a background save failure so Today can dismiss the error pill.
+    ///
+    /// `beginBackgroundSave` already clears this on the next attempt; this path
+    /// is for the user tapping the pill away without retrying.
+    func clearBackgroundSaveError() {
+        backgroundSaveError = nil
+    }
 
     /// Launches and retains a background save operation, updating `isSavingMomentInBackground`.
     func beginBackgroundSave(_ operation: @escaping @MainActor () async throws -> Void) {

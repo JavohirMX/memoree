@@ -277,12 +277,25 @@ final class ArchiveViewModel {
     /// confirmation dialog says so *before* the tap, not after — this is the
     /// cost of the ownership thesis and the user is entitled to know it while
     /// they can still back out.
-    func delete(_ moment: MomentFacts) throws {
+    ///
+    /// Failures land in `deleteError` rather than being swallowed: a silent
+    /// miss leaves the detail dismissing while the row is still in the archive,
+    /// which reads as a bug (AGENTS.md §6).
+    func delete(_ moment: MomentFacts) {
+        deleteError = nil
         guard let row = environment.momentStore.allMoments
             .first(where: { $0.id == moment.id })
-        else { return }
+        else {
+            deleteError = "That moment is no longer in the archive."
+            return
+        }
 
-        try environment.momentStore.delete(row)
+        do {
+            try environment.momentStore.delete(row)
+        } catch {
+            deleteError = error.localizedDescription
+            return
+        }
 
         moments.removeAll { $0.id == moment.id }
         images[moment.id] = nil
@@ -290,10 +303,16 @@ final class ArchiveViewModel {
         requested.remove(moment.id)
     }
 
+    /// Clears a delete failure after the user dismisses the alert.
+    func clearDeleteError() {
+        deleteError = nil
+    }
+
     // MARK: - Export
 
     private(set) var isExporting = false
     private(set) var exportError: String?
+    private(set) var deleteError: String?
 
     /// Exports all moments in the archive as a timelapse flipbook video saved directly to Photos.
     func exportFlipbook() async -> Bool {

@@ -315,4 +315,34 @@ struct ArchiveSectionTests {
         let nonLeapDays = nonLeapFeb.calendarDays(calendar: cal).filter { !$0.isBlank }
         #expect(nonLeapDays.count == 28, "2025 is a non-leap year with 28 days in Feb")
     }
+
+    @Test("Calendar days reports multi-capture count and keeps the newest thumbnail")
+    func calendarDaysMultiCaptureBadge() {
+        // ADR-030: several moments on one day share a cell. The count drives the
+        // badge; the representative moment must be the newest so the calendar
+        // matches the grid's newest-first ordering.
+        let cal = calendar("UTC")
+        let older = moment("2026-09-15T10:00:00Z")
+        let newer = moment("2026-09-15T18:00:00Z")
+        let otherDay = moment("2026-09-16T12:00:00Z")
+        let section = ArchiveSection(
+            key: MonthKey(year: 2026, month: 9),
+            moments: [older, newer, otherDay]
+        )
+        let now = cal.date(from: DateComponents(year: 2026, month: 9, day: 20, hour: 12))!
+        let items = section.calendarDays(calendar: cal, now: now)
+
+        let day15 = items.first(where: { $0.dayNumber == 15 })
+        #expect(day15?.momentCount == 2)
+        #expect(day15?.hasMultipleMoments == true)
+        #expect(day15?.moment?.id == newer.id, "newest thumbnail for the day")
+
+        let day16 = items.first(where: { $0.dayNumber == 16 })
+        #expect(day16?.momentCount == 1)
+        #expect(day16?.hasMultipleMoments == false)
+
+        let empty = items.first(where: { $0.dayNumber == 17 })
+        #expect(empty?.momentCount == 0)
+        #expect(empty?.hasMultipleMoments == false)
+    }
 }
