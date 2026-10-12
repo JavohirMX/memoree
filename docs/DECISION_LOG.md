@@ -1599,6 +1599,42 @@ If users report preferring only a single view mode, the view switcher can be mad
 
 ---
 
+## ADR-038 — This day across years flipbook reuses Archive export
+
+**Status:** Accepted · **Date:** 2026-10-12 · **Consequence of:** flashbacks ("On This Day"), Archive timelapse export
+
+**Context.** The archive already builds a stop-motion flipbook of every moment via
+`PhotoLibraryService.exportFlipbookVideo`. Today already surfaces prior-year captures on the same
+calendar day through `MomentStore.flashbackMoments`. A third media pipeline for "this day across
+years" would duplicate encoding, Photos writes, and preview UI for a product that forbids
+third-party deps and keeps Features free of AVFoundation (except `BTSPlaybackView`).
+
+**Decision.**
+1. **Selection is pure.** `SameDayFlipbook` filters `[MomentFacts]` to the matching local month and
+   day across **all** years (including today), oldest first. Export is offered only when at least
+   **two distinct calendar years** match — multi-capture on a single year (ADR-030) does not unlock
+   it alone.
+2. **Reuse the Archive path.** Today calls the same `exportFlipbookVideo` service method and the
+   same `TimelapsePreviewSheet` (parameterised title/subtitle). No new encoder, no playback of the
+   flipbook inside the app — the movie lands in Photos like the full-archive export.
+3. **Entry point.** A quiet outline row under ON THIS DAY when exportable. Hidden otherwise; no
+   cheerleading empty state. Distinct from flashbacks: ON THIS DAY cards stay prior-year-only so
+   today’s card is not duplicated; the flipbook selection deliberately includes today.
+4. **Leap day.** 29 February matches only 29 February — same exactness as flashbacks.
+
+**Alternatives considered.**
+- In-app AVPlayer for the flipbook — rejected; would push another AVFoundation exception into
+  Features and the deliverable is already a Photos video.
+- One representative frame per year — rejected; ADR-030 multi-capture is real history for that day;
+  chronological inclusion is honest and the encoder already accepts a list.
+- Archive-only entry — rejected; the calendar-day meaning lives on Today next to ON THIS DAY.
+
+**Reversal trigger.** If Photos add-only export of generated video becomes unreliable, or if users
+need scrubbing playback inside the app before save — revisit with a new ADR, do not fork a second
+encoder quietly.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:

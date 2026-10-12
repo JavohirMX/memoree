@@ -307,10 +307,9 @@ struct ArchiveViewModelTests {
 
     @Test("Photographs deleted from Photos are reported, not shown as blank")
     func missingPhotographsAreReported() async throws {
-        // The user deleted them. Memoree never reached back in to prevent that
-        // and never will (ADR-008), so the honest outcome is a cell that says
-        // so — an empty black rectangle reads as a broken photograph, which is
-        // the opposite of what happened.
+        // Only the rear is gone — the front may still exist, so this is a
+        // missing-cell treatment, not a tombstone. Both sides must be confirmed
+        // gone before metadata is soft-deleted.
         let now = try #require(DayIdentifier(string: "2026-10-01", calendar: calendar)).date
         let harness = try makeHarness(now: now)
         try await recordHistory(harness, days: 2, endingAt: now)
@@ -326,6 +325,54 @@ struct ArchiveViewModelTests {
 
         #expect(model.images[target.id] == nil)
         #expect(model.missing.contains(target.id))
+        #expect(model.moments.contains(where: { $0.id == target.id }))
+        #expect(harness.store.allMoments.contains(where: { $0.id == target.id }))
+    }
+
+    @Test("Both assets gone tombstones the moment out of the grid")
+    func bothAssetsMissingAreTombstoned() async throws {
+        let now = try #require(DayIdentifier(string: "2026-10-01", calendar: calendar)).date
+        let harness = try makeHarness(now: now)
+        try await recordHistory(harness, days: 2, endingAt: now)
+
+        let model = ArchiveViewModel(environment: harness.environment)
+        model.load()
+
+        let target = try #require(model.moments.first)
+        let assets = try #require(target.assets)
+        harness.library.markMissing(assets.back, assets.front)
+
+        await model.loadInitialImages()
+
+        #expect(!model.moments.contains(where: { $0.id == target.id }))
+        #expect(!model.missing.contains(target.id))
+        #expect(harness.store.allMoments.contains(where: { $0.id == target.id }) == false)
+        #expect(harness.store.tombstonedMoments.contains(where: { $0.id == target.id }))
+    }
+
+    @Test("A transient Photos nil is retried on the next pass")
+    func transientNilImageIsRetried() async throws {
+        // The old path marked `requested` before the fetch. A nil that was not
+        // a real orphan then permanently blanked the cell. Leaving `requested`
+        // unset until success or confirmed missing is what makes retry work.
+        let now = try #require(DayIdentifier(string: "2026-10-01", calendar: calendar)).date
+        let harness = try makeHarness(now: now)
+        try await recordHistory(harness, days: 1, endingAt: now)
+
+        let model = ArchiveViewModel(environment: harness.environment)
+        model.load()
+
+        let target = try #require(model.moments.first)
+        let back = try #require(target.assets?.back)
+        harness.library.failNextImageLoads(back, times: 1)
+
+        await model.loadInitialImages()
+        #expect(model.images[target.id] == nil, "first pass hit the forced nil")
+        #expect(!model.missing.contains(target.id))
+
+        await model.loadInitialImages()
+        #expect(model.images[target.id] != nil, "second pass must retry and succeed")
+        #expect(harness.store.allMoments.count == 1)
     }
 
     @Test("A moment with no photographs on record is neither loaded nor called missing")

@@ -6,16 +6,15 @@ import Foundation
 /// Three rules drive every function here, and the first two are easy to get
 /// wrong:
 ///
-/// - **Only an on-time moment grows a streak.** An off-window day is recorded
-///   and archived, and the walk **skips** it — neither counted nor treated as an
-///   end. A day with *no* moment at all is what breaks the run (ADR-023, which
-///   reversed ADR-009's "a late day breaks the streak").
-/// - **Today is never itself a miss.** At 09:00 with a moment window of
-///   11:00–23:00, an unposted today is not a failure. Without this rule the
-///   streak visibly resets every morning and silently rebuilds by evening
-///   (ADR-010).
-/// - **`longestStreak` counts any moment, not just on-time ones.** See its own
-///   comment for why the two numbers would otherwise contradict each other.
+/// - **Every capture grows the streak.** Any moment on a day counts, whether
+///   it landed inside the reminder window or not. A day with *no* moment at
+///   all is what breaks the run (ADR-032, which superseded ADR-023's
+///   on-time-only walk).
+/// - **Today is never itself a miss.** At 09:00 with a reminder at 14:00, an
+///   unposted today is not a failure. Without this rule the streak visibly
+///   resets every morning and silently rebuilds by evening (ADR-010).
+/// - **`longestStreak` uses the same any-capture rule** as `currentStreak`, so
+///   the two numbers cannot disagree about what a day is worth.
 enum StreakCalculator {
 
     // MARK: - Current streak
@@ -72,12 +71,10 @@ enum StreakCalculator {
 
     /// The longest run of consecutive days with a moment, anywhere in history.
     ///
-    /// **Counts any moment, on-time or not** (ADR-023). The previous version
-    /// counted strictly-consecutive *on-time* days, which became wrong the
-    /// moment `currentStreak` learned to skip off-window days: a history of
-    /// on-time, on-time, off-window, on-time would then display a current streak
-    /// of 3 beside a best of 2. A footer whose best number is lower than the
-    /// current one is a bug users find in a day.
+    /// **Counts any moment** (ADR-032), matching `currentStreak`. An earlier
+    /// on-time-only version could report a best lower than the current streak
+    /// once the walk started skipping off-window days — a footer whose best
+    /// number is lower than the current one is a bug users find in a day.
     ///
     /// The alternative — giving this the same skip rule as `currentStreak` —
     /// makes the two numbers identical whenever the user has never missed a

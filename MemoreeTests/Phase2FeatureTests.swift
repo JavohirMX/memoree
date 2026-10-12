@@ -61,6 +61,11 @@ struct Phase2FeatureTests {
         let flashbacks = store.flashbackMoments(for: date2026)
         #expect(flashbacks.count == 2)
         #expect(flashbacks.map(\.day.rawValue) == ["2024-10-08", "2025-10-08"])
+
+        // Same-day flipbook keeps the current year so today can sit in the movie.
+        let acrossYears = store.sameDayAcrossYearsMoments(for: date2026)
+        #expect(acrossYears.map(\.day.rawValue) == ["2024-10-08", "2025-10-08", "2026-10-08"])
+        #expect(SameDayFlipbook.isExportable(acrossYears))
     }
 
     @Test("AppIntent requests camera on shared environment")

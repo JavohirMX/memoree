@@ -280,6 +280,34 @@ struct StatsViewModelTests {
                 "the day before the first moment is not a miss")
     }
 
+    // MARK: - Deleting
+
+    @Test("Deleting tombstones the moment and it stays gone after reload")
+    func deleteTombstonesAndStaysGone() throws {
+        // Regression: Stats used to dismiss the detail and call `load()` without
+        // writing a tombstone, so the moment reappeared. Mirror Archive — delete
+        // must reach the store.
+        let harness = try makeHarness(now: Self.reference)
+        try record(harness, daysAgo: 1)
+        try record(harness, daysAgo: 2)
+        try record(harness, daysAgo: 3)
+
+        let model = makeModel(harness)
+        model.load()
+        #expect(model.days.count == 3)
+
+        let middle = model.days[1]
+        try model.delete(middle)
+
+        #expect(model.days.count == 2)
+        #expect(!model.days.contains { $0.id == middle.id })
+        #expect(model.summary.totalMoments == 2)
+
+        model.load()
+        #expect(model.days.count == 2)
+        #expect(!model.days.contains { $0.id == middle.id })
+    }
+
     // MARK: - Ordering
 
     @Test("The history is newest first, agreeing with the archive")

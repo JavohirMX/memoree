@@ -63,13 +63,19 @@ final class ArchiveViewModel {
 
     private let environment: AppEnvironment
 
-    /// Identifiers already requested, so a cell that reappears does not re-request.
+    /// Identifiers already resolved to a terminal outcome (decoded image, or
+    /// confirmed missing / no assets), so a cell that reappears does not
+    /// re-request.
     ///
-    /// Without it, scrolling a 500-item grid back and forth issues 500 requests
-    /// per pass — the second time, for images the service already has decoded.
-    /// The set is the cheap half of the cache: it costs one UUID per moment and
-    /// saves a `UIImage` decode each.
+    /// **Not** set on a transient nil. Photos can hand back nil while the asset
+    /// still exists; marking requested then leaves the cell permanently blank.
+    /// Without the set at all, scrolling a 500-item grid back and forth issues
+    /// 500 requests per pass for images the service already has decoded.
     private var requested: Set<UUID> = []
+
+    /// Moment IDs currently being fetched, so overlapping prefetch windows do
+    /// not stampede the same cell while a transient miss is still in flight.
+    private var loading: Set<UUID> = []
 
     /// How many image requests are in flight.
     ///
@@ -159,10 +165,16 @@ final class ArchiveViewModel {
     }
 
     /// Fetches one moment's photographs, if they are not already held.
+    ///
+    /// Marks `requested` only after a success or a confirmed miss — a transient
+    /// nil leaves the id free so the next scroll past the cell can try again.
+    /// When both assets are confirmed gone, tombstones the metadata row
+    /// (never the Photos assets — ADR-008).
     private func loadImages(for batch: [MomentFacts]) async {
         for moment in batch {
             guard inFlight < Self.maximumInFlight else { return }
             guard !requested.contains(moment.id) else { continue }
+            guard !loading.contains(moment.id) else { continue }
             guard let assets = moment.assets else {
                 // No photographs on record. Not an error and not a missing
                 // asset — the write path cannot produce a half-pair, so this
@@ -172,9 +184,12 @@ final class ArchiveViewModel {
                 continue
             }
 
-            requested.insert(moment.id)
+            loading.insert(moment.id)
             inFlight += 1
-            defer { inFlight -= 1 }
+            defer {
+                loading.remove(moment.id)
+                inFlight -= 1
+            }
 
             let backImage = await environment.photoLibrary.image(
                 for: assets.back, targetSize: Self.thumbnailTargetSize
@@ -185,15 +200,53 @@ final class ArchiveViewModel {
             // Photos fetches for an image most cells never draw.
             if let backImage {
                 images[moment.id] = backImage
-            } else {
-                // `nil` is ambiguous — a request that has not resolved and an
-                // asset the user deleted look the same. So ask, rather than
-                // assume the photographs are gone (the same reasoning as
-                // `TodayViewModel.loadTodayImages`).
-                let exists = await environment.photoLibrary.assetExists(assets.back)
-                if !exists { missing.insert(moment.id) }
+                requested.insert(moment.id)
+                continue
             }
+
+            // `nil` is ambiguous — a transient miss and a deleted asset look
+            // the same. Ask both sides: the rear drives the cell, and both
+            // must be gone before we tombstone (AGENTS.md §8).
+            let backExists = await environment.photoLibrary.assetExists(assets.back)
+            let frontExists = await environment.photoLibrary.assetExists(assets.front)
+
+            if !backExists && !frontExists {
+                if tombstoneOrphan(moment) {
+                    // Gone from the grid; nothing left to show or re-request.
+                } else {
+                    missing.insert(moment.id)
+                    requested.insert(moment.id)
+                }
+            } else if !backExists {
+                missing.insert(moment.id)
+                requested.insert(moment.id)
+            }
+            // else: assets still present — leave `requested` alone so a later
+            // pass can retry the transient nil.
         }
+    }
+
+    /// Soft-deletes an orphan whose Photos assets are both gone.
+    ///
+    /// Metadata only — Memoree never deletes from the user's library
+    /// (ADR-008 / AGENTS.md §8). Returns whether the store write succeeded.
+    @discardableResult
+    private func tombstoneOrphan(_ moment: MomentFacts) -> Bool {
+        guard let row = environment.momentStore.allMoments
+            .first(where: { $0.id == moment.id })
+        else { return false }
+        do {
+            try environment.momentStore.delete(row)
+        } catch {
+            return false
+        }
+
+        moments.removeAll { $0.id == moment.id }
+        images.removeValue(forKey: moment.id)
+        missing.remove(moment.id)
+        requested.remove(moment.id)
+        loading.remove(moment.id)
+        return true
     }
 
     /// Loads both photographs of one moment, for the detail view.

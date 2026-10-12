@@ -74,58 +74,6 @@ struct PrimaryButton: View {
     }
 }
 
-/// A time, in tabular figures so the digits do not jitter once a second.
-///
-/// Used for the countdown to the *reminder*, which is shown only when
-/// notifications are off (ADR-024). There is deliberately no "urgent" state:
-/// the amber variant existed to mark the last thirty seconds of a window that
-/// no longer closes, and a number that changed colour as it approached a
-/// deadline nobody had would be decoration with consequences attached.
-///
-/// ## Hidden from VoiceOver, deliberately
-///
-/// **A number that changes every second is a VoiceOver hazard.** `Text` is an
-/// accessibility element by default, and an element whose value changes is one
-/// VoiceOver may re-announce — which turns this screen into a number read aloud
-/// once a second with no way for the user to stop it. That is not an
-/// accessibility feature, it is noise with a screen reader attached.
-///
-/// **Nothing is lost.** The same information is in the Today footer as
-/// *"Moment today · 17:59"*, which is a `MetadataRow` with a static label that
-/// does not change and therefore announces once. So the ticking number is taken
-/// out of the tree and the fact survives in a form VoiceOver can actually use —
-/// which is the whole reason to hide it rather than to label it.
-struct CountdownDisplay: View {
-
-    let text: String
-
-    var body: some View {
-        Text(text)
-            // Not `.font(...)`: the 64pt numeral has no text style, so it is
-            // applied as a scaled modifier. See `Theme.Typography.displaySize`.
-            .scaledDisplayFont(Theme.Typography.displaySize)
-            .monospacedDigit()
-            .foregroundStyle(Theme.Color.textPrimary)
-            // **A `HH:MM:SS` string cannot wrap, so it is truncated instead** —
-            // "4:53:…" is a countdown to nothing. `minimumScaleFactor` lets the
-            // font give way rather than the digits, which is the whole point: the
-            // number is the number, and a smaller complete one beats a larger
-            // broken one.
-            //
-            // This is the one place in the app where the text shrinks rather than
-            // the layout growing, and it is a deliberate exception to the cap in
-            // `ScaledDisplayFont`: the cap sets how large it may *try* to be, and
-            // this is what happens when even that is too large for the width.
-            .minimumScaleFactor(0.5)
-            .lineLimit(1)
-            .contentTransition(.numericText())
-            .appAnimation(text)
-            // See the type's note: the footer already carries this as a static
-            // row, and a per-second element is a VoiceOver hazard.
-            .accessibilityHidden(true)
-    }
-}
-
 /// Streak display: flame and count.
 ///
 /// A statistic, not a nag. No "don't break it!" copy, and no notification when

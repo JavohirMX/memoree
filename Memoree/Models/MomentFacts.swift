@@ -19,9 +19,11 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
     let id: UUID
     let day: DayIdentifier
 
-    /// Whether the capture landed inside the window. The only thing that
-    /// grows a streak (ADR-023) — and, since the UI is not allowed to know
-    /// either way, the only place the distinction survives at all.
+    /// Whether the capture landed inside the reminder window.
+    ///
+    /// **Does not grow the streak** (ADR-032 — every capture counts). Kept so
+    /// export JSON and metadata can still answer "was this inside the window"
+    /// without the UI ever learning the distinction (ADR-023: no badge).
     let isOnTime: Bool
 
     let capturedAt: Date
@@ -108,24 +110,22 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
 /// out of agreement with the archive.
 struct StreakSummary: Sendable, Equatable {
 
-    /// Consecutive on-time days counting back from today, with off-window days
-    /// skipped and a day with no moment ending the walk.
+    /// Consecutive days with any capture, counting back from today.
     ///
-    /// Today is never itself a miss — see ADR-010.
+    /// A day with no moment ends the walk. Today is never itself a miss —
+    /// see ADR-010. Timing inside the reminder window is irrelevant (ADR-032).
     let currentStreak: Int
 
-    /// Longest run of consecutive days with *any* moment, on time or not.
+    /// Longest run of consecutive days with any moment.
     ///
-    /// Deliberately a different rule from `currentStreak`, and the reason is
-    /// that the same rule would make the two numbers identical for anyone who
-    /// has never missed a whole day. See `StreakCalculator.longestStreak`.
+    /// Same rule as `currentStreak` (ADR-032) — both count every capture day.
     let longestStreak: Int
 
-    /// Days with any moment at all, on time or late.
+    /// Days with any moment at all.
     let daysCaptured: Int
 
-    /// Total moments. One per day, by invariant, but stated separately so the
-    /// Stats screen does not have to infer it.
+    /// Total moments. May exceed `daysCaptured` when a day has multiple
+    /// captures (ADR-030). Stated separately so Stats does not have to infer it.
     let totalMoments: Int
 
     /// Mean retakes across all moments. 0 when there are none.

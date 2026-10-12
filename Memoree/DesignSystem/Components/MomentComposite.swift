@@ -19,10 +19,10 @@ import UIKit
 /// ## What each caller gets
 ///
 /// - **Camera review** — a button. The hint says what a double tap does.
-/// - **Archive detail and Today** — not a button, and no hint. A tappable image
-///   that goes nowhere is a dead end (`AGENTS.md` §6), and VoiceOver announcing
-///   "button" on something that is not one is the same lie in a different
-///   direction.
+/// - **Today feed card** — a button. Activate opens the moment in the archive.
+/// - **Archive detail** — not a button, and no hint. A tappable image that goes
+///   nowhere is a dead end (`AGENTS.md` §6), and VoiceOver announcing "button"
+///   on something that is not one is the same lie in a different direction.
 ///
 /// ## Why the photographs are described rather than announced
 ///

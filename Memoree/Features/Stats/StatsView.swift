@@ -18,6 +18,7 @@ struct StatsView: View {
 
     @State private var model: StatsViewModel?
     @State private var selectedMoment: MomentFacts?
+    @State private var isConfirmingDelete = false
 
     var body: some View {
         NavigationStack {
@@ -38,15 +39,27 @@ struct StatsView: View {
                 }
             }
         }
+        // Same confirm-then-tombstone path as Archive: `onDelete` only opens the
+        // dialog; the store write happens after the user confirms. The sheet also
+        // needs `AppEnvironment` — without it photo/BTS loading inside detail
+        // has nowhere to go.
         .sheet(item: $selectedMoment) { moment in
             MomentDetailView(
                 moment: moment,
                 moments: model?.days ?? [moment],
-                onDelete: {
-                    selectedMoment = nil
-                    model?.load()
-                }
+                onDelete: { isConfirmingDelete = true }
             )
+            .environment(environment)
+        }
+        .confirmationDialog(
+            Self.deleteTitle,
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Remove from archive", role: .destructive) { deleteSelected() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(Self.deleteMessage)
         }
         // Lifecycle on the outermost container, never on the `if let model`
         // branch — a `.task` there only runs once the model exists, so it never
@@ -55,6 +68,27 @@ struct StatsView: View {
             let created = StatsViewModel(environment: environment)
             model = created
             created.load()
+        }
+    }
+
+    private static let deleteTitle = "Remove from archive?"
+
+    private static let deleteMessage = """
+        Your streak will be recalculated without it.
+
+        The two photos stay in your library. Memoree never deletes from Photos.
+        """
+
+    private func deleteSelected() {
+        guard let model, let selectedMoment else { return }
+        do {
+            try model.delete(selectedMoment)
+            // Detail is showing a moment that no longer exists.
+            self.selectedMoment = nil
+        } catch {
+            // A failed tombstone leaves the moment in the list — honest outcome.
+            // No alert: retry is the only move, and the store is asked again on
+            // the next launch.
         }
     }
 
@@ -312,8 +346,15 @@ struct StatsView: View {
     // MARK: - Empty State
 
     /// Nothing captured yet.
+    ///
+    /// Matches Archive's quieter empty treatment: an icon, a short title, and
+    /// thesis copy — not an apology for being empty.
     private var empty: some View {
         VStack(spacing: Theme.Spacing.l) {
+            Image(systemName: "number")
+                .scaledDisplayFont(Theme.Size.iconStandalone, weight: .regular)
+                .foregroundStyle(Theme.Color.textTertiary)
+                .accessibilityHidden(true)
             Text("Nothing yet")
                 .font(Theme.Typography.screenTitle)
                 .foregroundStyle(Theme.Color.textPrimary)

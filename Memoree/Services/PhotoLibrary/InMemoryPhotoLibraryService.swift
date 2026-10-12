@@ -24,6 +24,9 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
         var albumCreationAttempted = false
         var storedBytes: [String: Data] = [:]
         var missingIdentifiers: Set<String> = []
+        /// Identifiers whose next `image(for:)` calls return nil while
+        /// `assetExists` still reports true — a transient Photos miss.
+        var transientNilRemaining: [String: Int] = [:]
         var failureToThrow: LibraryError?
         // The archive's cache traffic, recorded so a test can assert that
         // prefetching happened rather than only that scrolling did not crash.
@@ -47,6 +50,20 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
     /// Marks an identifier as absent, simulating a user deleting from Photos.
     func markMissing(_ identifiers: String...) {
         lock.withLock { state.missingIdentifiers.formUnion(identifiers) }
+    }
+
+    /// Forces the next `times` image reads for each identifier to return nil
+    /// while `assetExists` still reports true.
+    ///
+    /// Models a transient Photos miss — the asset is still in the library, but
+    /// `requestImage` handed back nothing this pass. Used to prove Today and
+    /// Archive retry instead of permanently blanking the cell.
+    func failNextImageLoads(_ identifiers: String..., times: Int = 1) {
+        lock.withLock {
+            for identifier in identifiers {
+                state.transientNilRemaining[identifier, default: 0] += times
+            }
+        }
     }
 
     func setAuthorization(_ status: PhotoAuthorizationStatus) {
@@ -221,8 +238,16 @@ final class InMemoryPhotoLibraryService: PhotoLibraryService, @unchecked Sendabl
     /// Returns `nil` for anything not written through `saveMomentPair`, and for
     /// identifiers the user is modelled as having deleted — which is how the
     /// "missing from Photos" path gets tested at all.
+    ///
+    /// Also returns `nil` while a `failNextImageLoads` budget remains, without
+    /// marking the asset missing — so callers can distinguish a transient miss
+    /// from a confirmed orphan via `assetExists`.
     func image(for identifier: String, targetSize: CGSize) async -> UIImage? {
         lock.withLock {
+            if let remaining = state.transientNilRemaining[identifier], remaining > 0 {
+                state.transientNilRemaining[identifier] = remaining - 1
+                return nil
+            }
             guard !state.missingIdentifiers.contains(identifier),
                   let data = state.storedBytes[identifier],
                   let image = UIImage(data: data)

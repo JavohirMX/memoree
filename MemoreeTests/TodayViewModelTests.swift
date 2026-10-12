@@ -311,6 +311,115 @@ struct TodayViewModelTests {
         #expect(offWindowModel.streak == 1)
     }
 
+    // MARK: - Feed vs flashbacks
+
+    @Test("Flashback moments are excluded from the chronological feed")
+    func flashbacksAreExcludedFromChronologicalFeed() async throws {
+        // ON THIS DAY and the main list both draw from the same store. Without
+        // filtering, a prior-year same-calendar-day card appears twice.
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 10
+        components.day = 8
+        components.hour = 16
+        let now = try #require(calendar.date(from: components))
+        let momentStart = now.addingTimeInterval(-2 * 3600)
+
+        let harness = try makeHarness(now: now, momentStart: momentStart)
+
+        var prior = DateComponents()
+        prior.year = 2025
+        prior.month = 10
+        prior.day = 8
+        prior.hour = 15
+        let priorDate = try #require(calendar.date(from: prior))
+        let priorDay = DayIdentifier(date: priorDate, calendar: calendar)
+        try await record(harness, on: priorDay, capturedAt: priorDate)
+
+        var other = DateComponents()
+        other.year = 2026
+        other.month = 10
+        other.day = 7
+        other.hour = 12
+        let otherDate = try #require(calendar.date(from: other))
+        let otherDay = DayIdentifier(date: otherDate, calendar: calendar)
+        try await record(harness, on: otherDay, capturedAt: otherDate)
+
+        try await record(
+            harness, on: DayIdentifier(date: now, calendar: calendar), capturedAt: now
+        )
+
+        let model = makeModel(harness, at: now)
+        await model.reload()
+
+        #expect(model.flashbackMoments.map(\.day.rawValue) == ["2025-10-08"])
+        #expect(model.feedMoments.count == 3)
+        #expect(model.chronologicalFeedMoments.map(\.day.rawValue) == ["2026-10-08", "2026-10-07"])
+        #expect(!model.chronologicalFeedMoments.contains { $0.day.rawValue == "2025-10-08" })
+    }
+
+    // MARK: - Same-day flipbook
+
+    @Test("Same-day flipbook export is offered when prior years and today share the calendar day")
+    func sameDayFlipbookExportableWhenYearsSpan() async throws {
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 10
+        components.day = 8
+        components.hour = 16
+        let now = try #require(calendar.date(from: components))
+        let momentStart = now.addingTimeInterval(-2 * 3600)
+
+        let harness = try makeHarness(now: now, momentStart: momentStart)
+
+        var prior = DateComponents()
+        prior.year = 2025
+        prior.month = 10
+        prior.day = 8
+        prior.hour = 15
+        let priorDate = try #require(calendar.date(from: prior))
+        try await record(harness, on: DayIdentifier(date: priorDate, calendar: calendar), capturedAt: priorDate)
+
+        try await record(
+            harness, on: DayIdentifier(date: now, calendar: calendar), capturedAt: now
+        )
+
+        let model = makeModel(harness, at: now)
+        await model.reload()
+
+        #expect(model.canExportSameDayFlipbook)
+        #expect(model.sameDayAcrossYearsMoments.map(\.day.rawValue) == ["2025-10-08", "2026-10-08"])
+
+        let success = await model.exportSameDayFlipbook()
+        #expect(success)
+        #expect(model.sameDayFlipbookExportError == nil)
+    }
+
+    @Test("Same-day flipbook stays hidden with only one matching year")
+    func sameDayFlipbookHiddenWithSingleYear() async throws {
+        let calendar = Calendar.current
+        var components = DateComponents()
+        components.year = 2026
+        components.month = 10
+        components.day = 8
+        components.hour = 16
+        let now = try #require(calendar.date(from: components))
+        let momentStart = now.addingTimeInterval(-2 * 3600)
+
+        let harness = try makeHarness(now: now, momentStart: momentStart)
+        try await record(
+            harness, on: DayIdentifier(date: now, calendar: calendar), capturedAt: now
+        )
+
+        let model = makeModel(harness, at: now)
+        await model.reload()
+
+        #expect(!model.canExportSameDayFlipbook)
+        #expect(await model.exportSameDayFlipbook() == false)
+    }
+
     // MARK: - Reading the photographs back
 
     @Test("Reload resolves today's pair out of the user's library")
@@ -329,8 +438,8 @@ struct TodayViewModelTests {
         #expect(!model.todayMissingFromPhotos)
     }
 
-    @Test("Photographs the user deleted are reported, not rendered as a blank")
-    func missingPhotographsAreReported() async throws {
+    @Test("Photographs the user deleted are tombstoned when both assets are gone")
+    func missingPhotographsAreTombstoned() async throws {
         let (now, start) = try dayAndStart()
         let harness = try makeHarness(now: now, momentStart: start)
         let moment = try await record(
@@ -338,7 +447,8 @@ struct TodayViewModelTests {
         )
 
         // The user deleted them in Photos. Memoree never reached back in to
-        // prevent that, or to reverse it (ADR-008).
+        // prevent that, or to reverse it (ADR-008) — only the metadata row is
+        // soft-deleted via deletedAt.
         let pair = try #require(harness.library.latestPair)
         harness.library.markMissing(pair.back, pair.front)
 
@@ -346,10 +456,51 @@ struct TodayViewModelTests {
         await model.reload()
 
         #expect(model.todayImages == nil)
+        #expect(!model.todayMissingFromPhotos)
+        #expect(model.todayMoments.isEmpty)
+        #expect(moment.isDeleted)
+        #expect(harness.store.allMoments.isEmpty)
+        #expect(harness.store.tombstonedMoments.count == 1)
+    }
+
+    @Test("A single missing asset is reported without tombstoning")
+    func singleMissingAssetIsReported() async throws {
+        let (now, start) = try dayAndStart()
+        let harness = try makeHarness(now: now, momentStart: start)
+        let moment = try await record(
+            harness, on: DayIdentifier(date: now), capturedAt: start.addingTimeInterval(20)
+        )
+
+        let pair = try #require(harness.library.latestPair)
+        harness.library.markMissing(pair.back)
+
+        let model = makeModel(harness, at: start.addingTimeInterval(30))
+        await model.reload()
+
+        #expect(model.todayImages == nil)
         #expect(model.todayMissingFromPhotos)
-        // The moment itself is untouched: captured, on record, its photographs
-        // simply no longer in a library that is not Memoree's to manage.
         #expect(!moment.isDeleted)
+        #expect(harness.store.allMoments.count == 1)
+    }
+
+    @Test("A transient Photos nil is retried and then shown")
+    func transientNilImageIsRetried() async throws {
+        let (now, start) = try dayAndStart()
+        let harness = try makeHarness(now: now, momentStart: start)
+        try await record(
+            harness, on: DayIdentifier(date: now), capturedAt: start.addingTimeInterval(20)
+        )
+
+        let pair = try #require(harness.library.latestPair)
+        // One nil per asset is inside the retry budget (limit 2).
+        harness.library.failNextImageLoads(pair.back, pair.front, times: 1)
+
+        let model = makeModel(harness, at: start.addingTimeInterval(30))
+        await model.reload()
+
+        let images = try #require(model.todayImages)
+        #expect(images.large.size.width > 0)
+        #expect(!model.todayMissingFromPhotos)
         #expect(harness.store.allMoments.count == 1)
     }
 

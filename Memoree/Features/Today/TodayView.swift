@@ -19,10 +19,11 @@ struct TodayView: View {
     @State private var isShowingArchive = false
     @State private var isShowingStats = false
     @State private var selectedMomentForDetail: MomentFacts?
-    @State private var carouselIndex = 0
     @State private var fullScreenPair: (primary: UIImage, secondary: UIImage)?
     @State private var flippedMoments: Set<UUID> = []
     @State private var playingBTSMoment: MomentFacts?
+    @State private var isShowingSameDayFlipbook = false
+    @State private var showSameDayFlipbookSavedAlert = false
 
     var body: some View {
         // The lifecycle modifiers hang off the outermost container, never off
@@ -59,6 +60,31 @@ struct TodayView: View {
             ArchiveView()
                 .environment(environment)
                 .presentationDetents([.large])
+        }
+        .sheet(isPresented: $isShowingSameDayFlipbook) {
+            if let model {
+                TimelapsePreviewSheet(
+                    moments: model.sameDayAcrossYearsMoments,
+                    title: "This day across years",
+                    subtitle: "A stop-motion of this calendar day from every year you captured it. Saved to Photos.",
+                    isExporting: model.isExportingSameDayFlipbook,
+                    exportError: model.sameDayFlipbookExportError,
+                    onExport: {
+                        Task {
+                            let success = await model.exportSameDayFlipbook()
+                            if success {
+                                isShowingSameDayFlipbook = false
+                                showSameDayFlipbookSavedAlert = true
+                            }
+                        }
+                    }
+                )
+            }
+        }
+        .alert("Saved to Photos", isPresented: $showSameDayFlipbookSavedAlert) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("The flipbook is in your library.")
         }
         .sheet(item: $selectedMomentForDetail) { moment in
             MomentDetailView(
@@ -301,7 +327,7 @@ struct TodayView: View {
                     flashbackSection(model)
                 }
 
-                ForEach(model.feedMoments) { moment in
+                ForEach(model.chronologicalFeedMoments) { moment in
                     feedCard(for: moment, in: model)
                 }
 
@@ -338,11 +364,49 @@ struct TodayView: View {
                 feedCard(for: moment, in: model)
             }
 
+            if model.canExportSameDayFlipbook {
+                sameDayFlipbookButton
+            }
+
             Theme.Color.divider
                 .frame(height: 1)
                 .padding(.vertical, Theme.Spacing.xs)
                 .accessibilityHidden(true)
         }
+    }
+
+    /// Quiet entry to the same-day-across-years flipbook (ADR-038).
+    ///
+    /// Outline, not filled white — Capture remains the only solid primary verb
+    /// on this screen (ADR-026). Hidden entirely when fewer than two years
+    /// match; no placeholder copy when the export is not available.
+    private var sameDayFlipbookButton: some View {
+        Button {
+            isShowingSameDayFlipbook = true
+        } label: {
+            HStack(spacing: Theme.Spacing.s) {
+                Image(systemName: "film")
+                    .font(Theme.Typography.metadata)
+                Text("This day across years")
+                    .font(Theme.Typography.metadata.weight(.semibold))
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right")
+                    .font(Theme.Typography.retakePill)
+            }
+            .foregroundStyle(Theme.Color.textSecondary)
+            .padding(.horizontal, Theme.Spacing.m)
+            .padding(.vertical, Theme.Spacing.m)
+            .frame(maxWidth: .infinity, minHeight: Theme.Size.tapTargetComfortable)
+            .background(Theme.Color.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .overlay {
+                RoundedRectangle(cornerRadius: Theme.Radius.card)
+                    .strokeBorder(Theme.Color.divider, lineWidth: 1)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Export this day across years flipbook")
+        .padding(.top, Theme.Spacing.xs)
     }
 
     @ViewBuilder
@@ -420,6 +484,13 @@ struct TodayView: View {
                         Label("View in Archive", systemImage: "photo.stack")
                     }
                 }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(CompositeAccessibility.label)
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Opens this moment in your archive")
+                .accessibilityAction {
+                    openDetail(for: moment)
+                }
             } else if model.feedMissingMap.contains(moment.id) || model.todayMissingMap.contains(moment.id) {
                 VStack(spacing: Theme.Spacing.m) {
                     Image(systemName: "photo")
@@ -434,10 +505,18 @@ struct TodayView: View {
                 .aspectRatio(3.0 / 4.0, contentMode: .fit)
                 .background(Theme.Color.surface)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Photos no longer in your library")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityHint("Opens this moment in your archive")
+                .accessibilityAction {
+                    openDetail(for: moment)
+                }
             } else {
                 Theme.Color.surface
                     .aspectRatio(3.0 / 4.0, contentMode: .fit)
                     .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .accessibilityHidden(true)
                     .task {
                         await model.loadImage(for: moment)
                     }
@@ -557,113 +636,6 @@ struct TodayView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    // MARK: - Today's moment
-
-    private func aspect(for moment: MomentFacts?, in model: TodayViewModel) -> CGFloat {
-        guard let moment,
-              let image = (model.todayImagesMap[moment.id] ?? model.todayImages)?.large,
-              image.size.height > 0, image.size.width > 0
-        else {
-            return 3.0 / 4.0
-        }
-        return image.size.width / image.size.height
-    }
-
-    @ViewBuilder
-    private func todayComposite(_ model: TodayViewModel) -> some View {
-        if model.todayMoments.count > 1 {
-            let currentMoment = model.todayMoments.indices.contains(carouselIndex)
-                ? model.todayMoments[carouselIndex]
-                : model.todayMoments.first
-            let currentAspect = aspect(for: currentMoment, in: model)
-
-            VStack(spacing: Theme.Spacing.s) {
-                TabView(selection: $carouselIndex) {
-                    ForEach(Array(model.todayMoments.enumerated()), id: \.element.id) { index, item in
-                        compositeItem(for: item, in: model)
-                            .tag(index)
-                    }
-                }
-                .tabViewStyle(.page(indexDisplayMode: .never))
-                .aspectRatio(currentAspect, contentMode: .fit)
-                .frame(maxHeight: verticalSizeClass == .compact ? Theme.Size.compositeLandscapeMaxHeight : Theme.Size.todayCompositeMaxHeight)
-                .appAnimation(carouselIndex)
-
-                Text("\(carouselIndex + 1)/\(model.todayMoments.count)")
-                    .font(Theme.Typography.metadata)
-                    .foregroundStyle(Theme.Color.textSecondary)
-                    .padding(.horizontal, Theme.Spacing.s)
-                    .padding(.vertical, Theme.Spacing.xs)
-                    .background(Theme.Color.surface)
-                    .clipShape(Capsule())
-            }
-        } else if let moment = model.todayMoment {
-            compositeItem(for: moment, in: model)
-                .aspectRatio(aspect(for: moment, in: model), contentMode: .fit)
-                .frame(maxHeight: verticalSizeClass == .compact ? Theme.Size.compositeLandscapeMaxHeight : Theme.Size.todayCompositeMaxHeight)
-        } else if model.todayMissingFromPhotos {
-            Text("Today's photos are no longer in your library. The moment is still in your archive.")
-                .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textSecondary)
-                .multilineTextAlignment(.center)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, Theme.Spacing.xxl)
-                .background(Theme.Color.surface)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-        } else {
-            Theme.Color.surface
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                .frame(maxHeight: verticalSizeClass == .compact ? Theme.Size.compositeLandscapeMaxHeight : Theme.Size.todayCompositeMaxHeight)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-                .accessibilityHidden(true)
-        }
-    }
-
-    @ViewBuilder
-    private func compositeItem(for moment: MomentFacts, in model: TodayViewModel) -> some View {
-        let pair = model.todayImagesMap[moment.id] ?? model.todayImages
-        if let images = pair {
-            MomentComposite(
-                large: images.large,
-                inset: images.inset,
-                insetWidth: Theme.Size.insetStandard,
-                onPlayBTS: moment.hasBTS ? {
-                    playingBTSMoment = moment
-                } : nil
-            )
-            .aspectRatio(aspect(for: moment, in: model), contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-            .overlay {
-                RoundedRectangle(cornerRadius: Theme.Radius.card)
-                    .strokeBorder(Theme.Color.divider, lineWidth: 1)
-            }
-            .contentShape(Rectangle())
-            .onTapGesture { openDetail(for: moment) }
-            .contextMenu {
-                if moment.hasBTS {
-                    Button {
-                        playingBTSMoment = moment
-                    } label: {
-                        Label("Play Behind the Scenes", systemImage: "play.circle")
-                    }
-                }
-                Button {
-                    openDetail(for: moment)
-                } label: {
-                    Label("View in Archive", systemImage: "photo.stack")
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(CompositeAccessibility.label)
-            .accessibilityAddTraits(.isButton)
-            .accessibilityHint("Opens today's moment in your archive")
-        } else {
-            Theme.Color.surface
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-                .accessibilityHidden(true)
-        }
-    }
-
     // MARK: - Primary state
 
     @ViewBuilder
@@ -689,7 +661,7 @@ struct TodayView: View {
                 Text("It's time")
                     .font(Theme.Typography.screenTitle)
                     .foregroundStyle(Theme.Color.textPrimary)
-                Text("Two minutes. The scene, and you.")
+                Text("Capture today's moment — the scene, and you.")
                     .font(Theme.Typography.body)
                     .foregroundStyle(Theme.Color.textSecondary)
                     .multilineTextAlignment(.center)

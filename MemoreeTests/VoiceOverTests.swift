@@ -35,29 +35,43 @@ struct VoiceOverTests {
     func theCompositeIsAButtonOnlyWhereItIsOne() throws {
         // **Two of the three composites are buttons and one is not**, which is
         // easy to get wrong in both directions. The camera's review screen swaps
-        // the two photographs on a tap; Today's opens today's moment in the
-        // archive. The archive's *detail* screen does neither — it is the screen
-        // you are already on — so a button trait there announces an action and
-        // delivers nothing, which `AGENTS.md` §6 calls a dead end and which is
-        // worse from a screen reader than from a finger, because the
+        // the two photographs on a tap; Today's *live* feed card opens the moment
+        // in the archive. The archive's *detail* screen does neither — it is the
+        // screen you are already on — so a button trait there announces an action
+        // and delivers nothing, which `AGENTS.md` §6 calls a dead end and which
+        // is worse from a screen reader than from a finger, because the
         // announcement is the only description the user gets.
         //
         // Asserted per file with its own handler as the marker, so the claim is
         // "this file taps it *and* says it is a button" rather than a count.
-        let interactive: [(file: String, handler: String)] = [
-            ("CameraView.swift", "onTapInset: { model.swapProminent() }"),
-            ("TodayView.swift", ".onTapGesture { openDetail(for: moment) }"),
-        ]
-        for entry in interactive {
-            let source = try String(
-                contentsOf: SourceScan.file(named: entry.file),
-                encoding: .utf8
-            )
-            #expect(source.contains(entry.handler),
-                    "\(entry.file) handles a tap, so it must announce as a button")
-            #expect(source.contains(".accessibilityAddTraits(.isButton)"),
-                    "\(entry.file) is missing the button trait")
-        }
+        // Today's marker is the feed card's accessibilityAction — the dead
+        // `todayComposite` path used to carry labels while the live `feedCard`
+        // did not, and a test keyed off the unused path gave false confidence.
+        let camera = try String(
+            contentsOf: SourceScan.file(named: "CameraView.swift"),
+            encoding: .utf8
+        )
+        #expect(camera.contains("onTapInset: { model.swapProminent() }"),
+                "CameraView handles a tap, so it must announce as a button")
+        #expect(camera.contains(".accessibilityAddTraits(.isButton)"),
+                "CameraView is missing the button trait")
+
+        // The live Today feed card must carry the shared label — not only a
+        // dead helper that never appears on screen.
+        let today = try String(
+            contentsOf: SourceScan.file(named: "TodayView.swift"),
+            encoding: .utf8
+        )
+        let feedCard = try #require(
+            today.components(separatedBy: "private func feedCard").last,
+            "feedCard was not found"
+        )
+        #expect(feedCard.contains("CompositeAccessibility.label"),
+                "the live feed card must announce the composite")
+        #expect(feedCard.contains("Opens this moment in your archive"),
+                "and say where activate goes")
+        #expect(!today.contains("func todayComposite"),
+                "the dead todayComposite path must stay gone")
 
         // The detail screen: a composite, and not a button.
         let detail = try String(
@@ -110,40 +124,26 @@ struct VoiceOverTests {
                 "and it says how many, which is the fact a user cannot see")
     }
 
-    // MARK: - The ticking number
+    // MARK: - No ticking countdown
 
-    @Test("The countdown is hidden from VoiceOver")
-    func theCountdownIsHidden() throws {
-        // **The most consequential VoiceOver fix in this phase.** A `Text` whose
-        // value changes every second is an element VoiceOver may re-announce, so
-        // the screen becomes a number read aloud once a second with no way to stop
-        // it.
-        //
-        // Asserted on the *component* rather than on a caller, because that is
-        // where the reasoning lives and a caller could opt back in.
+    @Test("The home-screen countdown component is gone")
+    func theCountdownComponentIsGone() throws {
+        // ADR-032 removed `CountdownDisplay` from the product. A ticking
+        // number is a VoiceOver hazard (re-announced every second) and
+        // pressure the product no longer wants. Asserting absence — not
+        // `.accessibilityHidden` on a dead type — is what keeps it gone.
         let source = try String(
             contentsOf: SourceScan.file(named: "Components.swift"),
             encoding: .utf8
         )
-        // The body of one type, by slicing on its own declaration and the next
-        // closing brace at column zero. Crude and sufficient: the assertion is
-        // about a modifier being *in* the component, and this cannot accidentally
-        // match the neighbouring one because the slice stops at the first `\n}`.
-        let tail = try #require(
-            source.components(separatedBy: "struct CountdownDisplay").last,
-            "CountdownDisplay was not found"
-        )
-        let body = tail.components(separatedBy: "\n}\n").first ?? ""
-        #expect(body.contains(".accessibilityHidden(true)"),
-                "the ticking number must be out of the accessibility tree")
+        #expect(!source.contains("struct CountdownDisplay"),
+                "CountdownDisplay must not return")
     }
 
-    @Test("The countdown's information survives somewhere static")
+    @Test("The reminder time survives as a static footer row")
     func theCountdownInformationSurvives() throws {
-        // Hiding is only defensible if the fact is available another way, and this
-        // is the assertion that makes it defensible rather than a loss. The Today
-        // footer carries "Moment today · 17:59" — a `MetadataRow`, whose label is
-        // static and therefore announces once.
+        // When notifications are off, the only way to learn the reminder time
+        // is a static footer row — not a ticking number (ADR-024 / ADR-032).
         let source = try String(
             contentsOf: SourceScan.file(named: "TodayView.swift"),
             encoding: .utf8

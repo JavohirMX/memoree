@@ -423,8 +423,13 @@ enum ArchiveViewMode: String, CaseIterable, Identifiable {
 }
 
 /// Confirmation and information sheet before exporting a timelapse flipbook video.
+///
+/// Shared by Archive (full library) and Today's same-day-across-years export
+/// (ADR-038). Both paths call `PhotoLibraryService.exportFlipbookVideo`.
 struct TimelapsePreviewSheet: View {
     let moments: [MomentFacts]
+    var title: String = "Timelapse Flipbook"
+    var subtitle: String = "Create a stop-motion video of your entire archive in chronological order and save it directly to Photos."
     let isExporting: Bool
     let exportError: String?
     let onExport: () -> Void
@@ -446,11 +451,11 @@ struct TimelapsePreviewSheet: View {
                             .foregroundStyle(Theme.Color.textPrimary)
                             .padding(.top, Theme.Spacing.l)
 
-                        Text("Timelapse Flipbook")
+                        Text(title)
                             .font(Theme.Typography.screenTitle)
                             .foregroundStyle(Theme.Color.textPrimary)
 
-                        Text("Create a stop-motion video of your entire archive in chronological order and save it directly to Photos.")
+                        Text(subtitle)
                             .font(Theme.Typography.body)
                             .foregroundStyle(Theme.Color.textSecondary)
                             .multilineTextAlignment(.center)

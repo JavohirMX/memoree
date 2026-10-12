@@ -155,6 +155,15 @@ final class MomentStore {
             .sorted { $0.capturedAt < $1.capturedAt }
     }
 
+    /// Moments on the same calendar month and day across every year, including today.
+    ///
+    /// Feeds the "this day across years" flipbook (ADR-038). Selection is pure —
+    /// see `SameDayFlipbook`. Distinct from `flashbackMoments`, which hides the
+    /// current year so ON THIS DAY does not repeat today's card.
+    func sameDayAcrossYearsMoments(for date: Date = Date()) -> [MomentFacts] {
+        SameDayFlipbook.moments(from: facts(), matching: date, calendar: calendar)
+    }
+
     // MARK: - Writing
 
     /// Records a captured moment, replacing any existing moment for that day.

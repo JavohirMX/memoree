@@ -65,19 +65,19 @@ post from a device they did not capture it on. Every one of those requires a ser
 | --- | --- | --- |
 | F1 | Daily moment window | Random time per day, computed on-device, inside a user-set window |
 | F2 | Local notification | Fires at the moment time. No APNs, no server |
-| F3 | Two-minute qualifying window | The width of the window in which a photograph grows the streak. **Not a gate** — capture is permitted at any time (ADR-023). Countdown shown as `mm:ss`, computed client-side, and only when notifications are off (ADR-024) |
+| F3 | Daily reminder window | Two minutes around a random daily time — decides **when the notification fires**, not whether a capture counts (ADR-023, ADR-032). No home-screen countdown (ADR-024, ADR-032) |
 | F4 | Sequential front + back capture | Rear shot, then front selfie, ~0.3–1s apart |
 | F5 | Composite preview | Rear full-bleed, front inset top-left; tap to swap which is primary |
 | F6 | Unlimited retakes | Counted and stored; the count is a private stat, never social |
 | F7 | Photos save | Front and back written to Photos as **two separate assets**, original quality, EXIF preserved |
 | F8 | Behind the Scenes | Rolling ~5s buffer of the primary camera, optionally saved to Photos and shareable |
-| F9 | Off-window posting | Allowed, and **indistinguishable from an on-time moment**. No badge, no explanation, and it neither grows nor breaks the streak — the walk skips it. A day with no moment at all is what breaks the streak (ADR-023) |
-| F10 | Streaks | Counts consecutive days with an **on-time** moment |
+| F9 | Off-window posting | Allowed, and **indistinguishable from an on-time moment**. No badge, no explanation. Every capture grows the streak; a day with no moment at all is what breaks it (ADR-032) |
+| F10 | Streaks | Counts consecutive days with **any** capture (ADR-032) |
 | F11 | Optional location | Per-moment opt-in, coordinates only, written to EXIF, never leaves device |
-| F12 | Today screen | Streak, state, today's capture. The moment *time* is shown only when notifications are off (ADR-024) |
+| F12 | Today screen | Streak, state, today's feed. The moment *time* is shown only when notifications are off (ADR-024) |
 | F13 | Grid archive | All moments, thumbnails streamed from Photos |
 | F14 | Moment detail | Full-bleed view, metadata, BTS playback, share, delete |
-| F15 | Stats | Days captured, streaks, on-time %, average retakes, busiest hour |
+| F15 | Stats | Days captured, streaks, average retakes, BTS count, busiest hour — no on-time / late row (ADR-032) |
 | F16 | Share sheet | Both originals + an optional combined composite, no watermark |
 | F17 | Export | App metadata as JSON; photos via share sheet |
 
@@ -126,7 +126,7 @@ service. It is a single-device capture ritual with a durable archive.
                             ▼
               ┌──────────────────────────┐
               │  tap → camera opens      │
-              │  "1:47" counting down    │
+              │  (capture any time)      │
               └────────────┬─────────────┘
                            ▼
               ┌──────────────────────────┐
@@ -153,19 +153,19 @@ service. It is a single-device capture ritual with a durable archive.
 ```
 
 Retake loops back to the camera at any point before Send, and only the final pair is persisted.
+Capture is also available before the reminder and after the two-minute window — every day with
+a photograph counts (ADR-032).
 
 ### 5.3 After the window closes
 
 The Today screen says **"Today's moment has passed"** and the camera is still there. Capturing
 produces an off-window moment: saved to Photos, saved to the archive, **identical on every
-screen to an on-time one**, and the streak does not move — neither up nor down. The walk skips
-the day rather than treating it as a break.
+screen to an on-time one**, and it **counts toward the streak** the same way (ADR-032).
 
-Nothing on screen says so, and that is the decision (ADR-023). An earlier version rendered an
-amber *"posted 12m late"* badge above a sentence explaining that the streak had not grown, which
-meant the user learned the rule by being told they had broken something. Off-window moments are
-first-class archive entries; the honest aggregate (`on-time %`) belongs on the Stats screen,
-where it describes a number rather than a photograph.
+Nothing on screen says whether you were inside the window, and that is the decision (ADR-023).
+An earlier version rendered an amber *"posted 12m late"* badge and withheld the streak; both
+are gone. Timing metrics were removed from Stats as well (ADR-032) — the screen reports what
+you photographed, not whether a clock approved it.
 
 A day ends only when a day passes with **no moment at all** — and by then it is tomorrow, so
 there is no state in which the app can tell you that yesterday is gone.
@@ -191,14 +191,14 @@ that leaves the photo behind will otherwise read as a bug.
 | FR-2 | The moment time for a given day must be stable across app launches, reinstalls of the data, and clock changes | Must |
 | FR-3 | Schedule a local notification at the moment time for a rolling horizon of upcoming days | Must |
 | FR-4 | Respect the 64-request pending-notification limit; refill the horizon on every launch and foreground | Must |
-| FR-5 | Refuse to capture before the moment time | Must |
-| FR-6 | Allow capture after the window; mark late; compute `lateBy` | Must |
+| FR-5 | Permit capture at any time of day; the reminder window is not a shutter gate | Must |
+| FR-6 | Allow capture after the window; store timing metadata without surfacing lateness in the UI | Must |
 | FR-7 | Capture one rear and one front photo per attempt, sequentially, in a single capture session | Must |
 | FR-8 | Allow unlimited retakes before send; persist the final retake count | Must |
 | FR-9 | Write front and back to Photos as two separate assets within a single change block | Must |
 | FR-10 | Preserve EXIF from capture; inject GPS only when the user opted in for that moment | Must |
 | FR-11 | Store moment metadata locally, referencing Photos by `PHAsset.localIdentifier`; store no image copies | Must |
-| FR-12 | Compute current and longest streak from on-time moments only | Must |
+| FR-12 | Compute current and longest streak from any capture day (ADR-032) | Must |
 | FR-13 | Support optional BTS capture and optional BTS save to Photos | Should |
 | FR-14 | Share two originals plus an optional combined composite, without a watermark | Should |
 | FR-15 | Export all app metadata as a single JSON document | Should |

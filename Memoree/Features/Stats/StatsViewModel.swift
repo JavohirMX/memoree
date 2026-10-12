@@ -85,6 +85,22 @@ final class StatsViewModel {
         }
     }
 
+    /// Tombstones the moment in the store and refreshes every derived number.
+    ///
+    /// **Does not touch Photos.** Same contract as `ArchiveViewModel.delete`
+    /// (ADR-008): add-only authorisation cannot remove assets, so the photos
+    /// stay in the camera roll and only the archive entry disappears.
+    func delete(_ moment: MomentFacts) throws {
+        guard let row = environment.momentStore.allMoments
+            .first(where: { $0.id == moment.id })
+        else { return }
+
+        try environment.momentStore.delete(row)
+        // Streak, habit strip, and history all read from the store — reload so
+        // a tombstone cannot leave a stale count on screen.
+        load()
+    }
+
     // MARK: - Copy
 
     /// Nothing here is a sentence about the user.

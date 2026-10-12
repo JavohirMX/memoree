@@ -12,6 +12,7 @@
 		0B8031C23277F0552E14EF8E /* Phase2FeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C5EB6C4196004851B251F321 /* Phase2FeatureTests.swift */; };
 		14050F412238D071CC2F592B /* NotificationHorizonPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5E5B5FF9F8E436DE91DF5E1 /* NotificationHorizonPlannerTests.swift */; };
 		161F97091524A8928369080E /* ArchiveViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B22F42B6A1FFA91C8F16DB76 /* ArchiveViewModelTests.swift */; };
+		1DECEE918B1F4286C69BB28A /* SameDayFlipbook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8D3004AC44878DA03F1EA1 /* SameDayFlipbook.swift */; };
 		24C6817526B83700CCF2064D /* MomentNotificationCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4877F0D1AC761FBA1E34DD /* MomentNotificationCopy.swift */; };
 		2B9D319B2D985A6015711CCF /* MomentCommitTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10DEE387D182EF879E7D835F /* MomentCommitTests.swift */; };
 		2D8E0A48AA7C0AA632160469 /* CameraPreview.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10346D5E089B83B75AC3EE06 /* CameraPreview.swift */; };
@@ -119,6 +120,7 @@
 		E34B7DF46789CA838628B8A8 /* InMemoryBTSRecorder.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFF1C4AD54F214BF4185ADE9 /* InMemoryBTSRecorder.swift */; };
 		E9BD27C3C18A454BBF501ADF /* CaptureFormatSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 170065353CC5AF754FEB56D3 /* CaptureFormatSelector.swift */; };
 		EBF74A30C81ABB752F19229A /* MomentComposite.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0887B0F2895403AE68C5428 /* MomentComposite.swift */; };
+		EC4CBDABECC33F6DA7A77499 /* SameDayFlipbookTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A86B85306E9B8C57B8C42523 /* SameDayFlipbookTests.swift */; };
 		F0CF5BC193973823452ACDCB /* ShareTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5813FE0F46A7A66B303ABBA0 /* ShareTests.swift */; };
 		F1B1F6DA5643B12E96292B0F /* ArchiveSection.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44D954A88FE999BC103F64D3 /* ArchiveSection.swift */; };
 		F497F140FA8775AA63614222 /* StreakCalculatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6457DA40B3A78A6DD1789ADD /* StreakCalculatorTests.swift */; };
@@ -179,6 +181,7 @@
 		4FDADB8BA0AAF84D9415161C /* AlbumTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumTests.swift; sourceTree = "<group>"; };
 		52602E359E6E99263148A8C4 /* CountdownFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CountdownFormatter.swift; sourceTree = "<group>"; };
 		5813FE0F46A7A66B303ABBA0 /* ShareTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ShareTests.swift; sourceTree = "<group>"; };
+		5C8D3004AC44878DA03F1EA1 /* SameDayFlipbook.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SameDayFlipbook.swift; sourceTree = "<group>"; };
 		5CF0CFAC6878E9DBDB669C65 /* CaptureMomentIntent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureMomentIntent.swift; sourceTree = "<group>"; };
 		609A5ED40E5FA08F137784E6 /* LocalMomentScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalMomentScheduler.swift; sourceTree = "<group>"; };
 		6181DAD5BD1416D9C47784D2 /* LivePhotoRunGuard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePhotoRunGuard.swift; sourceTree = "<group>"; };
@@ -213,6 +216,7 @@
 		A34851AC49B73169F94FEADF /* BTSRecorder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BTSRecorder.swift; sourceTree = "<group>"; };
 		A3AEF188C45BA38EE41A5DB0 /* ArchiveView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveView.swift; sourceTree = "<group>"; };
 		A8083EE130385202F15D7174 /* ArchiveCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveCell.swift; sourceTree = "<group>"; };
+		A86B85306E9B8C57B8C42523 /* SameDayFlipbookTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SameDayFlipbookTests.swift; sourceTree = "<group>"; };
 		A9280538F4369959B511B4C1 /* MomentDerivation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentDerivation.swift; sourceTree = "<group>"; };
 		AAF110D7C2C9E48ECFB45F3E /* AppIconTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIconTests.swift; sourceTree = "<group>"; };
 		ACADA2F6A8BD7944EEEC188B /* MomentExporterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentExporterTests.swift; sourceTree = "<group>"; };
@@ -309,6 +313,7 @@
 				44D954A88FE999BC103F64D3 /* ArchiveSection.swift */,
 				CC7F78EA51E71A3AC4786D36 /* Models.swift */,
 				C4C2D1BE256DE2D1E2F0395B /* MomentFacts.swift */,
+				5C8D3004AC44878DA03F1EA1 /* SameDayFlipbook.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -448,6 +453,7 @@
 				C035884EA3B2B9DB84A89A50 /* PhotoMetadataInjectorTests.swift */,
 				706A7274F260EA460A887F3C /* ReduceMotionTests.swift */,
 				07931FE867FFA30A0320CB99 /* ResumeGateTests.swift */,
+				A86B85306E9B8C57B8C42523 /* SameDayFlipbookTests.swift */,
 				2D5BF5FAFFFD4A723416F2DC /* SessionRebuildInvariantTests.swift */,
 				5813FE0F46A7A66B303ABBA0 /* ShareTests.swift */,
 				4D9305F1F5984423B92AAF49 /* SourceScan.swift */,
@@ -745,6 +751,7 @@
 				798BB066BA31344214585F01 /* PhotoMetadataInjector.swift in Sources */,
 				7E97C2F911CD63819710B81A /* PressDipStyle.swift in Sources */,
 				98E12ACAA27676F8118027FE /* ReducedMotion.swift in Sources */,
+				1DECEE918B1F4286C69BB28A /* SameDayFlipbook.swift in Sources */,
 				4ED67FE454E1BB3FC03BC2F7 /* ScaledFont.swift in Sources */,
 				E26897587A47E3148A5194C4 /* ScrollableAtAccessibilitySizes.swift in Sources */,
 				A31930AA78BD5E3DAFE695CD /* SequentialCaptureService.swift in Sources */,
@@ -805,6 +812,7 @@
 				B7AE3A2FCEF4174BD99795D4 /* PhotoMetadataInjectorTests.swift in Sources */,
 				76351D531FBF2951932E3331 /* ReduceMotionTests.swift in Sources */,
 				A50918F2188E88D80B35102C /* ResumeGateTests.swift in Sources */,
+				EC4CBDABECC33F6DA7A77499 /* SameDayFlipbookTests.swift in Sources */,
 				5A15CC6A77AD6C4C5DC6E391 /* SessionRebuildInvariantTests.swift in Sources */,
 				F0CF5BC193973823452ACDCB /* ShareTests.swift in Sources */,
 				DD882102CA9648F77652C558 /* SourceScan.swift in Sources */,

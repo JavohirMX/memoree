@@ -53,9 +53,30 @@ final class TodayViewModel {
     /// Flashback moments from previous years on today's calendar date ("On This Day").
     private(set) var flashbackMoments: [MomentFacts] = []
 
+    /// Chronological feed items, excluding flashbacks already shown under ON THIS DAY.
+    ///
+    /// Flashbacks are a subset of `feedMoments`. Showing both sections without this
+    /// filter duplicates the same card.
+    var chronologicalFeedMoments: [MomentFacts] {
+        let flashbackIDs = Set(flashbackMoments.map(\.id))
+        return feedMoments.filter { !flashbackIDs.contains($0.id) }
+    }
+
     /// Maximum active image pairs cached in memory for the feed.
     static let maxFeedCacheSize = 15
     private var feedAccessOrder: [UUID] = []
+
+    /// Moment IDs with an in-flight feed image load, so the dual `.task`
+    /// attachments on a card do not stampede Photos for the same pair.
+    private var feedImageLoadsInFlight: Set<UUID> = []
+
+    /// How many times a nil image load is retried when the assets still exist.
+    ///
+    /// Photos occasionally hands back nil under memory pressure even though the
+    /// asset is present. Without a retry the card stays blank forever: the
+    /// `.task` already finished, and neither map was updated so there is no
+    /// missing-state UI either.
+    private static let transientImageRetryLimit = 2
 
     /// Today's photographs are gone from Photos.
     ///
@@ -256,34 +277,103 @@ final class TodayViewModel {
     }
 
     /// Loads image pair lazily for a feed moment.
+    ///
+    /// Retries when Photos returns nil but both assets still exist. Marks the
+    /// card missing when either asset is gone, and tombstones the metadata row
+    /// when both are confirmed gone — never touches the Photos library
+    /// (ADR-008).
     func loadImage(for moment: MomentFacts) async {
         guard feedImagesMap[moment.id] == nil, !feedMissingMap.contains(moment.id) else { return }
+        guard !feedImageLoadsInFlight.contains(moment.id) else { return }
         guard let assets = moment.assets else { return }
+
+        feedImageLoadsInFlight.insert(moment.id)
+        defer { feedImageLoadsInFlight.remove(moment.id) }
+
         let size = Self.compositeTargetSize
-        async let large = environment.photoLibrary.image(for: assets.back, targetSize: size)
-        async let inset = environment.photoLibrary.image(for: assets.front, targetSize: size)
-        let (largeImage, insetImage) = await (large, inset)
-        if let largeImage, let insetImage {
-            feedImagesMap[moment.id] = (large: largeImage, inset: insetImage)
-            todayImagesMap[moment.id] = (large: largeImage, inset: insetImage)
+        for attempt in 0...Self.transientImageRetryLimit {
+            async let large = environment.photoLibrary.image(for: assets.back, targetSize: size)
+            async let inset = environment.photoLibrary.image(for: assets.front, targetSize: size)
+            let (largeImage, insetImage) = await (large, inset)
 
-            feedAccessOrder.removeAll { $0 == moment.id }
-            feedAccessOrder.append(moment.id)
-
-            if feedAccessOrder.count > Self.maxFeedCacheSize {
-                let todayIDs = Set(todayMoments.map(\.id))
-                if let evictCandidate = feedAccessOrder.first(where: { !todayIDs.contains($0) }) {
-                    feedAccessOrder.removeAll { $0 == evictCandidate }
-                    feedImagesMap.removeValue(forKey: evictCandidate)
-                }
+            if let largeImage, let insetImage {
+                storeFeedImages(momentID: moment.id, large: largeImage, inset: insetImage)
+                return
             }
-        } else {
+
             let backExists = await environment.photoLibrary.assetExists(assets.back)
             let frontExists = await environment.photoLibrary.assetExists(assets.front)
-            if !(backExists && frontExists) {
+
+            if backExists && frontExists {
+                // Transient miss — leave both maps alone so a later call can
+                // retry, and try again inside this load while the card is up.
+                if attempt < Self.transientImageRetryLimit { continue }
+                return
+            }
+
+            if !backExists && !frontExists {
+                tombstoneOrphan(moment)
+            } else {
                 feedMissingMap.insert(moment.id)
                 todayMissingMap.insert(moment.id)
             }
+            return
+        }
+    }
+
+    private func storeFeedImages(momentID: UUID, large: UIImage, inset: UIImage) {
+        feedImagesMap[momentID] = (large: large, inset: inset)
+        todayImagesMap[momentID] = (large: large, inset: inset)
+
+        feedAccessOrder.removeAll { $0 == momentID }
+        feedAccessOrder.append(momentID)
+
+        if feedAccessOrder.count > Self.maxFeedCacheSize {
+            let todayIDs = Set(todayMoments.map(\.id))
+            if let evictCandidate = feedAccessOrder.first(where: { !todayIDs.contains($0) }) {
+                feedAccessOrder.removeAll { $0 == evictCandidate }
+                feedImagesMap.removeValue(forKey: evictCandidate)
+            }
+        }
+    }
+
+    /// Soft-deletes an orphan whose Photos assets are both gone.
+    ///
+    /// Metadata only — Memoree never deletes from the user's library
+    /// (ADR-008 / AGENTS.md §8). Local lists update only when the store write
+    /// succeeds; a failed tombstone leaves the missing-from-Photos treatment.
+    private func tombstoneOrphan(_ moment: MomentFacts) {
+        guard let row = environment.momentStore.allMoments
+            .first(where: { $0.id == moment.id })
+        else { return }
+        do {
+            try environment.momentStore.delete(row)
+        } catch {
+            feedMissingMap.insert(moment.id)
+            todayMissingMap.insert(moment.id)
+            return
+        }
+
+        feedMoments.removeAll { $0.id == moment.id }
+        todayMoments.removeAll { $0.id == moment.id }
+        flashbackMoments.removeAll { $0.id == moment.id }
+        if todayMoment?.id == moment.id {
+            todayMoment = todayMoments.last
+        }
+        feedImagesMap.removeValue(forKey: moment.id)
+        todayImagesMap.removeValue(forKey: moment.id)
+        feedMissingMap.remove(moment.id)
+        todayMissingMap.remove(moment.id)
+        feedAccessOrder.removeAll { $0 == moment.id }
+
+        let today = DayIdentifier(date: now)
+        summary = environment.momentStore.summary(today: today)
+        if let latestID = todayMoment?.id, let pair = todayImagesMap[latestID] {
+            todayImages = pair
+            todayMissingFromPhotos = false
+        } else {
+            todayImages = nil
+            todayMissingFromPhotos = false
         }
     }
 
@@ -310,6 +400,49 @@ final class TodayViewModel {
         return "\(diff) \(diff == 1 ? "year" : "years") ago today"
     }
 
+    // MARK: - Same-day flipbook (ADR-038)
+
+    /// Moments on today's calendar month/day across every year, oldest first.
+    ///
+    /// Includes today when captured. Used for the flipbook export, not for the
+    /// ON THIS DAY cards (those stay prior-year-only via `flashbackMoments`).
+    var sameDayAcrossYearsMoments: [MomentFacts] {
+        SameDayFlipbook.moments(from: feedMoments, matching: now)
+    }
+
+    /// True when the selection spans at least two calendar years.
+    var canExportSameDayFlipbook: Bool {
+        SameDayFlipbook.isExportable(sameDayAcrossYearsMoments)
+    }
+
+    private(set) var isExportingSameDayFlipbook = false
+    private(set) var sameDayFlipbookExportError: String?
+
+    /// Exports the same-day-across-years selection through the Archive flipbook path.
+    ///
+    /// Device Photos write — covered by `InMemoryPhotoLibraryService` in unit
+    /// tests; real encoding is device-only via `PhotoKitLibrary`.
+    func exportSameDayFlipbook() async -> Bool {
+        let moments = sameDayAcrossYearsMoments
+        guard SameDayFlipbook.isExportable(moments), !isExportingSameDayFlipbook else {
+            return false
+        }
+        isExportingSameDayFlipbook = true
+        sameDayFlipbookExportError = nil
+        defer { isExportingSameDayFlipbook = false }
+
+        do {
+            _ = try await environment.photoLibrary.exportFlipbookVideo(
+                for: moments,
+                framesPerSecond: 2
+            )
+            return true
+        } catch {
+            sameDayFlipbookExportError = error.localizedDescription
+            return false
+        }
+    }
+
     /// Streams today's photographs back out of Photos.
     private func loadTodayImages() async {
         guard !todayMoments.isEmpty else {
@@ -323,26 +456,51 @@ final class TodayViewModel {
         let size = Self.compositeTargetSize
         var newImagesMap: [UUID: (large: UIImage, inset: UIImage)] = [:]
         var newMissingMap = Set<UUID>()
+        var orphaned: [MomentFacts] = []
 
         for moment in todayMoments {
             guard let assets = moment.assets else {
                 continue
             }
 
-            async let large = environment.photoLibrary.image(for: assets.back, targetSize: size)
-            async let inset = environment.photoLibrary.image(for: assets.front, targetSize: size)
-            let (largeImage, insetImage) = await (large, inset)
+            var loaded: (UIImage, UIImage)?
+            for attempt in 0...Self.transientImageRetryLimit {
+                async let large = environment.photoLibrary.image(for: assets.back, targetSize: size)
+                async let inset = environment.photoLibrary.image(for: assets.front, targetSize: size)
+                let (largeImage, insetImage) = await (large, inset)
 
-            if let largeImage, let insetImage {
-                newImagesMap[moment.id] = (large: largeImage, inset: insetImage)
-            } else {
+                if let largeImage, let insetImage {
+                    loaded = (largeImage, insetImage)
+                    break
+                }
+
                 let backExists = await environment.photoLibrary.assetExists(assets.back)
                 let frontExists = await environment.photoLibrary.assetExists(assets.front)
-                if !(backExists && frontExists) {
+                if backExists && frontExists {
+                    if attempt < Self.transientImageRetryLimit { continue }
+                    break
+                }
+                if !backExists && !frontExists {
+                    orphaned.append(moment)
+                } else {
                     newMissingMap.insert(moment.id)
                 }
+                break
+            }
+
+            if let loaded {
+                newImagesMap[moment.id] = (large: loaded.0, inset: loaded.1)
             }
         }
+
+        for orphan in orphaned {
+            tombstoneOrphan(orphan)
+        }
+
+        // Re-read the live today list after any tombstones above.
+        let liveTodayIDs = Set(todayMoments.map(\.id))
+        newImagesMap = newImagesMap.filter { liveTodayIDs.contains($0.key) }
+        newMissingMap = newMissingMap.intersection(liveTodayIDs)
 
         todayImagesMap = newImagesMap
         todayMissingMap = newMissingMap

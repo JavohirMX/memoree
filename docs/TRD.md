@@ -79,43 +79,42 @@ Memoree/
 │   │   └── RootView.swift
 │   ├── DesignSystem/
 │   │   ├── Theme.swift            # palette, spacing, radii, type ramp
-│   │   └── Components/            # buttons, cards, countdown, badges
+│   │   └── Components/            # buttons, cards, composite, badges
 │   ├── Models/
-│   │   ├── Moment.swift
-│   │   ├── MomentDay.swift
-│   │   ├── Streak.swift
-│   │   └── AppSettings.swift
+│   │   ├── Models.swift           # Moment, DayRecord, AppSettings
+│   │   ├── MomentFacts.swift      # Sendable streak/stats snapshots
+│   │   ├── ArchiveSection.swift   # month grouping for Archive
+│   │   └── SameDayFlipbook.swift  # this-day-across-years selection (ADR-038)
 │   ├── Persistence/
-│   │   ├── ModelContainer.swift
+│   │   ├── Persistence.swift
 │   │   └── MomentStore.swift      # @MainActor, the only write path
 │   ├── Services/
 │   │   ├── Scheduler/
-│   │   │   ├── MomentScheduler.swift       # protocol
+│   │   │   ├── MomentScheduler.swift
 │   │   │   ├── LocalMomentScheduler.swift
 │   │   │   └── NotificationService.swift
 │   │   ├── Capture/
-│   │   │   ├── CapturePhotoService.swift    # protocol, CapturedPhoto/Pair, CaptureError
-│   │   │   ├── CaptureFormatSelector.swift   # pure 3:4 math + device wrapper
+│   │   │   ├── CapturePhotoService.swift
+│   │   │   ├── CaptureFormatSelector.swift
 │   │   │   ├── CaptureSessionController.swift
 │   │   │   ├── SequentialCaptureService.swift
-│   │   │   ├── InMemoryCaptureService.swift  # test double, ships in the app target
-│   │   │   ├── BTSRecorder.swift             # Phase 7
-│   │   │   └── CompositeRenderer.swift       # Phase 8
+│   │   │   ├── InMemoryCaptureService.swift
+│   │   │   └── BTSRecorder.swift
 │   │   ├── PhotoLibrary/
-│   │   │   ├── PhotoLibraryService.swift   # protocol
-│   │   │   └── PhotoKitLibrary.swift
-│   │   ├── Streaks/
-│   │   │   └── StreakCalculator.swift      # pure functions
-│   │   └── Export/
-│   │       └── MomentExporter.swift
+│   │   │   ├── PhotoLibraryService.swift
+│   │   │   ├── PhotoKitLibrary.swift
+│   │   │   └── ArchiveThumbnailCache.swift
+│   │   └── Streaks/
+│   │       └── StreakCalculator.swift
 │   ├── Features/
 │   │   ├── Onboarding/
 │   │   ├── Today/
 │   │   ├── Camera/
-│   │   ├── Archive/
-│   │   ├── MomentDetail/
+│   │   ├── Archive/               # grid, calendar, MomentDetailView
 │   │   ├── Stats/
-│   │   └── Settings/
+│   │   ├── Settings/
+│   │   ├── Share/                 # exporter + share sheet
+│   │   └── BTS/                   # BTSPlaybackView (sole AVKit Features exception)
 │   ├── Resources/
 │   │   ├── Assets.xcassets
 │   │   ├── Info.plist
@@ -123,13 +122,12 @@ Memoree/
 │   └── Support/
 │       ├── DayIdentifier.swift
 │       ├── TimeWindow.swift
+│       ├── CountdownFormatter.swift
 │       └── Log.swift
 └── MemoreeTests/
-    ├── MomentSchedulerTests.swift
-    ├── StreakCalculatorTests.swift
-    ├── DayIdentifierTests.swift
-    └── PhotoKitLibraryTests.swift
+    ├── …
 ```
+
 
 **Layering rule.** `Features/` may import `Models/`, `Persistence/`, `DesignSystem/`.
 `Services/` may import `Models/` and `Support/`. Nothing imports `Features/`. Services are
@@ -204,7 +202,7 @@ attached to the day the *user* experienced it, which is what a streak means to a
 **Multi-capture (ADR-030).** Users can take multiple memories per day using "Capture again".
 `Moment.dayIdentifier` is non-unique so subsequent captures append rather than overwrite
 or soft-delete previous captures. Day records remain unique, and streak calculations count
-days with at least one qualifying on-time capture.
+days with at least one capture of any kind (ADR-032).
 
 ## 4. The moment scheduler
 
@@ -614,6 +612,20 @@ The screen offers a **dual-view toggle**:
 An understated **collection summary header** at the top displays total moment count and the chronological
 date span (e.g. `48 moments · Jun 2026 – Oct 2026`).
 
+### 6.6 Flipbook export
+
+Archive can export the **entire library** as a stop-motion timelapse via
+`PhotoLibraryService.exportFlipbookVideo(for:framesPerSecond:)`. `PhotoKitLibrary` loads each
+moment's rear asset, writes an H.264 `.mov` at 1080×1440 / 2 fps, then saves the file into Photos
+(add-only). Features never imports AVFoundation for this path — encoding stays in the photo-library
+service.
+
+**This day across years (ADR-038).** When the same calendar month/day spans at least two distinct
+years, Today’s ON THIS DAY section offers a quiet outline control that exports that subset through
+the same `exportFlipbookVideo` path. Selection is pure (`SameDayFlipbook` over `[MomentFacts]`);
+unlike `flashbackMoments`, the selection **includes the current year** so today’s capture can sit
+in the movie. Fewer than two years: the control is omitted — no empty-state cheerleading.
+
 ## 7. Streaks
 
 `StreakCalculator` is **pure functions over value types** — no SwiftData, no clock, no side
@@ -669,37 +681,30 @@ plagues this kind of UI.
 | --- | --- | --- |
 | `captured` | a moment exists today | "Saved"; today's composite; re-capture allowed (replaces) |
 | `scheduled` | now < momentStart, no moment today | "Memoree will ask you once today" — or "Next moment at 14:37" when notifications are off |
-| `open` | momentStart ≤ now ≤ windowEndsAt, no moment today | "It's time"; shutter |
+| `open` | momentStart ≤ now ≤ windowEndsAt, no moment today | "It's time"; calm invitation; shutter |
 | `windowPassed` | now > windowEndsAt, no moment today | "Today's moment has passed"; shutter still there |
 
 **No case carries a payload, and that is the enforcement.** `captured` used to carry
 `late`/`lateBy` and the view rendered an amber "posted 12m late" badge above a sentence
 saying the streak had not grown; `scheduled` and `open` carried countdowns. ADR-023 ruled
-out the badge and both sentences, ADR-024 ruled out the countdown. Rather than delete the
-branches that rendered them, the values went — so a view **cannot** leak the distinction
-whether or not anyone remembers not to. `MomentStateTests` asserts that an on-time and an
-off-window moment resolve identically.
+out the badge, ADR-024/ADR-032 removed the home-screen countdown, and ADR-032 made every
+capture count toward the streak. Rather than delete the branches that rendered timing
+judgment, the values went — so a view **cannot** leak the distinction whether or not anyone
+remembers not to. `MomentStateTests` asserts that an on-time and an off-window moment
+resolve identically.
 
 `windowPassed` is not a miss. A day ends only when a day passes with no photograph at all
-(ADR-023), and by the time it has, it is tomorrow and the state is `scheduled` again — which
+(ADR-010), and by the time it has, it is tomorrow and the state is `scheduled` again — which
 is why the separate `missed` state was deleted rather than kept. It was unreachable in the
 app: `endOfDay(containing: now)` is always later than `now`, so the `now < dayEnd` guard
 that led to it always held.
 
-The shutter renders in **every** state. The early-post refusal (`FR-5`) was structural —
-the affordance was absent rather than disabled — and it contradicted the app's own
-onboarding copy, which promised you could photograph whenever you liked.
+The shutter renders in **every** state. The early-post refusal (`FR-5`) was removed — capture
+is permitted at any time, and every capture day counts (ADR-032).
 
-**The shutter is above the countdown, which is the visual-hierarchy half of ADR-023.** A countdown
-to the *reminder* is shown only when notifications are off (ADR-024: it is then the only way the
-user could learn when the moment was). It was rendered above the shutter at 64pt against a 52pt
-button, so the largest element on the screen reported a fact and the smallest offered the only
-action — the screen said *watch the clock* when it meant *you can capture now*.
-
-It also contradicted the decision itself. No moment is late (ADR-023), so a prominent ticking
-number above the shutter reads as pressure to act immediately, which is the one behaviour the
-product explicitly does not want. Nothing is hidden; the emphasis moved. Below the shutter it is
-still a fact on screen, stated once, in the right voice.
+**No home-screen countdown (ADR-032).** When notifications are off, the footer still shows
+a static "Moment today · …" row so the user has one way to learn the reminder time (ADR-024),
+without a ticking number that reads as pressure.
 
 ## 9. Notification handling
 
@@ -900,6 +905,7 @@ upload.
 | PhotoKit | Simulator for permission flows; real device for actual writes and EXIF verification |
 | Network-free | Airplane-mode test on device; `nm -u` binary audit; a unit test asserting no `URLSession` is constructed by any production type |
 | Archive grouping | Pure-function tests on `ArchiveSection.grouping(_:calendar:)` against a **pinned** calendar. The boundary cases are the tests that matter: a moment on the far side of the month boundary from UTC in both directions, a DST transition inside a month, interleaved input, and "every moment appears exactly once" |
+| Same-day flipbook | Pure-function tests on `SameDayFlipbook.moments` / `isExportable`: month-day match across years (including current), leap-day exact match, local calendar vs UTC, multi-capture same year does not unlock export, year-span does |
 | Design system | Source-scan invariants: no hardcoded colour, no hardcoded dimension, no `accessibility` symbol escaping the design system, and — see below — what a test asserting about design *cannot* catch |
 
 That last one is unusual and deliberately so: given that "no server" is the product's central
