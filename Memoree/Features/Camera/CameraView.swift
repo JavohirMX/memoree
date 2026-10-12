@@ -335,13 +335,19 @@ struct CameraView: View {
             }
             .aspectRatio(3.0 / 4.0, contentMode: .fit)
             .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
-            // Front↔rear reconfigure freezes the layer for ~0.3–1s. Fade and a
-            // slight scale read as an intentional handoff (PRD), not a hang —
-            // and they replace the old "Capturing…" / "Switching camera…" line.
-            .opacity(model.isCameraTransitioning ? 0 : 1)
-            .scaleEffect(model.isCameraTransitioning ? 0.97 : 1)
-            .appAnimation(model.isCameraTransitioning) {
-                .easeInOut(duration: 0.25)
+            // Full Y-flip covers the session freeze; dim + blur stay on until
+            // the new camera is ready, then clear on unfold. Swap starts as
+            // soon as the cover turns on (no animation sleep before it).
+            .opacity(model.isCameraSwitching ? 0.45 : 1)
+            .blur(radius: model.isCameraSwitching ? 8 : 0)
+            .scaleEffect(model.isCameraSwitching ? 0.98 : 1)
+            .rotation3DEffect(
+                .degrees(model.cameraSwitchDegrees),
+                axis: (x: 0, y: 1, z: 0),
+                perspective: 0.65
+            )
+            .appAnimation(model.isCameraSwitching) {
+                .easeInOut(duration: 0.2)
             }
             .padding(.horizontal, Theme.Spacing.m)
         }

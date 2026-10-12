@@ -558,7 +558,8 @@ final class CameraViewModel {
                 phase = .shooting
             }
         } catch {
-            isCameraTransitioning = false
+            isCameraSwitching = false
+            cameraSwitchDegrees = 0
             phase = Self.phase(for: error)
         }
     }
@@ -583,12 +584,18 @@ final class CameraViewModel {
             phase = .shooting
             haptics.cameraSwitched()
         } catch {
-            isCameraTransitioning = false
+            isCameraSwitching = false
+            cameraSwitchDegrees = 0
             phase = Self.phase(for: error)
         }
     }
 
-    /// Stops the session graph on one lens and opens the other, with a preview fade.
+    /// Stops the session graph on one lens and opens the other under a live cover.
+    ///
+    /// Full Y-flip (fold to ±90 → snap opposite → unfold) with dim/blur while
+    /// the session is stopped. `switchCamera` starts in the same turn as the
+    /// fold — no animation sleep stacked on top. Blur clears only once the new
+    /// camera is ready and the card unfolds.
     ///
     /// - Parameters:
     ///   - pauseBTS: Mid-moment swap — pause the current segment, resume after.
@@ -598,12 +605,12 @@ final class CameraViewModel {
         pauseBTS: Bool,
         restartBTS: Bool
     ) async throws {
-        withAppAnimation(.easeInOut(duration: 0.2)) {
-            isCameraTransitioning = true
-        }
-        // Let the fade-out paint before the preview freezes on a stopped session.
-        if !UIAccessibility.isReduceMotionEnabled {
-            try? await Task.sleep(for: .milliseconds(200))
+        // Rear→front = +90, front→rear = −90.
+        let foldOut: Double = next == .front ? 90 : -90
+
+        withAppAnimation(.easeIn(duration: 0.2)) {
+            isCameraSwitching = true
+            cameraSwitchDegrees = foldOut
         }
 
         if restartBTS {
@@ -616,8 +623,17 @@ final class CameraViewModel {
         livePosition = next
         await syncZoomSelectionToLiveCamera()
 
-        withAppAnimation(.easeInOut(duration: 0.28)) {
-            isCameraTransitioning = false
+        // Camera ready: snap past the seam (no interpolate through 0), then
+        // unfold and drop the blur together.
+        var snap = Transaction()
+        snap.disablesAnimations = true
+        withTransaction(snap) {
+            cameraSwitchDegrees = -foldOut
+        }
+
+        withAppAnimation(.easeOut(duration: 0.25)) {
+            isCameraSwitching = false
+            cameraSwitchDegrees = 0
         }
 
         if restartBTS {
@@ -1126,14 +1142,22 @@ final class CameraViewModel {
 
     /// True while the live input is swapping (front↔rear).
     ///
-    /// Drives the preview crossfade so a session stop does not read as a freeze
-    /// with "Capturing…" under the frame. The shutter path and the flip button
-    /// share this flag.
-    private(set) var isCameraTransitioning = false
+    /// Drives the preview dim/blur/scale cover so a session stop does not read
+    /// as a freeze with "Capturing…" under the frame. The shutter path and the
+    /// flip button share this flag; the hardware swap starts as soon as it
+    /// turns on (no animation sleep stacked on top).
+    private(set) var isCameraSwitching = false
+
+    /// Y-rotation (degrees) for the full front↔rear card flip.
+    ///
+    /// Idle is `0`. Mid-handoff folds to ±90, snaps to the opposite edge when
+    /// the new camera is ready, then unfolds to `0`. Dim/blur tracks
+    /// `isCameraSwitching` and clears on that unfold.
+    private(set) var cameraSwitchDegrees: Double = 0
 
     /// Progress copy for session open / save — not for the mid-moment switch.
     ///
-    /// Capture is the shutter flash; the lens swap is `isCameraTransitioning`.
+    /// Capture is the shutter flash; the lens swap is `isCameraSwitching`.
     /// Naming those under the preview made a deliberate ~0.5s reconfigure feel
     /// like a hang (PRD: make the switch feel intentional, not apologetic).
     var progressDescription: String {

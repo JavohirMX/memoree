@@ -408,9 +408,12 @@ photo. Matching review/composite aspect keeps compose ≈ capture.
 
 **Front↔rear handoff.** The session must stop to swap inputs (ADR-003). The UI
 does not label that freeze as "Capturing…" / "Switching camera…". Instead
-`isCameraTransitioning` fades and slightly scales the 3:4 preview out, runs the
-swap, then fades back in (honours Reduce Motion). The shutter flash still marks
-the photograph itself.
+`cameraSwitchDegrees` runs a full directional Y-flip (fold to ±90°, snap to the
+opposite edge, unfold to 0) while `isCameraSwitching` keeps dim/blur/scale on
+the card. `switchCamera` starts in the same turn as the fold — no animation
+sleep before the reconfigure. Blur clears only when the new camera is ready and
+the card unfolds. Reduce Motion hard-cuts the cover. The shutter flash still
+marks the photograph itself.
 
 ### 5.4 Front-camera mirroring
 
