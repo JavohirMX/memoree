@@ -525,11 +525,17 @@ struct SettingsView: View {
                 #if DEBUG
                 SettingsDivider()
 
-                Button("Reset camera services") {
+                Button {
                     Task { await environment.simulateMediaServicesReset() }
+                } label: {
+                    Text("Reset camera services")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .frame(minHeight: Theme.Size.tapTarget)
+                        .contentShape(Rectangle())
                 }
-                .font(Theme.Typography.metadata)
-                .foregroundStyle(Theme.Color.textSecondary)
+                .buttonStyle(.plain)
                 .accessibilityHint(
                     "Rebuilds the camera session from scratch, the way iOS does after a media services reset"
                 )

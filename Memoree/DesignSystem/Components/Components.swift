@@ -1,4 +1,5 @@
 import SwiftUI
+import UIKit
 
 /// Memoree's shared components.
 ///
@@ -232,14 +233,6 @@ struct LiquidGlassGroup<Content: View>: View {
     }
 }
 
-extension View {
-
-    /// Applies Apple's native Liquid Glass circular styling to an interactive control.
-    func liquidGlassCircle() -> some View {
-        modifier(LiquidGlassCircleModifier())
-    }
-}
-
 /// The standard navigation bar Back button used across sheets and navigation views.
 ///
 /// Features a leading chevron and "Back" label, matching native iOS navigation style.
@@ -257,6 +250,87 @@ struct BackButton: View {
             .foregroundStyle(Theme.Color.textPrimary)
         }
         .accessibilityLabel("Back")
+    }
+}
+
+/// A compact circular icon over a photograph, with a HIG-sized hit region.
+///
+/// The drawn chrome stays small so it does not cover the image; the tappable
+/// region is always at least `Theme.Size.tapTarget` (44pt). Used for composite
+/// flip/BTS chrome and BTS play/mute.
+struct ChromeIconButton: View {
+
+    let systemName: String
+    let label: String
+    var font: Font = Theme.Typography.retakePill
+    let action: () -> Void
+
+    var body: some View {
+        Button {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            action()
+        } label: {
+            Image(systemName: systemName)
+                .font(font)
+                .foregroundStyle(Theme.Color.textPrimary)
+                .padding(Theme.Spacing.s)
+                .background(Theme.Color.canvas.opacity(0.6))
+                .clipShape(Circle())
+                .overlay {
+                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
+                }
+                // Visual stays compact; hit region meets the 44pt floor (HIG).
+                .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                .contentShape(Circle())
+        }
+        .buttonStyle(.pressDip)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A compact translucent pill displaying capture time over a photograph.
+///
+/// Matches the semi-transparent chrome aesthetic of `ChromeIconButton`.
+struct ChromeTimePill: View {
+
+    let text: String
+
+    var body: some View {
+        HStack(spacing: Theme.Spacing.xs) {
+            Image(systemName: "clock")
+                .font(Theme.Typography.retakePill)
+            Text(text)
+                .font(Theme.Typography.metadata)
+        }
+        .foregroundStyle(Theme.Color.textPrimary)
+        .padding(.horizontal, Theme.Spacing.s)
+        .padding(.vertical, Theme.Spacing.xs)
+        .background(Theme.Color.canvas.opacity(0.6))
+        .clipShape(Capsule())
+        .overlay {
+            Capsule().strokeBorder(Theme.Color.divider, lineWidth: 1)
+        }
+        .accessibilityLabel("Captured at \(text)")
+    }
+}
+
+extension View {
+
+    /// Applies Apple's native Liquid Glass circular styling to an interactive control.
+    func liquidGlassCircle() -> some View {
+        modifier(LiquidGlassCircleModifier())
+    }
+
+    /// Expands a smaller drawn control to Apple's minimum hit region.
+    ///
+    /// The visual size is unchanged; only the tappable frame grows. Matches
+    /// `Theme.Size.zoomButton`'s documented "34 visual, 44 target" pattern.
+    func expandedCircularHitTarget(
+        _ size: CGFloat = Theme.Size.tapTarget
+    ) -> some View {
+        self
+            .frame(width: size, height: size)
+            .contentShape(Circle())
     }
 }
 

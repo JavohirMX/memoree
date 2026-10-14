@@ -229,6 +229,40 @@ struct DesignSystemInvariantTests {
 
     // MARK: - Sizes, which the colour rules never covered
 
+    @Test("Camera zoom keeps a 44pt hit around its 34pt circle")
+    func zoomButtonsExpandHitTarget() throws {
+        // Theme documents "34 visual, 44 target around it". The first
+        // implementation framed only the visible circle, so the comment lied.
+        // This asserts the expansion helper (or an explicit tapTarget frame) sits
+        // next to zoomButton — a cheap static check, not UI geometry.
+        let source = try String(
+            contentsOf: SourceScan.file(named: "CameraView.swift"),
+            encoding: .utf8
+        )
+        #expect(source.contains("Theme.Size.zoomButton"),
+                "zoom still draws the stock-camera 34pt circle")
+        #expect(
+            source.contains("expandedCircularHitTarget"),
+            "zoom must expand its hit region to Theme.Size.tapTarget"
+        )
+    }
+
+    @Test("Photo chrome uses the shared 44pt-hit icon button")
+    func chromeUsesSharedHitTargetControl() throws {
+        let composite = try String(
+            contentsOf: SourceScan.file(named: "MomentComposite.swift"),
+            encoding: .utf8
+        )
+        let bts = try String(
+            contentsOf: SourceScan.file(named: "BTSPlaybackView.swift"),
+            encoding: .utf8
+        )
+        #expect(composite.contains("ChromeIconButton"),
+                "composite flip/BTS chrome must use ChromeIconButton")
+        #expect(bts.contains("ChromeIconButton"),
+                "BTS play/mute must use ChromeIconButton")
+    }
+
     @Test("No view hardcodes a dimension")
     func noHardcodedDimensions() throws {
         // `AGENTS.md` §11 says no hardcoded values in a view, and the invariants

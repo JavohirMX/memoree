@@ -68,6 +68,7 @@ struct MomentComposite: View {
     var onDoubleTapLarge: (() -> Void)?
     var onFlip: (() -> Void)?
     var onPlayBTS: (() -> Void)?
+    var timestamp: String? = nil
 
     var body: some View {
         ZStack(alignment: .topLeading) {
@@ -96,9 +97,11 @@ struct MomentComposite: View {
                 insetLayer(inset)
             }
 
-            // Flip (leading) and BTS (trailing) are independent — both can show.
+            // Flip/time (leading) and BTS (trailing) are independent — both can show.
             HStack(spacing: Theme.Spacing.s) {
-                if let onFlip {
+                if let timestamp {
+                    ChromeTimePill(text: timestamp)
+                } else if let onFlip {
                     compositeChromeButton(
                         systemName: "arrow.triangle.2.circlepath",
                         label: "Flip camera angles",
@@ -126,22 +129,11 @@ struct MomentComposite: View {
         label: String,
         action: @escaping () -> Void
     ) -> some View {
-        Button {
-            UIImpactFeedbackGenerator(style: .light).impactOccurred()
-            action()
-        } label: {
-            Image(systemName: systemName)
-                .font(Theme.Typography.retakePill)
-                .foregroundStyle(Theme.Color.textPrimary)
-                .padding(Theme.Spacing.s)
-                .background(Theme.Color.canvas.opacity(0.6))
-                .clipShape(Circle())
-                .overlay {
-                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
-                }
-        }
-        .buttonStyle(.pressDip)
-        .accessibilityLabel(label)
+        ChromeIconButton(
+            systemName: systemName,
+            label: label,
+            action: action
+        )
     }
 
     @ViewBuilder

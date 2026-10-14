@@ -239,15 +239,17 @@ struct ArchiveView: View {
                     .font(Theme.Typography.retakePill)
             }
             .foregroundStyle(Theme.Color.textSecondary)
-            .padding(.horizontal, Theme.Spacing.s)
-            .padding(.vertical, Theme.Spacing.xs)
+            .padding(.horizontal, Theme.Spacing.m)
+            .frame(minHeight: Theme.Size.tapTarget)
             .background(Theme.Color.surface)
             .clipShape(Capsule())
             .overlay {
                 Capsule()
                     .strokeBorder(Theme.Color.divider, lineWidth: 1)
             }
+            .contentShape(Capsule())
         }
+        .accessibilityLabel("Jump to month")
     }
 
     private func filterPillBar(_ model: ArchiveViewModel) -> some View {
@@ -274,15 +276,17 @@ struct ArchiveView: View {
                     }
                     .foregroundStyle(isSelected ? Theme.Color.textPrimary : Theme.Color.textSecondary)
                     .padding(.horizontal, Theme.Spacing.m)
-                    .padding(.vertical, Theme.Spacing.xs)
+                    .frame(minHeight: Theme.Size.tapTarget)
                     .background(isSelected ? Theme.Color.divider : Theme.Color.surface)
                     .clipShape(Capsule())
                     .overlay {
                         Capsule()
                             .strokeBorder(isSelected ? Theme.Color.textSecondary : Theme.Color.divider, lineWidth: 1)
                     }
+                    .contentShape(Capsule())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.pressDip)
+                .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
             }
             Spacer()
         }
@@ -362,12 +366,14 @@ struct ArchiveView: View {
                     .font(Theme.Typography.metadata)
                     .foregroundStyle(viewMode == .grid ? Theme.Color.textPrimary : Theme.Color.textTertiary)
                     .padding(.horizontal, Theme.Spacing.m)
-                    .padding(.vertical, Theme.Spacing.s)
+                    .frame(minHeight: Theme.Size.tapTarget)
                     .background(viewMode == .grid ? Theme.Color.divider : Color.clear)
                     .clipShape(Capsule())
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressDip)
             .accessibilityLabel("Grid view")
+            .accessibilityAddTraits(viewMode == .grid ? [.isSelected, .isButton] : .isButton)
 
             Button {
                 withAppAnimation(.easeInOut(duration: 0.15)) {
@@ -378,12 +384,14 @@ struct ArchiveView: View {
                     .font(Theme.Typography.metadata)
                     .foregroundStyle(viewMode == .calendar ? Theme.Color.textPrimary : Theme.Color.textTertiary)
                     .padding(.horizontal, Theme.Spacing.m)
-                    .padding(.vertical, Theme.Spacing.s)
+                    .frame(minHeight: Theme.Size.tapTarget)
                     .background(viewMode == .calendar ? Theme.Color.divider : Color.clear)
                     .clipShape(Capsule())
+                    .contentShape(Capsule())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.pressDip)
             .accessibilityLabel("Calendar view")
+            .accessibilityAddTraits(viewMode == .calendar ? [.isSelected, .isButton] : .isButton)
         }
         .padding(Theme.Spacing.xs)
         .background(Theme.Color.surface)

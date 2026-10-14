@@ -182,6 +182,8 @@ struct ArchiveCalendarView: View {
                         .accessibilityHidden(true)
                 }
             }
+            // Full cell is tappable — circle glyphs stay dense; hit fills the grid slot.
+            .contentShape(Rectangle())
         }
         .buttonStyle(.pressDip)
         .onAppear {

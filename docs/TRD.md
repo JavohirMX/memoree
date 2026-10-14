@@ -903,6 +903,14 @@ Dynamic Type at all until Phase 8. The two display numerals have no text style a
 every size the design was drawn at and grows with the label beyond it. An invariant fails on any
 `.frame(height: n)` above a hairline.
 
+**Custom controls meet Apple's 44×44 pt hit region.** `Theme.Size.tapTarget` is the floor.
+The drawn control may stay smaller when the design calls for it — camera zoom circles stay at
+`Theme.Size.zoomButton` (34pt, stock camera), and photo-overlay chrome stays compact via
+`ChromeIconButton` — but the tappable frame is expanded with `expandedCircularHitTarget` or an
+explicit `frame`/`minHeight` of `tapTarget`. Filter pills, Jump, and view-mode toggles use
+`minHeight: tapTarget`. Calendar day cells fill their grid slot rather than inventing a second
+layout for narrow widths.
+
 **A solid white control is reserved for `PrimaryButton`.** On black there is no other emphasis
 available — no hue, no shadow that reads — so white fill is the loudest thing a screen can say and
 it says it in exactly one way. Settings' export row was a solid white pill competing with the

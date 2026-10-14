@@ -367,6 +367,9 @@ struct CameraView: View {
     }
 
     /// A zoom button inside the native camera zoom pill.
+    ///
+    /// Drawn at `Theme.Size.zoomButton` (34pt, stock camera); hit region is
+    /// `Theme.Size.tapTarget` (44pt) via `expandedCircularHitTarget`.
     private func zoomButton(_ zoom: CameraZoom, _ model: CameraViewModel) -> some View {
         let isSelected = model.zoom == zoom
         let isAvailable = zoom.isAvailable(on: model.livePosition)
@@ -386,10 +389,10 @@ struct CameraView: View {
                     }
                 }
                 .opacity(isAvailable ? 1 : 0.4)
+                .expandedCircularHitTarget()
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressDip)
         .disabled(!isAvailable)
-        .contentShape(Circle())
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
         .accessibilityHint(isAvailable ? "" : "Not available on the front camera")
     }
@@ -421,8 +424,9 @@ struct CameraView: View {
                 .foregroundStyle(model.torchMode == .on ? Theme.Color.textPrimary : Theme.Color.textSecondary)
                 .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
                 .background(Circle().fill(model.torchMode == .on ? Theme.Color.divider : Theme.Color.surface.opacity(0.8)))
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressDip)
         .disabled(!model.canToggleTorch)
         .opacity(model.canToggleTorch ? 1 : 0.4)
         .accessibilityLabel(model.torchMode == .on ? "Turn torch off" : "Turn torch on")
@@ -437,8 +441,9 @@ struct CameraView: View {
                 .foregroundStyle(model.canFlipCamera ? Theme.Color.textPrimary : Theme.Color.textTertiary)
                 .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
                 .background(Circle().fill(Theme.Color.surface.opacity(0.8)))
+                .contentShape(Circle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.pressDip)
         .disabled(!model.canFlipCamera)
         .opacity(model.canFlipCamera ? 1 : 0.4)
         .accessibilityLabel("Switch camera")

@@ -441,30 +441,14 @@ struct TodayView: View {
         in model: TodayViewModel,
         showsDayInHeader: Bool = true
     ) -> some View {
+        let timeString = showsDayInHeader
+            ? model.relativeHeader(for: moment)
+            : model.feedCardTime(for: moment)
+
         VStack(alignment: .leading, spacing: Theme.Spacing.s) {
-            HStack(spacing: Theme.Spacing.s) {
-                HStack(spacing: Theme.Spacing.xs) {
-                    Image(systemName: "clock")
-                        .font(Theme.Typography.retakePill)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                    // Chronological day sections already name the day; flashbacks
-                    // still need the full relative header on each card.
-                    Text(
-                        showsDayInHeader
-                            ? model.relativeHeader(for: moment)
-                            : model.feedCardTime(for: moment)
-                    )
-                        .font(Theme.Typography.metadata)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                }
-                .padding(.horizontal, Theme.Spacing.s)
-                .padding(.vertical, Theme.Spacing.xs)
-                .background(Theme.Color.surface)
-                .clipShape(Capsule())
-
-                Spacer()
-
-                if moment.retakeCount > 0 {
+            if moment.retakeCount > 0 {
+                HStack {
+                    Spacer()
                     Text("\(moment.retakeCount) \(moment.retakeCount == 1 ? "retake" : "retakes")")
                         .font(Theme.Typography.retakePill)
                         .foregroundStyle(Theme.Color.textSecondary)
@@ -492,12 +476,10 @@ struct TodayView: View {
                     onTapLarge: {
                         openDetail(for: moment)
                     },
-                    onFlip: {
-                        toggleFlip(for: moment.id)
-                    },
                     onPlayBTS: moment.hasBTS ? {
                         playingBTSMoment = moment
-                    } : nil
+                    } : nil,
+                    timestamp: timeString
                 )
                 .aspectRatio(aspect(of: large), contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
@@ -523,31 +505,37 @@ struct TodayView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(CompositeAccessibility.label)
                 .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Opens moment detail. Flip and Behind the Scenes are separate controls.")
+                .accessibilityHint("Opens moment detail. Tap inset photo to flip camera angles.")
                 .accessibilityAction {
                     openDetail(for: moment)
                 }
             } else if model.feedMissingMap.contains(moment.id) || model.todayMissingMap.contains(moment.id) {
-                VStack(spacing: Theme.Spacing.m) {
-                    Image(systemName: "photo")
-                        .scaledDisplayFont(Theme.Size.iconStandalone, weight: .light)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                    Text("Photos no longer in your library.")
-                        .font(Theme.Typography.metadata)
-                        .foregroundStyle(Theme.Color.textSecondary)
-                        .multilineTextAlignment(.center)
+                Button {
+                    openDetail(for: moment)
+                } label: {
+                    VStack(spacing: Theme.Spacing.m) {
+                        Image(systemName: "photo")
+                            .scaledDisplayFont(Theme.Size.iconStandalone, weight: .light)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                        Text("Photos no longer in your library.")
+                            .font(Theme.Typography.metadata)
+                            .foregroundStyle(Theme.Color.textSecondary)
+                            .multilineTextAlignment(.center)
+                        Text(timeString)
+                            .font(Theme.Typography.retakePill)
+                            .foregroundStyle(Theme.Color.textTertiary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                    .background(Theme.Color.surface)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .contentShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
                 }
-                .frame(maxWidth: .infinity)
-                .aspectRatio(3.0 / 4.0, contentMode: .fit)
-                .background(Theme.Color.surface)
-                .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                .buttonStyle(.pressDip)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("Photos no longer in your library")
                 .accessibilityAddTraits(.isButton)
                 .accessibilityHint("Opens this moment in your archive")
-                .accessibilityAction {
-                    openDetail(for: moment)
-                }
             } else {
                 Theme.Color.surface
                     .aspectRatio(3.0 / 4.0, contentMode: .fit)

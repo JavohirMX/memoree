@@ -200,6 +200,31 @@ struct VoiceOverTests {
                 "and the glyph is not announced over the top of it")
     }
 
+    @Test("Today's missing-photos card is a real button, not VoiceOver-only")
+    func todayMissingPhotosCardIsTappable() throws {
+        // It used to advertise `.isButton` and an accessibilityAction while
+        // finger taps did nothing. HIG: if it acts like a button, it is one.
+        let source = try String(
+            contentsOf: SourceScan.file(named: "TodayView.swift"),
+            encoding: .utf8
+        )
+        #expect(source.contains("Photos no longer in your library"),
+                "the missing-photos copy is still on Today")
+        #expect(
+            source.contains("openDetail(for: moment)"),
+            "opening detail must be reachable from a real control"
+        )
+        // The card itself is wrapped in Button { openDetail… }, not only an
+        // accessibilityAction hanging off a non-interactive VStack.
+        let missingRegion = source.components(separatedBy: "Photos no longer in your library")
+        #expect(missingRegion.count >= 2, "missing-photos card present")
+        let before = missingRegion[0]
+        #expect(
+            before.contains("Button {") || before.contains("Button("),
+            "missing-photos card must be a Button so finger users can open it"
+        )
+    }
+
     // MARK: - Buttons that promise
 
     @Test("Every destructive button says what it does not do")

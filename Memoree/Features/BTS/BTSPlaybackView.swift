@@ -91,41 +91,23 @@ struct BTSPlaybackView: View {
                 // Controls: explicit play/pause (a11y) + mute; progress display-only.
                 VStack(spacing: Theme.Spacing.s) {
                     HStack(spacing: Theme.Spacing.s) {
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        ChromeIconButton(
+                            systemName: model.isPlaying ? "pause.fill" : "play.fill",
+                            label: model.isPlaying ? "Pause" : "Play",
+                            font: Theme.Typography.metadata.weight(.semibold)
+                        ) {
                             model.togglePlayback()
-                        } label: {
-                            Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                                .font(Theme.Typography.metadata.weight(.semibold))
-                                .foregroundStyle(Theme.Color.textPrimary)
-                                .padding(Theme.Spacing.s)
-                                .background(Theme.Color.canvas.opacity(0.6))
-                                .clipShape(Circle())
-                                .overlay {
-                                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
-                                }
                         }
-                        .buttonStyle(.pressDip)
-                        .accessibilityLabel(model.isPlaying ? "Pause" : "Play")
 
                         Spacer()
 
-                        Button {
-                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                        ChromeIconButton(
+                            systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
+                            label: model.isMuted ? "Unmute video" : "Mute video",
+                            font: Theme.Typography.metadata.weight(.semibold)
+                        ) {
                             model.toggleMute()
-                        } label: {
-                            Image(systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                                .font(Theme.Typography.metadata.weight(.semibold))
-                                .foregroundStyle(Theme.Color.textPrimary)
-                                .padding(Theme.Spacing.s)
-                                .background(Theme.Color.canvas.opacity(0.6))
-                                .clipShape(Circle())
-                                .overlay {
-                                    Circle().strokeBorder(Theme.Color.divider, lineWidth: 1)
-                                }
                         }
-                        .buttonStyle(.pressDip)
-                        .accessibilityLabel(model.isMuted ? "Unmute video" : "Mute video")
                     }
                     .padding(.horizontal, Theme.Spacing.m)
 
