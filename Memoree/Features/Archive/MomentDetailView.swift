@@ -23,14 +23,18 @@ struct MomentDetailView: View {
     /// today's latest by a missing-id fallback.
     private let openedMoment: MomentFacts
     let moments: [MomentFacts]
-    let onDelete: () -> Void
+    /// The memory currently on screen — after a swipe, that may not be the one
+    /// the sheet was opened with.
+    let onDelete: (MomentFacts) -> Void
 
     @State private var selectedMomentID: UUID
     /// Until the pager reports the opened id once, ignore other page ids —
     /// a first-layout report of index 0 would otherwise retitle the screen to
     /// today's newest memory before the scroll settles on the tap.
     @State private var hasAcceptedPagerSelection = false
-    @State private var isFrontLarge = false
+    /// Front-large state keyed by moment, so a swap on one page does not flip a
+    /// neighbour that was already loaded into the pager.
+    @State private var frontLargeIDs: Set<UUID> = []
     @State private var imagesCache: [UUID: (large: UIImage?, inset: UIImage?)] = [:]
     @State private var missingCache: Set<UUID> = []
     @State private var fullScreenPair: (primary: UIImage, secondary: UIImage)?
@@ -38,7 +42,7 @@ struct MomentDetailView: View {
     init(
         moment: MomentFacts,
         moments: [MomentFacts] = [],
-        onDelete: @escaping () -> Void
+        onDelete: @escaping (MomentFacts) -> Void
     ) {
         self.openedMoment = moment
         self.moments = moments.isEmpty ? [moment] : moments
@@ -76,7 +80,9 @@ struct MomentDetailView: View {
                         .disabled(sharedPayload == nil)
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button(role: .destructive, action: onDelete) {
+                    Button(role: .destructive) {
+                        onDelete(moment)
+                    } label: {
                         Image(systemName: "trash")
                     }
                     .accessibilityLabel("Remove from archive")
@@ -98,7 +104,8 @@ struct MomentDetailView: View {
             }
         }
         .task(id: selectedMomentID) {
-            isFrontLarge = false
+            // Fresh page → rear large. Flip state does not travel with a swipe.
+            frontLargeIDs.removeAll()
             await load(for: moment)
             await prepareSharePayload(for: moment)
         }
@@ -151,32 +158,86 @@ struct MomentDetailView: View {
 
     @ViewBuilder
     private func card(for item: MomentFacts) -> some View {
-        ScrollView {
-            if verticalSizeClass == .compact {
-                HStack(alignment: .top, spacing: Theme.Spacing.l) {
-                    photograph(for: item)
-                        .frame(maxHeight: Theme.Size.detailLandscapeMaxHeight)
+        if verticalSizeClass == .compact {
+            HStack(alignment: .top, spacing: Theme.Spacing.l) {
+                photograph(for: item)
+                    .frame(maxHeight: Theme.Size.detailLandscapeMaxHeight)
 
-                    VStack(spacing: Theme.Spacing.m) {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: Theme.Spacing.m) {
+                        caption(for: item)
+                        noteBlock(for: item)
+                        retakesLine(for: item)
                         behindTheScenes(for: item)
-                        metadata(for: item)
                     }
-                    .frame(maxWidth: .infinity)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.l)
-            } else {
-                VStack(spacing: Theme.Spacing.xl) {
-                    photograph(for: item)
-                    behindTheScenes(for: item)
-                    metadata(for: item)
-                }
-                .padding(.horizontal, Theme.Spacing.xl)
-                .padding(.vertical, Theme.Spacing.xl)
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.l)
+            .task {
+                await load(for: item)
+            }
+        } else {
+            // Photograph is the page — no vertical scroll fighting the pager.
+            VStack(alignment: .leading, spacing: Theme.Spacing.l) {
+                photograph(for: item)
+                caption(for: item)
+                noteBlock(for: item)
+                retakesLine(for: item)
+                behindTheScenes(for: item)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, Theme.Spacing.xl)
+            .padding(.vertical, Theme.Spacing.l)
+            .task {
+                await load(for: item)
             }
         }
-        .task {
-            await load(for: item)
+    }
+
+    // MARK: - Caption & note
+
+    /// Time and full date on one line. The nav title already carries the short
+    /// date; a separate "Date" row was the same fact twice.
+    private func caption(for item: MomentFacts) -> some View {
+        let time = item.capturedAt.formatted(date: .omitted, time: .shortened)
+        let date = item.day.date.formatted(.dateTime.day().month(.wide).year())
+        return Text("\(time) · \(date)")
+            .font(Theme.Typography.metadata)
+            .foregroundStyle(Theme.Color.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityLabel("Taken \(time) on \(date)")
+    }
+
+    @ViewBuilder
+    private func noteBlock(for item: MomentFacts) -> some View {
+        if let note = item.note, !note.isEmpty {
+            HStack(alignment: .top, spacing: Theme.Spacing.s) {
+                Image(systemName: "quote.opening")
+                    .font(Theme.Typography.retakePill)
+                    .foregroundStyle(Theme.Color.textTertiary)
+                    .padding(.top, Theme.Spacing.xxs)
+                    .accessibilityHidden(true)
+                Text(note)
+                    .font(Theme.Typography.body)
+                    .foregroundStyle(Theme.Color.textPrimary)
+            }
+            .padding(Theme.Spacing.m)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.Color.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Note: \(note)")
+        }
+    }
+
+    @ViewBuilder
+    private func retakesLine(for item: MomentFacts) -> some View {
+        if item.retakeCount > 0 {
+            Text("\(item.retakeCount) \(item.retakeCount == 1 ? "retake" : "retakes")")
+                .font(Theme.Typography.metadata)
+                .foregroundStyle(Theme.Color.textSecondary)
         }
     }
 
@@ -257,6 +318,7 @@ struct MomentDetailView: View {
     private func photograph(for item: MomentFacts) -> some View {
         let cached = imagesCache[item.id]
         let isMissing = missingCache.contains(item.id)
+        let isFrontLarge = frontLargeIDs.contains(item.id)
         let largeImage = isFrontLarge ? cached?.inset : cached?.large
         let insetImage = isFrontLarge ? cached?.large : cached?.inset
 
@@ -267,7 +329,11 @@ struct MomentDetailView: View {
                 insetWidth: Theme.Size.insetStandard,
                 onTapInset: {
                     withAppAnimation(.easeInOut(duration: 0.25)) {
-                        isFrontLarge.toggle()
+                        if frontLargeIDs.contains(item.id) {
+                            frontLargeIDs.remove(item.id)
+                        } else {
+                            frontLargeIDs.insert(item.id)
+                        }
                     }
                 },
                 onTapLarge: {
@@ -308,33 +374,6 @@ struct MomentDetailView: View {
     private func behindTheScenes(for item: MomentFacts) -> some View {
         if item.hasBTS {
             BTSPlaybackView(assetIdentifier: item.btsAssetIdentifier)
-        }
-    }
-
-    // MARK: - Metadata
-
-    private func metadata(for item: MomentFacts) -> some View {
-        VStack(spacing: Theme.Spacing.s) {
-            MetadataRow(
-                label: "Taken",
-                value: item.capturedAt.formatted(date: .omitted, time: .shortened)
-            )
-            MetadataRow(
-                label: "Date",
-                value: item.day.date.formatted(.dateTime.day().month(.wide).year())
-            )
-            if let note = item.note, !note.isEmpty {
-                MetadataRow(
-                    label: "Note",
-                    value: note
-                )
-            }
-            if item.retakeCount > 0 {
-                MetadataRow(
-                    label: "Retakes",
-                    value: "\(item.retakeCount)"
-                )
-            }
         }
     }
 

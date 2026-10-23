@@ -30,6 +30,9 @@ struct ArchiveView: View {
     /// to be told about it, and then there would be two places that know whether
     /// the detail is open.
     @State private var selected: MomentFacts?
+    /// The memory the trash asked about — the one on screen after a swipe, not
+    /// necessarily the sheet's original `selected`.
+    @State private var pendingDelete: MomentFacts?
     @State private var isConfirmingDelete = false
     @State private var isShowingDeleteError = false
 
@@ -168,7 +171,10 @@ struct ArchiveView: View {
                 MomentDetailView(
                     moment: moment,
                     moments: model.moments,
-                    onDelete: { isConfirmingDelete = true }
+                    onDelete: { visible in
+                        pendingDelete = visible
+                        isConfirmingDelete = true
+                    }
                 )
                 .environment(appEnvironment)
             }
@@ -433,13 +439,14 @@ struct ArchiveView: View {
     // MARK: - Actions
 
     private func deleteSelected() {
-        guard let model, let selected else { return }
-        model.delete(selected)
+        guard let model, let pendingDelete else { return }
+        model.delete(pendingDelete)
         // Only dismiss the detail when the tombstone landed. A failed delete
         // keeps the moment open so the alert is about the photograph still on
         // screen, not a ghost after dismiss (AGENTS.md §6).
         if model.deleteError == nil {
             self.selected = nil
+            self.pendingDelete = nil
         }
     }
 }

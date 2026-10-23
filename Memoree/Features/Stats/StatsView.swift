@@ -18,6 +18,9 @@ struct StatsView: View {
 
     @State private var model: StatsViewModel?
     @State private var selectedMoment: MomentFacts?
+    /// The memory the trash asked about — the one on screen after a swipe, not
+    /// necessarily the sheet's original `selectedMoment`.
+    @State private var pendingDelete: MomentFacts?
     @State private var isConfirmingDelete = false
     @State private var isShowingDeleteError = false
 
@@ -48,7 +51,10 @@ struct StatsView: View {
             MomentDetailView(
                 moment: moment,
                 moments: model?.days ?? [moment],
-                onDelete: { isConfirmingDelete = true }
+                onDelete: { visible in
+                    pendingDelete = visible
+                    isConfirmingDelete = true
+                }
             )
             .environment(environment)
         }
@@ -94,12 +100,13 @@ struct StatsView: View {
         """
 
     private func deleteSelected() {
-        guard let model, let selectedMoment else { return }
-        model.delete(selectedMoment)
+        guard let model, let pendingDelete else { return }
+        model.delete(pendingDelete)
         // Only dismiss detail when the tombstone landed — a failure leaves the
         // sheet open so the user can retry (same as Archive).
         if model.deleteError == nil {
             self.selectedMoment = nil
+            self.pendingDelete = nil
         }
     }
 

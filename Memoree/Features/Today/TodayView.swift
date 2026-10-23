@@ -20,6 +20,10 @@ struct TodayView: View {
     @State private var isShowingArchive = false
     @State private var isShowingStats = false
     @State private var selectedMomentForDetail: MomentFacts?
+    /// The memory the trash asked about — the one on screen after a swipe.
+    @State private var pendingDelete: MomentFacts?
+    @State private var isConfirmingDelete = false
+    @State private var isShowingDeleteError = false
     @State private var flippedMoments: Set<UUID> = []
     @State private var playingBTSMoment: MomentFacts?
     @State private var isShowingSameDayFlipbook = false
@@ -93,13 +97,36 @@ struct TodayView: View {
                 // id is absent from today-only, and the detail pager used to fall
                 // through to moments[0] (today's latest) when that happened.
                 moments: model?.feedMoments ?? [moment],
-                onDelete: {
-                    selectedMomentForDetail = nil
-                    Task { await self.model?.reload() }
+                onDelete: { visible in
+                    pendingDelete = visible
+                    isConfirmingDelete = true
                 }
             )
             .environment(environment)
             .presentationDetents([.large])
+        }
+        .confirmationDialog(
+            Self.deleteTitle,
+            isPresented: $isConfirmingDelete,
+            titleVisibility: .visible
+        ) {
+            Button("Remove from archive", role: .destructive) { deletePendingMoment() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(Self.deleteMessage)
+        }
+        .alert(
+            "Couldn’t remove from archive",
+            isPresented: $isShowingDeleteError
+        ) {
+            Button("OK", role: .cancel) {
+                model?.clearDeleteError()
+            }
+        } message: {
+            Text(model?.deleteError ?? "Please try again.")
+        }
+        .onChange(of: model?.deleteError) { _, newValue in
+            isShowingDeleteError = newValue != nil
         }
         .sheet(item: $playingBTSMoment) { moment in
             NavigationStack {
@@ -179,6 +206,24 @@ struct TodayView: View {
     /// Opens the archive grid.
     private func openArchive() {
         isShowingArchive = true
+    }
+
+    private static let deleteTitle = "Remove from archive?"
+
+    private static let deleteMessage = """
+        Your streak will be recalculated without it.
+
+        The two photos stay in your library. Memoree never deletes from Photos.
+        """
+
+    /// Tombstones the memory on screen after confirmation — same path as Archive.
+    private func deletePendingMoment() {
+        guard let model, let pendingDelete else { return }
+        model.delete(pendingDelete)
+        if model.deleteError == nil {
+            selectedMomentForDetail = nil
+            self.pendingDelete = nil
+        }
     }
 
     // MARK: - Background Saving Status

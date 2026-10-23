@@ -348,6 +348,35 @@ final class TodayViewModel {
         }
     }
 
+    /// Tombstones a moment from the archive after the user confirms in detail.
+    ///
+    /// **Does not touch Photos** (ADR-008). Same contract as
+    /// `ArchiveViewModel.delete`. Failures land in `deleteError`.
+    private(set) var deleteError: String?
+
+    func delete(_ moment: MomentFacts) {
+        deleteError = nil
+        guard let row = environment.momentStore.allMoments
+            .first(where: { $0.id == moment.id })
+        else {
+            deleteError = "That moment is no longer in the archive."
+            return
+        }
+
+        do {
+            try environment.momentStore.delete(row)
+        } catch {
+            deleteError = error.localizedDescription
+            return
+        }
+
+        removeFromLocalLists(moment)
+    }
+
+    func clearDeleteError() {
+        deleteError = nil
+    }
+
     /// Soft-deletes an orphan whose Photos assets are both gone.
     ///
     /// Metadata only — Memoree never deletes from the user's library
@@ -365,6 +394,10 @@ final class TodayViewModel {
             return
         }
 
+        removeFromLocalLists(moment)
+    }
+
+    private func removeFromLocalLists(_ moment: MomentFacts) {
         feedMoments.removeAll { $0.id == moment.id }
         todayMoments.removeAll { $0.id == moment.id }
         flashbackMoments.removeAll { $0.id == moment.id }
