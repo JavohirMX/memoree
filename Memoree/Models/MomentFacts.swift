@@ -103,6 +103,25 @@ struct MomentFacts: Sendable, Hashable, Identifiable {
     }
 }
 
+/// Which moment the detail screen shows for a given pager selection.
+///
+/// Pure so the rule can be tested without SwiftUI. The detail view used to fall
+/// back to `moments[0]` when the selected id was missing — in a newest-first
+/// archive that is today's latest capture, which is exactly the wrong memory
+/// when the user tapped an older one.
+enum MomentDetailSelection: Sendable {
+
+    /// The moment on screen: the selected id when it is in `moments`, otherwise
+    /// the moment the user opened. Never substitutes the list's first entry.
+    static func resolve(
+        opened: MomentFacts,
+        moments: [MomentFacts],
+        selectedID: UUID
+    ) -> MomentFacts {
+        moments.first(where: { $0.id == selectedID }) ?? opened
+    }
+}
+
 /// Aggregate statistics for the Stats screen and the streak badge.
 ///
 /// Every field is derived on demand from `[MomentFacts]`. Nothing is cached,

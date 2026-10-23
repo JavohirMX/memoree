@@ -18,10 +18,18 @@ struct MomentDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
+    /// The moment the user tapped. Kept even when it is absent from `moments`,
+    /// so a feed that only handed today's captures cannot be redirected to
+    /// today's latest by a missing-id fallback.
+    private let openedMoment: MomentFacts
     let moments: [MomentFacts]
     let onDelete: () -> Void
 
     @State private var selectedMomentID: UUID
+    /// Until the pager reports the opened id once, ignore other page ids —
+    /// a first-layout report of index 0 would otherwise retitle the screen to
+    /// today's newest memory before the scroll settles on the tap.
+    @State private var hasAcceptedPagerSelection = false
     @State private var isFrontLarge = false
     @State private var imagesCache: [UUID: (large: UIImage?, inset: UIImage?)] = [:]
     @State private var missingCache: Set<UUID> = []
@@ -32,13 +40,18 @@ struct MomentDetailView: View {
         moments: [MomentFacts] = [],
         onDelete: @escaping () -> Void
     ) {
+        self.openedMoment = moment
         self.moments = moments.isEmpty ? [moment] : moments
         self._selectedMomentID = State(initialValue: moment.id)
         self.onDelete = onDelete
     }
 
     var moment: MomentFacts {
-        moments.first(where: { $0.id == selectedMomentID }) ?? moments[0]
+        MomentDetailSelection.resolve(
+            opened: openedMoment,
+            moments: moments,
+            selectedID: selectedMomentID
+        )
     }
 
     var body: some View {
@@ -47,13 +60,7 @@ struct MomentDetailView: View {
                 CanvasBackground()
 
                 if moments.count > 1 {
-                    TabView(selection: $selectedMomentID) {
-                        ForEach(moments) { item in
-                            card(for: item)
-                                .tag(item.id)
-                        }
-                    }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
+                    pager
                 } else {
                     card(for: moment)
                 }
@@ -95,6 +102,49 @@ struct MomentDetailView: View {
             await load(for: moment)
             await prepareSharePayload(for: moment)
         }
+    }
+
+    // MARK: - Pager
+
+    /// Horizontal paging that opens on the tapped id.
+    ///
+    /// A page-style `TabView` ignored the initial selection and landed on index
+    /// 0 — newest-first, that is today's latest. `scrollPosition` honours the
+    /// binding, and the set-side guard drops a first-layout page-0 report.
+    private var pager: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            LazyHStack(spacing: 0) {
+                ForEach(moments) { item in
+                    card(for: item)
+                        .containerRelativeFrame(.horizontal)
+                        .id(item.id)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: pagerSelection)
+        .task {
+            // Re-assert after the first layout pass so a page-0 flash cannot stick.
+            selectedMomentID = openedMoment.id
+            hasAcceptedPagerSelection = false
+        }
+    }
+
+    private var pagerSelection: Binding<UUID?> {
+        Binding(
+            get: { selectedMomentID },
+            set: { newValue in
+                guard let newValue else { return }
+                if !hasAcceptedPagerSelection {
+                    if newValue != openedMoment.id {
+                        return
+                    }
+                    hasAcceptedPagerSelection = true
+                }
+                selectedMomentID = newValue
+            }
+        )
     }
 
     // MARK: - Card

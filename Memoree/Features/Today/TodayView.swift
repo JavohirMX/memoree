@@ -89,7 +89,10 @@ struct TodayView: View {
         .sheet(item: $selectedMomentForDetail) { moment in
             MomentDetailView(
                 moment: moment,
-                moments: model?.todayMoments ?? [moment],
+                // Full feed, newest first — not todayMoments. A yesterday card's
+                // id is absent from today-only, and the detail pager used to fall
+                // through to moments[0] (today's latest) when that happened.
+                moments: model?.feedMoments ?? [moment],
                 onDelete: {
                     selectedMomentForDetail = nil
                     Task { await self.model?.reload() }

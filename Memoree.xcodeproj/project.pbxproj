@@ -18,6 +18,7 @@
 		1DECEE918B1F4286C69BB28A /* SameDayFlipbook.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5C8D3004AC44878DA03F1EA1 /* SameDayFlipbook.swift */; };
 		7A2B3C4D5E6F708192A3B4C5 /* FeedDayGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A1B2C3D4E5F60718293A4B5 /* FeedDayGroup.swift */; };
 		8B3C4D5E6F708192A3B4C5D6 /* FeedDayGroupTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B2C3D4E5F60718293A4B5C6 /* FeedDayGroupTests.swift */; };
+		C33D7BB6B1E64E928B9E761C /* MomentDetailSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FE854950D2F469B80485BFE /* MomentDetailSelectionTests.swift */; };
 		4A9B2D3C0E1F5B6C7D8E9F0A /* AspectFitRect.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F8A1C2B9D0E4A5B6C7D8E9F /* AspectFitRect.swift */; };
 		6C1D4F5E2A3B7D8E9F0A1B2C /* AspectFitRectTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B0C3E4D1F2A6C7D8E9F0A1B /* AspectFitRectTests.swift */; };
 		24C6817526B83700CCF2064D /* MomentNotificationCopy.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4877F0D1AC761FBA1E34DD /* MomentNotificationCopy.swift */; };
@@ -194,6 +195,7 @@
 		10346D5E089B83B75AC3EE06 /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
 		10996EA935C292F9CE77FD5E /* ModelContainer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ModelContainer.swift; sourceTree = "<group>"; };
 		10DEE387D182EF879E7D835F /* MomentCommitTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentCommitTests.swift; sourceTree = "<group>"; };
+		1FE854950D2F469B80485BFE /* MomentDetailSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentDetailSelectionTests.swift; sourceTree = "<group>"; };
 		11586B70B27A7BEC8481834B /* ArchiveViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ArchiveViewModel.swift; sourceTree = "<group>"; };
 		1200D457820C6A13D292EF47 /* LivePhotoLibraryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LivePhotoLibraryTests.swift; sourceTree = "<group>"; };
 		12B9524535B2EE546BAF7097 /* DayIdentifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DayIdentifier.swift; sourceTree = "<group>"; };
@@ -521,6 +523,7 @@
 				6181DAD5BD1416D9C47784D2 /* LivePhotoRunGuard.swift */,
 				10DEE387D182EF879E7D835F /* MomentCommitTests.swift */,
 				7A59071CE45EB050FA861B6D /* MomentDerivationTests.swift */,
+				1FE854950D2F469B80485BFE /* MomentDetailSelectionTests.swift */,
 				ACADA2F6A8BD7944EEEC188B /* MomentExporterTests.swift */,
 				8FB18BAF78DFA77DF747417C /* MomentNotificationCopyTests.swift */,
 				1B664FC8EC0CC2A5B0B55912 /* MomentStateTests.swift */,
@@ -918,6 +921,7 @@
 				A632C1A434FD18FF4C50E080 /* LivePhotoRunGuard.swift in Sources */,
 				2B9D319B2D985A6015711CCF /* MomentCommitTests.swift in Sources */,
 				77717203E14D72AD646041D1 /* MomentDerivationTests.swift in Sources */,
+				C33D7BB6B1E64E928B9E761C /* MomentDetailSelectionTests.swift in Sources */,
 				DA0206F5D3E5437B6E02AA96 /* MomentExporterTests.swift in Sources */,
 				7EAEF8007A5321D240C9D6FC /* MomentNotificationCopyTests.swift in Sources */,
 				E089D39225FDF9AB41907C87 /* MomentStateTests.swift in Sources */,
