@@ -44,6 +44,10 @@ struct BTSPlaybackView: View {
     /// The asset to play, or `nil` when the user deleted it in Photos.
     let assetIdentifier: String?
 
+    /// Opens a full-screen presentation of this clip. Nil hides the expand control
+    /// (embedded sheets that are already the destination do not need one).
+    var onExpand: (() -> Void)? = nil
+
     @State private var model: BTSPlaybackModel?
 
     var body: some View {
@@ -100,6 +104,16 @@ struct BTSPlaybackView: View {
                         }
 
                         Spacer()
+
+                        if let onExpand {
+                            ChromeIconButton(
+                                systemName: "arrow.up.left.and.arrow.down.right",
+                                label: "View Behind the Scenes full screen",
+                                font: Theme.Typography.metadata.weight(.semibold)
+                            ) {
+                                onExpand()
+                            }
+                        }
 
                         ChromeIconButton(
                             systemName: model.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill",
@@ -188,6 +202,44 @@ struct BTSPlaybackView: View {
         model?.stop()
         model = nil
         environment.photoLibrary.purgeBTSPlaybackFiles()
+    }
+}
+
+/// Full-screen Behind the Scenes — same clip, black canvas, dismiss chrome.
+///
+/// Lives beside `BTSPlaybackView` so AVKit stays confined to this file (ADR-029).
+/// The inline card on detail hands off the player by clearing its identifier while
+/// this cover is up; two players on one clip would race the playback file purge.
+struct FullScreenBTSViewer: View {
+
+    let assetIdentifier: String?
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Theme.Color.canvas
+                .ignoresSafeArea()
+
+            BTSPlaybackView(assetIdentifier: assetIdentifier)
+                .padding(.horizontal, Theme.Spacing.l)
+
+            VStack {
+                HStack {
+                    Spacer()
+                    Button(action: onDismiss) {
+                        Image(systemName: "xmark")
+                            .scaledDisplayFont(Theme.Size.headerIcon, weight: .bold)
+                            .foregroundStyle(Theme.Color.textPrimary)
+                            .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                            .background(Circle().fill(Theme.Color.surface.opacity(0.8)))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(Theme.Spacing.m)
+                    .accessibilityLabel("Close full screen Behind the Scenes")
+                }
+                Spacer()
+            }
+        }
     }
 }
 

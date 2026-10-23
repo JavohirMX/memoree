@@ -38,6 +38,8 @@ struct MomentDetailView: View {
     @State private var imagesCache: [UUID: (large: UIImage?, inset: UIImage?)] = [:]
     @State private var missingCache: Set<UUID> = []
     @State private var fullScreenPair: (primary: UIImage, secondary: UIImage)?
+    /// When set, the inline BTS card yields the player to `FullScreenBTSViewer`.
+    @State private var fullScreenBTSIdentifier: String?
 
     init(
         moment: MomentFacts,
@@ -103,9 +105,20 @@ struct MomentDetailView: View {
                 }
             }
         }
+        .fullScreenCover(isPresented: Binding(
+            get: { fullScreenBTSIdentifier != nil },
+            set: { if !$0 { fullScreenBTSIdentifier = nil } }
+        )) {
+            FullScreenBTSViewer(assetIdentifier: fullScreenBTSIdentifier) {
+                fullScreenBTSIdentifier = nil
+            }
+            .environment(environment)
+        }
         .task(id: selectedMomentID) {
             // Fresh page → rear large. Flip state does not travel with a swipe.
             frontLargeIDs.removeAll()
+            // Dismiss BTS fullscreen if the pager moved underneath it.
+            fullScreenBTSIdentifier = nil
             await load(for: moment)
             await prepareSharePayload(for: moment)
         }
@@ -373,7 +386,22 @@ struct MomentDetailView: View {
     @ViewBuilder
     private func behindTheScenes(for item: MomentFacts) -> some View {
         if item.hasBTS {
-            BTSPlaybackView(assetIdentifier: item.btsAssetIdentifier)
+            // While fullscreen owns the player, keep the card's footprint so the
+            // layout does not jump — and so two decoders never share one clip file.
+            if let id = item.btsAssetIdentifier, fullScreenBTSIdentifier == id {
+                Theme.Color.surface
+                    .frame(maxWidth: .infinity)
+                    .aspectRatio(3.0 / 4.0, contentMode: .fit)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.card))
+                    .accessibilityHidden(true)
+            } else {
+                BTSPlaybackView(
+                    assetIdentifier: item.btsAssetIdentifier,
+                    onExpand: item.btsAssetIdentifier.map { id in
+                        { fullScreenBTSIdentifier = id }
+                    }
+                )
+            }
         }
     }
 
