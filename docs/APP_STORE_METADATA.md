@@ -11,6 +11,7 @@ This document contains ready-to-use metadata for App Store Connect submission.
 
 ### App Information
 - **App Name:** Memoree - Daily Moments *(24 / 30 chars)*
+  - The unqualified name **Memoree** is already registered (a wedding booth app and Memoree AI). App Store Connect rejects it. Do not file a trademark claim. The name on the Home Screen stays Memoree; only the store name has to differ.
 - **Subtitle:** Private daily photo journal *(27 / 30 chars)*
 - **Primary Category:** Photo & Video
 - **Secondary Category (Optional):** Lifestyle

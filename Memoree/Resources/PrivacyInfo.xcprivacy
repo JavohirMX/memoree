@@ -32,12 +32,11 @@
 	<!--
 	  Required Reason APIs.
 
-	  NSUserDefaults is included defensively. If it is not actually used,
-	  remove this key — an over-declared required-reason API is a review
-	  rejection. Kept here because NSUbiquitousKeyValueStore / scene
-	  restoration state and SwiftData defaults are easy to introduce by
-	  accident. Verify with a binary audit before TestFlight upload
-	  (docs/TRD.md §13: nm -u).
+	  WidgetAppGroup.defaults reads and writes the App Group suite
+	  (reason 1C8F.1). The same call falls back to UserDefaults.standard
+	  when the suite cannot be opened (reason CA92.1). The widget binary
+	  compiles the same call and carries its own copy of this declaration
+	  in MemoreeWidget/PrivacyInfo.xcprivacy — Apple checks each executable.
 	-->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
@@ -46,6 +45,7 @@
 			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
 			<key>NSPrivacyAccessedAPITypeReasons</key>
 			<array>
+				<string>1C8F.1</string>
 				<string>CA92.1</string>
 			</array>
 		</dict>

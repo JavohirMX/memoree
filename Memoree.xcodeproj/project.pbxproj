@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		00AA7203DE2896E2681EE22F /* CameraHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4912B255E2F82A9D704B492C /* CameraHostView.swift */; };
+		0305389461FFC6F33FBCDB10 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 0BCFF8C71D2281FAF668A2EE /* PrivacyInfo.xcprivacy */; };
 		03195C6C47E77DE74A4198C7 /* WidgetSnapshotPublisher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A5AA68A6E7EC817C431C8A1 /* WidgetSnapshotPublisher.swift */; };
 		092A346A3E413F45358B741E /* WidgetAppGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = C08331CBE472E783AD49842E /* WidgetAppGroup.swift */; };
 		0B692F9D1ADE2FFCC9899DE6 /* BTSTrim.swift in Sources */ = {isa = PBXBuildFile; fileRef = 943F7C673260A679764C52AA /* BTSTrim.swift */; };
@@ -191,6 +192,7 @@
 		05C2F17AB8004A19D55463C5 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		07931FE867FFA30A0320CB99 /* ResumeGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResumeGateTests.swift; sourceTree = "<group>"; };
 		091BC34556F0C555F4445FA4 /* ReducedMotion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReducedMotion.swift; sourceTree = "<group>"; };
+		0BCFF8C71D2281FAF668A2EE /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		0BF834C3D9C01DB11A624CF3 /* StreakSummaryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StreakSummaryTests.swift; sourceTree = "<group>"; };
 		0D76EB47305EC52C7A5EABCF /* MomentInsetTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MomentInsetTests.swift; sourceTree = "<group>"; };
 		0E9AD7FACEC7C44964337A0F /* CameraViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraViewModel.swift; sourceTree = "<group>"; };
@@ -404,6 +406,7 @@
 				A93CB27901C42603ED72F714 /* Info.plist */,
 				8E7B34708A0E2421B722E99F /* MemoreeWidget.entitlements */,
 				F8874083C734B25896220D11 /* MemoreeWidget.swift */,
+				0BCFF8C71D2281FAF668A2EE /* PrivacyInfo.xcprivacy */,
 				DF20FBD3BFF4DA419BEA18F8 /* WidgetTheme.swift */,
 			);
 			path = MemoreeWidget;
@@ -700,6 +703,7 @@
 			buildConfigurationList = 41752726E0294AFA9D4A2FE9 /* Build configuration list for PBXNativeTarget "MemoreeWidget" */;
 			buildPhases = (
 				9FB0E62F5C9CEE0E9D6E8F34 /* Sources */,
+				CF4DCC7F665D20FF1649BC01 /* Resources */,
 			);
 			buildRules = (
 			);
@@ -801,6 +805,14 @@
 			files = (
 				FEE977BF36F8ED4CDC1218D9 /* Assets.xcassets in Resources */,
 				B0194A5C4102AEF88F64B031 /* PrivacyInfo.xcprivacy in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		CF4DCC7F665D20FF1649BC01 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0305389461FFC6F33FBCDB10 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

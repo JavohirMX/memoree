@@ -130,6 +130,7 @@ Memoree/
 │   ├── MemoreeWidget.swift            # small + medium, layout-is-state
 │   ├── WidgetTheme.swift
 │   ├── Info.plist
+│   ├── PrivacyInfo.xcprivacy      # own manifest: the appex is a separate binary
 │   └── MemoreeWidget.entitlements
 └── MemoreeTests/
     ├── …
@@ -979,9 +980,12 @@ Swift 6 strict concurrency.
 
 **Empty collected data types is the correct and honest answer.** Location is captured into
 metadata that never leaves the device, which does not constitute collection under Apple's
-definition. Photos are written, not collected. There are no third-party SDKs, so there are no
-required-reason APIs to declare beyond `UserDefaults` if it is used
-(`NSPrivacyAccessedAPICategoryUserDefaults`, reason `CA92.1`).
+definition. Photos are written, not collected. There are no third-party SDKs. The only
+required-reason API in use is `UserDefaults`: the App Group suite (`1C8F.1`) and the
+`UserDefaults.standard` fallback when that suite cannot be opened (`CA92.1`).
+
+The widget is a separate executable and Apple checks each one. `MemoreeWidget/PrivacyInfo.xcprivacy`
+repeats the same declaration. The app's manifest does not cover the appex.
 
 `Info.plist` usage strings: camera, microphone (BTS only), photo library add, location
 (optional, `NSLocationWhenInUseUsageDescription` — "When" only, never "Always").

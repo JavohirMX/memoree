@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	  MemoreeWidget — Privacy Manifest
+
+	  The widget is its own executable. Apple checks each binary, so this
+	  file has to ship inside the extension even though the app declares the
+	  same facts (docs/TRD.md §12). A missing manifest here is ITMS-91053.
+
+	  WidgetAppGroup.defaults reads and writes the App Group suite. That is
+	  reason 1C8F.1. The same call falls back to UserDefaults.standard when
+	  the suite cannot be opened, which is reason CA92.1.
+
+	  The widget collects nothing and tracks nothing. It makes no network
+	  requests.
+	-->
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>1C8F.1</string>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

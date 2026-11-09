@@ -319,7 +319,27 @@ struct NoNetworkingTests {
         let contents = try String(contentsOf: manifest, encoding: .utf8)
 
         #expect(contents.contains("NSPrivacyTracking"))
+        #expect(contents.contains("NSPrivacyAccessedAPICategoryUserDefaults"))
+        #expect(contents.contains("1C8F.1"), "the app reads the App Group suite")
+        #expect(contents.contains("CA92.1"), "the suite falls back to UserDefaults.standard")
         #expect(!contents.contains("<true/>"), "nothing in this app tracks anyone (ADR-001)")
+    }
+
+    @Test("The widget manifest declares the defaults its own binary reads")
+    func widgetPrivacyManifestDeclaresUserDefaults() throws {
+        // The appex is a second executable. The app's PrivacyInfo.xcprivacy
+        // does not travel with it, and App Store Connect rejects the upload
+        // (ITMS-91053) when the widget calls UserDefaults without saying so.
+        let manifest = Self.appSourceRoot
+            .deletingLastPathComponent()
+            .appendingPathComponent("MemoreeWidget/PrivacyInfo.xcprivacy")
+        let contents = try String(contentsOf: manifest, encoding: .utf8)
+
+        #expect(contents.contains("NSPrivacyTracking"))
+        #expect(contents.contains("NSPrivacyAccessedAPICategoryUserDefaults"))
+        #expect(contents.contains("1C8F.1"), "the widget reads the App Group suite")
+        #expect(contents.contains("CA92.1"), "the suite falls back to UserDefaults.standard")
+        #expect(!contents.contains("<true/>"), "the widget does not track anyone (ADR-001)")
     }
 }
 
