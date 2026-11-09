@@ -25,8 +25,8 @@ struct SettingsView: View {
     /// no-op drag is detectable.
     @State private var window = TimeWindow.default
 
-    /// A commit is in flight.
-    @State private var isCommitting = false
+    /// In-flight window commit task for debouncing rapid stepper adjustments.
+    @State private var windowCommitTask: Task<Void, Never>?
 
     /// Whether the last commit actually changed anything.
     ///
@@ -39,6 +39,9 @@ struct SettingsView: View {
     /// in: the user may have changed it in system Settings while this app was
     /// backgrounded, and this screen is the one place that can say so.
     @State private var remindersAuthorized = false
+
+    /// Whether notifications are enabled by the user in-app.
+    @State private var notificationsEnabled = true
 
     /// Whether to also file each moment into a `Memoree` album.
     ///
@@ -104,6 +107,13 @@ struct SettingsView: View {
             }
         }
         .task { await reload() }
+        .onDisappear {
+            windowCommitTask?.cancel()
+            let finalWindow = window
+            Task {
+                await environment.updateWindow(finalWindow)
+            }
+        }
     }
 
     // MARK: - Window
@@ -125,8 +135,7 @@ struct SettingsView: View {
 
                 WindowPicker(
                     window: $window,
-                    onCommit: { new in await apply(new) },
-                    isCommitting: isCommitting
+                    onCommit: { new in await apply(new) }
                 )
 
                 Text(didApply ? "Applied. Tomorrow onward." : "Wider is more random.")
@@ -146,18 +155,35 @@ struct SettingsView: View {
             SettingsSectionHeader("Notifications", icon: "bell")
 
             SettingsCard {
-                // Stated as a consequence, not a warning (ADR-036).
-                Text(remindersAuthorized
-                    ? "Daily prompt at a random time, plus a 21:00 nudge if you haven’t shot yet. Scheduled on-device only."
-                    : "Notifications are off. Memoree can only ask once — turn them back on in system Settings.")
-                    .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.textSecondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                SettingsRow(
+                    title: "Daily Reminders",
+                    subtitle: remindersAuthorized
+                        ? "Spontaneous daily prompt and 21:00 streak saver."
+                        : "Notifications are turned off in system Settings.",
+                    control: {
+                        Toggle(
+                            "",
+                            isOn: Binding(
+                                get: { notificationsEnabled && remindersAuthorized },
+                                set: { enabled in
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                    Task { await handleNotificationToggle(enabled) }
+                                }
+                            )
+                        )
+                        .labelsHidden()
+                        .disabled(!remindersAuthorized && notificationsEnabled)
+                    }
+                )
 
                 if !remindersAuthorized {
-                    // The only amber in the app, and this is its one reserved job
-                    // (ADR-025): a permission the user declined and cannot fix from
-                    // in here.
+                    SettingsDivider()
+
+                    Text("Notifications are off in iOS Settings. Memoree can only ask once — turn them back on in system Settings.")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
+
                     Button {
                         Task { await openSystemSettings() }
                     } label: {
@@ -171,6 +197,15 @@ struct SettingsView: View {
                     }
                     .buttonStyle(.plain)
                     .accessibilityHint("Opens the system Settings app so you can turn on notifications for Memoree")
+                } else {
+                    SettingsDivider()
+
+                    Text(notificationsEnabled
+                        ? "Scheduled on-device only. Capture anytime — every day counts."
+                        : "Reminders are paused. You can still capture anytime on the Today screen.")
+                        .font(Theme.Typography.metadata)
+                        .foregroundStyle(Theme.Color.textSecondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -408,6 +443,43 @@ struct SettingsView: View {
             : String(format: "%.1f seconds", seconds)
     }
 
+    private func handleNotificationToggle(_ enabled: Bool) async {
+        let status = await environment.notificationService.authorizationStatus()
+        if enabled {
+            if status == .notDetermined {
+                let granted = await environment.notificationService.requestAuthorization()
+                remindersAuthorized = granted
+                if granted {
+                    notificationsEnabled = true
+                    updateNotificationSetting(true)
+                    await environment.refreshHorizonIfNeeded(force: true)
+                } else {
+                    notificationsEnabled = false
+                    updateNotificationSetting(false)
+                }
+            } else if status.willDeliver {
+                notificationsEnabled = true
+                remindersAuthorized = true
+                updateNotificationSetting(true)
+                await environment.refreshHorizonIfNeeded(force: true)
+            } else {
+                notificationsEnabled = false
+                remindersAuthorized = false
+            }
+        } else {
+            notificationsEnabled = false
+            updateNotificationSetting(false)
+            await environment.notificationService.clearAll()
+        }
+        pendingCount = await environment.notificationService.pendingCount()
+    }
+
+    private func updateNotificationSetting(_ enabled: Bool) {
+        let settings = environment.momentStore.settings()
+        settings.notificationsEnabled = enabled
+        try? environment.momentStore.saveSettings(settings)
+    }
+
     /// Writes the two BTS toggles in one place.
     ///
     /// **One function rather than two**, because they are written together and read
@@ -565,6 +637,7 @@ struct SettingsView: View {
         btsDuration = BTSTrim.validatedClipDuration(settings.btsDuration)
         btsEnabled = settings.btsEnabled
         saveBTS = settings.btsEnabled && settings.saveBTS
+        notificationsEnabled = settings.notificationsEnabled ?? true
         remindersAuthorized = await environment.notificationService
             .authorizationStatus().willDeliver
         pendingCount = await environment.notificationService.pendingCount()
@@ -623,19 +696,22 @@ struct SettingsView: View {
         albumFailure = nil
     }
 
-    /// Applies a new window and reports whether anything moved.
-    ///
-    /// The `isCommitting` guard is what stops a second drag from racing the
-    /// first: each commit discards 44 day records and rebuilds the horizon, and
-    /// two of those interleaving would leave the notification schedule describing
-    /// a window the user is no longer in.
+    /// Applies a new window with a short debounce to avoid churning the
+    /// 45-day notification horizon during rapid stepper adjustments.
     private func apply(_ new: TimeWindow) async {
-        guard !isCommitting else { return }
-        isCommitting = true
-        defer { isCommitting = false }
+        windowCommitTask?.cancel()
+        windowCommitTask = Task {
+            // Short debounce so consecutive taps accumulate smoothly
+            // without locking or dimming the controls.
+            try? await Task.sleep(nanoseconds: 350_000_000)
+            guard !Task.isCancelled else { return }
 
-        didApply = await environment.updateWindow(new)
-        pendingCount = await environment.notificationService.pendingCount()
+            let applied = await environment.updateWindow(new)
+            if !Task.isCancelled {
+                didApply = applied
+                pendingCount = await environment.notificationService.pendingCount()
+            }
+        }
     }
 
     /// Opens this app's page in the system Settings app.

@@ -84,6 +84,7 @@ enum NotificationHorizonPlanner {
     ///   - now: Current instant, to avoid scheduling reminders in the past.
     ///   - existing: Identifiers already pending, from the system centre.
     ///   - capturedDays: Days that already have a captured moment, so streak savers are skipped/cleared.
+    ///   - forceRescheduleDays: Days that must be re-scheduled even if already pending (e.g. window change or stale copy).
     ///   - momentStart: Resolves a day to its moment time. Injected rather than
     ///     reached for, so the planner is pure and the scheduler stays the one
     ///     place the derivation lives.
@@ -94,15 +95,17 @@ enum NotificationHorizonPlanner {
         now: Date? = nil,
         existing: [String],
         capturedDays: Set<DayIdentifier> = [],
+        forceRescheduleDays: Set<DayIdentifier> = [],
         momentStart: (DayIdentifier) -> Date
     ) -> Plan {
         let days = (0..<horizon).map { today.offset(by: $0) }
         let alreadyPending = Set(existing)
 
-        // Only days with nothing pending. Re-adding a request whose identifier
-        // already exists throws, and re-adding the whole horizon on every
-        // foreground is churn the system does not need.
-        let missing = days.filter { !alreadyPending.contains(identifier(for: $0)) }
+        // Days to schedule: missing days, plus any day explicitly requested for
+        // force-rescheduling (e.g. window change or purging stale copy).
+        let toSchedule = days.filter { day in
+            !alreadyPending.contains(identifier(for: day)) || forceRescheduleDays.contains(day)
+        }
 
         // Streak saver planning
         let currentTime = now ?? today.date
@@ -124,7 +127,8 @@ enum NotificationHorizonPlanner {
                 continue
             }
 
-            if !alreadyPending.contains(id) {
+            let forceStreak = forceRescheduleDays.contains(day)
+            if !alreadyPending.contains(id) || forceStreak {
                 streakToSchedule.append(day)
                 streakFireDates[day] = fireDate
                 streakToRemove.append(id)
@@ -132,14 +136,14 @@ enum NotificationHorizonPlanner {
         }
 
         return Plan(
-            daysToSchedule: missing,
-            fireDates: Dictionary(uniqueKeysWithValues: missing.map {
+            daysToSchedule: toSchedule,
+            fireDates: Dictionary(uniqueKeysWithValues: toSchedule.map {
                 ($0, momentStart($0))
             }),
             streakDaysToSchedule: streakToSchedule,
             streakFireDates: streakFireDates,
             // Replace what we are about to re-add, and prune any streak savers that are no longer needed.
-            identifiersToRemove: missing.map(identifier(for:)) + streakToRemove
+            identifiersToRemove: toSchedule.map(identifier(for:)) + streakToRemove
         )
     }
 

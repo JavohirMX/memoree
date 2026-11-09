@@ -579,6 +579,11 @@ final class AppEnvironment {
         didRefreshHorizon = true
 
         let settings = momentStore.settings()
+        guard settings.notificationsEnabled ?? true else {
+            await notificationService.clearAll()
+            return
+        }
+
         let window = settings.timeWindow
         let duration = settings.captureDuration
 
@@ -596,7 +601,8 @@ final class AppEnvironment {
         try? await notificationService.refreshHorizon(
             window: window,
             windowDuration: duration,
-            capturedDays: capturedDays
+            capturedDays: capturedDays,
+            force: force
         )
     }
 

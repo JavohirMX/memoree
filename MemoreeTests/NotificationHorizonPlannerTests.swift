@@ -333,4 +333,47 @@ struct NotificationHorizonPlannerTests {
         #expect(!plan.streakDaysToSchedule.contains(today))
         #expect(plan.streakDaysToSchedule.count == 6)
     }
+
+    // MARK: - Force Reschedule & Stale Notification Pruning
+
+    @Test("Force reschedule days are replaced even if already pending")
+    func forceRescheduleReplacesPending() {
+        let tomorrow = today.offset(by: 1)
+        let tomorrowId = NotificationHorizonPlanner.identifier(for: tomorrow)
+        let existing = identifiers(45) // completely full
+
+        let plan = NotificationHorizonPlanner.plan(
+            horizon: 45,
+            streakHorizon: 7,
+            today: today,
+            now: today.date,
+            existing: existing,
+            forceRescheduleDays: [tomorrow],
+            momentStart: start(of:)
+        )
+
+        #expect(plan.daysToSchedule.contains(tomorrow))
+        #expect(plan.identifiersToRemove.contains(tomorrowId))
+        #expect(plan.fireDates[tomorrow] == start(of: tomorrow))
+    }
+
+    @Test("Full horizon with force reschedule on future days replaces those days and keeps count bounded")
+    func fullHorizonForceRescheduleReplaces() {
+        let futureDays = (1..<45).map { today.offset(by: $0) }
+        let existing = identifiers(45)
+
+        let plan = NotificationHorizonPlanner.plan(
+            horizon: 45,
+            streakHorizon: 7,
+            today: today,
+            now: today.date,
+            existing: existing,
+            forceRescheduleDays: Set(futureDays),
+            momentStart: start(of:)
+        )
+
+        #expect(plan.daysToSchedule.count == 44)
+        #expect(!plan.daysToSchedule.contains(today)) // today was not in forceRescheduleDays
+        #expect(plan.identifiersToRemove.count >= 44)
+    }
 }

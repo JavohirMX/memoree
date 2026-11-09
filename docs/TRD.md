@@ -199,6 +199,7 @@ local, with no migration pressure that would justify a dependency.
     var saveBTS: Bool                // default true
     var albumCreationAttempted: Bool
     var onboardingComplete: Bool
+    var notificationsEnabled: Bool?  // default true, optional for in-place migration (ADR-041)
 }
 ```
 
@@ -841,7 +842,7 @@ The invariant is at 0/19/20/64 pending, and includes the one that matters most:
 above 64, iOS drops adds silently and the user simply stops being reminded, with
 nothing thrown and nothing logged.
 
-If notifications are denied, every state is still reachable and the shutter is still there — the
+If notifications are denied or paused in Settings (ADR-041), every state is still reachable and the shutter is still there — the
 Today screen additionally **shows the moment time**, because with no notification it is the
 only way the user could ever learn when the moment was (ADR-024). The ritual degrades; it does
 not die. This is the correct degradation for a no-server app: nothing can re-notify you, so

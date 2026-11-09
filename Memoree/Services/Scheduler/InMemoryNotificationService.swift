@@ -32,6 +32,7 @@ final class InMemoryNotificationService: NotificationService, @unchecked Sendabl
         let window: TimeWindow
         let windowDuration: TimeInterval
         let capturedDays: Set<DayIdentifier>
+        var force: Bool = false
     }
 
     private let lock = NSLock()
@@ -75,7 +76,8 @@ final class InMemoryNotificationService: NotificationService, @unchecked Sendabl
     func refreshHorizon(
         window: TimeWindow,
         windowDuration: TimeInterval,
-        capturedDays: Set<DayIdentifier>
+        capturedDays: Set<DayIdentifier>,
+        force: Bool
     ) async throws {
         try lock.withLock {
             if let failure = state.failNextRefresh {
@@ -85,7 +87,8 @@ final class InMemoryNotificationService: NotificationService, @unchecked Sendabl
             state.refreshes.append(Refresh(
                 window: window,
                 windowDuration: windowDuration,
-                capturedDays: capturedDays
+                capturedDays: capturedDays,
+                force: force
             ))
         }
     }

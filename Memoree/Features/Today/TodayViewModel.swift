@@ -28,6 +28,9 @@ final class TodayViewModel {
     /// not an error (AGENTS.md §9).
     private(set) var notificationsAuthorized = false
 
+    /// Whether notifications are enabled by the user in app settings.
+    private(set) var notificationsEnabled = true
+
     /// Today's moment, read back out of the user's photo library.
     ///
     /// **The first thing in the app that reads from Photos.** Everything up to
@@ -167,10 +170,10 @@ final class TodayViewModel {
     /// showing both spends the surprise for nothing. The notification is the
     /// alert; the app's job is to have delivered one and then shut up.
     ///
-    /// True only when the user has declined notifications, because then the
-    /// clock is the *only* way they could ever learn when the moment was —
+    /// True only when the user has declined notifications or disabled them in settings,
+    /// because then the clock is the *only* way they could ever learn when the moment was —
     /// declining must not mean keeping the app open all day hoping (AGENTS.md §6).
-    var showsMomentTime: Bool { !notificationsAuthorized }
+    var showsMomentTime: Bool { !notificationsAuthorized || !notificationsEnabled }
 
     /// Seconds until the moment, or `nil` if it has passed.
     ///
@@ -279,6 +282,7 @@ final class TodayViewModel {
         // can change the window while the Today screen exists underneath it, and
         // a stale value here would be a Settings screen that appears not to work.
         notificationsAuthorized = await refreshAuthorization()
+        notificationsEnabled = environment.momentStore.settings().notificationsEnabled ?? true
         pendingNotificationCount = await environment.notificationService.pendingCount()
         // Peek, do not consume: Settings also shows this note, and a one-shot
         // handoff would race whichever screen reloads first. Cleared when the

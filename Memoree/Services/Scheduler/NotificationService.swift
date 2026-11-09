@@ -15,7 +15,8 @@ protocol NotificationService: Sendable {
     func refreshHorizon(
         window: TimeWindow,
         windowDuration: TimeInterval,
-        capturedDays: Set<DayIdentifier>
+        capturedDays: Set<DayIdentifier>,
+        force: Bool
     ) async throws
 
     /// Cancels any scheduled evening streak-saver notification for the specified day.
@@ -48,7 +49,15 @@ protocol NotificationService: Sendable {
 
 extension NotificationService {
     func refreshHorizon(window: TimeWindow, windowDuration: TimeInterval) async throws {
-        try await refreshHorizon(window: window, windowDuration: windowDuration, capturedDays: [])
+        try await refreshHorizon(window: window, windowDuration: windowDuration, capturedDays: [], force: false)
+    }
+
+    func refreshHorizon(
+        window: TimeWindow,
+        windowDuration: TimeInterval,
+        capturedDays: Set<DayIdentifier>
+    ) async throws {
+        try await refreshHorizon(window: window, windowDuration: windowDuration, capturedDays: capturedDays, force: false)
     }
 }
 
@@ -147,7 +156,8 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
     func refreshHorizon(
         window: TimeWindow,
         windowDuration: TimeInterval,
-        capturedDays: Set<DayIdentifier>
+        capturedDays: Set<DayIdentifier>,
+        force: Bool
     ) async throws {
         let settings = await center.notificationSettings()
         guard settings.authorizationStatus.asMemoree.willDeliver else {
@@ -156,13 +166,39 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
             throw SchedulerError.notificationDenied
         }
 
+        let pending = await pendingRequests()
+        let today = DayIdentifier(date: now())
+
+        // Detect stale requests carrying legacy copy (e.g. "2 minute", "1 minute", "It's time")
+        // or requests that must be force-rescheduled (e.g. window change for future days).
+        var forceRescheduleDays: Set<DayIdentifier> = []
+        for req in pending {
+            let id = req.identifier
+            if id.hasPrefix("moment.") {
+                let dayString = String(id.dropFirst("moment.".count))
+                if let day = DayIdentifier(string: dayString) {
+                    let body = req.content.body.lowercased()
+                    let title = req.content.title.lowercased()
+                    let isLegacyCopy = body.contains("2 minute")
+                        || body.contains("two minute")
+                        || body.contains("1 minute")
+                        || title == "it's time"
+                    // If legacy copy, or if force is true for tomorrow onward (leave today untouched if already derived)
+                    if isLegacyCopy || (force && day > today) {
+                        forceRescheduleDays.insert(day)
+                    }
+                }
+            }
+        }
+
         let plan = NotificationHorizonPlanner.plan(
             horizon: Self.horizonDays,
             streakHorizon: Self.streakHorizonDays,
-            today: DayIdentifier(date: now()),
+            today: today,
             now: now(),
-            existing: await pendingRequests().map(\.identifier),
+            existing: pending.map(\.identifier),
             capturedDays: capturedDays,
+            forceRescheduleDays: forceRescheduleDays,
             momentStart: { day in
                 scheduler.momentStart(
                     for: day, window: window, windowDuration: windowDuration
@@ -202,6 +238,7 @@ struct UserNotificationService: NotificationService, @unchecked Sendable {
 
     func clearAll() async {
         let identifiers = await pendingRequests().map(\.identifier)
+            .filter { $0.hasPrefix("moment.") || $0.hasPrefix("streak.") }
         guard !identifiers.isEmpty else { return }
         center.removePendingNotificationRequests(withIdentifiers: identifiers)
     }

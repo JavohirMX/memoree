@@ -1,7 +1,7 @@
 import SwiftUI
 import UIKit
 
-/// The daily moment window, as two sliders.
+/// The daily moment window picker with preset chips and stepper controls.
 ///
 /// **Shared between onboarding and Settings, deliberately.** Onboarding had its
 /// own copy inline, and the moment there was a first-run wizard and here it is
@@ -9,17 +9,13 @@ import UIKit
 /// drift apart, and this one already had a defect the copy would not have
 /// shared (see `AppEnvironment.updateWindow`).
 ///
-/// The sliders cannot cross and cannot leave less than an hour between them,
+/// The bounds cannot cross and cannot leave less than an hour between them,
 /// because a window narrower than that stops being random, and a window that
 /// crosses midnight is not what either of these two callers means by it. The
 /// bounds are enforced on the `Binding` rather than in the range, so an
 /// impossible intermediate value is never even representable.
 ///
-/// The commit is deferred to `onCommit` rather than fired on every drag step.
-/// Two reasons, and the second is the real one: dragging fires dozens of times,
-/// and each commit discards 44 `DayRecord`s and rebuilds the notification
-/// horizon. A user nudging the slider would fire 44 deletions and 45
-/// notification requests per second.
+/// The commit is dispatched to `onCommit` when values change.
 struct WindowPicker: View {
 
     /// The window being edited. Held by the caller so the screen can show a
@@ -28,10 +24,6 @@ struct WindowPicker: View {
 
     /// Called once the user lets go, or finishes a step.
     let onCommit: (TimeWindow) async -> Void
-
-    /// Whether a commit is in flight, to keep the controls from being dragged
-    /// underneath one.
-    var isCommitting = false
 
     /// Smallest gap the user can leave between the two bounds.
     ///
@@ -43,27 +35,36 @@ struct WindowPicker: View {
 
     private static let stepMinutes = 30
 
+    struct Preset: Identifiable, Equatable {
+        let id: String
+        let title: String
+        let window: TimeWindow
+    }
+
+    private static let presets: [Preset] = [
+        Preset(id: "standard", title: "Standard", window: TimeWindow.default),
+        Preset(id: "allday", title: "All Day", window: TimeWindow(startMinutes: 8 * 60, endMinutes: 23 * 60)),
+        Preset(id: "daytime", title: "Daytime", window: TimeWindow(startMinutes: 9 * 60, endMinutes: 18 * 60)),
+        Preset(id: "evening", title: "Evening", window: TimeWindow(startMinutes: 17 * 60, endMinutes: 23 * 60)),
+    ]
+
     var body: some View {
         VStack(spacing: Theme.Spacing.m) {
             headerSummary
+            presetChips
             timelineVisualizer
             bound(
                 label: "From",
                 minutes: window.startMinutes,
                 range: 0...Double(max(Self.minimumGapMinutes, window.endMinutes - Self.minimumGapMinutes)),
                 onChange: { minutes in
-                    // A whole new `TimeWindow` rather than mutating one field.
-                    // The stored properties are `let` on purpose — a window is a
-                    // value, and an immutable one cannot end up half-updated. The
-                    // initialiser validates, so the clamp below is belt and
-                    // braces: it makes the *intent* legible, and it is what stops
-                    // a slider at its range edge from producing a window the
-                    // validator would have to widen behind the user's back.
                     let clamped = min(max(0, minutes), window.endMinutes - Self.minimumGapMinutes)
-                    window = TimeWindow(
+                    let updated = TimeWindow(
                         startMinutes: clamped,
                         endMinutes: window.endMinutes
                     )
+                    window = updated
+                    Task { await onCommit(updated) }
                 }
             )
 
@@ -73,15 +74,48 @@ struct WindowPicker: View {
                 range: Double(min(24 * 60, window.startMinutes + Self.minimumGapMinutes))...Double(24 * 60),
                 onChange: { minutes in
                     let clamped = max(minutes, window.startMinutes + Self.minimumGapMinutes)
-                    window = TimeWindow(
+                    let updated = TimeWindow(
                         startMinutes: window.startMinutes,
                         endMinutes: min(clamped, 24 * 60)
                     )
+                    window = updated
+                    Task { await onCommit(updated) }
                 }
             )
         }
-        .opacity(isCommitting ? 0.4 : 1)
-        .disabled(isCommitting)
+    }
+
+    private var presetChips: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Theme.Spacing.s) {
+                ForEach(Self.presets) { preset in
+                    let isSelected = window.startMinutes == preset.window.startMinutes
+                        && window.endMinutes == preset.window.endMinutes
+                    Button {
+                        UISelectionFeedbackGenerator().selectionChanged()
+                        window = preset.window
+                        Task { await onCommit(preset.window) }
+                    } label: {
+                        Text(preset.title)
+                            .font(Theme.Typography.metadata.weight(isSelected ? .semibold : .regular))
+                            .foregroundStyle(isSelected ? Theme.Color.textPrimary : Theme.Color.textSecondary)
+                            .padding(.horizontal, Theme.Spacing.m)
+                            .frame(minHeight: Theme.Size.tapTarget)
+                            .background(isSelected ? Theme.Color.divider : Theme.Color.surface)
+                            .clipShape(Capsule())
+                            .overlay {
+                                if isSelected {
+                                    Capsule().strokeBorder(Theme.Color.textSecondary, lineWidth: 1)
+                                }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Preset \(preset.title), \(preset.window.displayBounds)")
+                }
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Window presets")
     }
 
     private var headerSummary: some View {
@@ -152,42 +186,59 @@ struct WindowPicker: View {
         range: ClosedRange<Double>,
         onChange: @escaping (Int) -> Void
     ) -> some View {
-        VStack(spacing: Theme.Spacing.xs) {
-            HStack {
-                Text(label)
-                    .font(Theme.Typography.body)
-                    .foregroundStyle(Theme.Color.textSecondary)
-                Spacer()
+        let canDecrement = Double(minutes - Self.stepMinutes) >= range.lowerBound
+        let canIncrement = Double(minutes + Self.stepMinutes) <= range.upperBound
+
+        return HStack {
+            Text(label)
+                .font(Theme.Typography.body)
+                .foregroundStyle(Theme.Color.textSecondary)
+            Spacer()
+
+            HStack(spacing: Theme.Spacing.s) {
+                Button {
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    let newMinutes = max(Int(range.lowerBound), minutes - Self.stepMinutes)
+                    onChange(newMinutes)
+                } label: {
+                    Image(systemName: "minus")
+                        .font(Theme.Typography.metadata.weight(.semibold))
+                        .foregroundStyle(canDecrement ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+                        .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                        .background(Theme.Color.divider)
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(!canDecrement)
+                .accessibilityLabel("Decrease \(label) by 30 minutes")
+
                 Text(TimeWindow.format(minutes: minutes))
                     .font(Theme.Typography.body)
                     .monospacedDigit()
                     .foregroundStyle(Theme.Color.textPrimary)
-                    // Announced as a bound, not as a bare number, so VoiceOver
-                    // reads "From, 11:00" rather than just the digits.
+                    .padding(.horizontal, Theme.Spacing.s)
+                    .frame(minWidth: Theme.Size.shutter)
+                    .frame(height: Theme.Size.tapTarget)
+                    .background(Theme.Color.divider)
+                    .clipShape(RoundedRectangle(cornerRadius: Theme.Radius.thumbnail, style: .continuous))
                     .accessibilityLabel("\(label) \(TimeWindow.format(minutes: minutes))")
-            }
 
-            Slider(
-                value: Binding(
-                    get: { Double(minutes) },
-                    set: { newMinutes in
-                        let rounded = Int(newMinutes.rounded())
-                        if rounded != minutes {
-                            UISelectionFeedbackGenerator().selectionChanged()
-                        }
-                        onChange(rounded)
-                    }
-                ),
-                in: range,
-                step: Double(Self.stepMinutes),
-                onEditingChanged: { isEditing in
-                    if !isEditing {
-                        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-                        Task { await onCommit(window) }
-                    }
+                Button {
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    let newMinutes = min(Int(range.upperBound), minutes + Self.stepMinutes)
+                    onChange(newMinutes)
+                } label: {
+                    Image(systemName: "plus")
+                        .font(Theme.Typography.metadata.weight(.semibold))
+                        .foregroundStyle(canIncrement ? Theme.Color.textPrimary : Theme.Color.textTertiary)
+                        .frame(width: Theme.Size.tapTarget, height: Theme.Size.tapTarget)
+                        .background(Theme.Color.divider)
+                        .clipShape(Circle())
                 }
-            )
-            .tint(Theme.Color.textPrimary)
+                .buttonStyle(.plain)
+                .disabled(!canIncrement)
+                .accessibilityLabel("Increase \(label) by 30 minutes")
+            }
         }
     }
 }

@@ -151,6 +151,10 @@ final class AppSettings {
 
     var onboardingComplete: Bool
 
+    /// Whether notifications are enabled by the user in-app.
+    /// Optional for backwards-compatible lightweight SwiftData migration (defaults to true).
+    var notificationsEnabled: Bool?
+
     init(
         id: String = "singleton",
         windowStartMinutes: Int = TimeWindow.default.startMinutes,
@@ -176,6 +180,7 @@ final class AppSettings {
         saveBTS: Bool = false,
         saveToAlbum: Bool = false,
         albumCreationAttempted: Bool = false,
+        notificationsEnabled: Bool? = true,
         onboardingComplete: Bool = false
     ) {
         self.id = id
@@ -187,6 +192,7 @@ final class AppSettings {
         self.saveBTS = saveBTS
         self.saveToAlbum = saveToAlbum
         self.albumCreationAttempted = albumCreationAttempted
+        self.notificationsEnabled = notificationsEnabled ?? true
         self.onboardingComplete = onboardingComplete
     }
 

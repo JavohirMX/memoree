@@ -1708,6 +1708,27 @@ thumbnail cache in the App Group, supersede this ADR — do not smuggle bytes in
 
 ---
 
+## ADR-041 — In-App Notification Pause, Rolling Horizon Purging, and Stepper-Based Window Selection
+
+**Status:** Accepted · **Date:** 2026-11-09 · **Consequence of:** ADR-006, ADR-023, ADR-036
+
+**Context.** 
+1. When ADR-036 adopted calm copy for scheduled moments, users who already had 45 days of pre-scheduled requests in iOS `UNUserNotificationCenter` continued receiving legacy "2 minutes left" copy because `NotificationHorizonPlanner.plan` treated all existing pending requests as untouched.
+2. Users had no way inside the app to temporarily pause daily reminders without going to iOS system Settings.
+3. The daily window settings picker used sliders and blocked the UI with `.disabled` during updates, creating a jarring flicker whenever bounds were adjusted.
+
+**Decision.**
+1. **Pending Horizon Copy Pruning**: `UserNotificationService.refreshHorizon` scans pending requests for legacy wording (`"2 minute"`, `"two minute"`, etc.) and forces replacement with modern `MomentNotificationCopy` prompts.
+2. **In-App Notification Pause Toggle**: Added `notificationsEnabled: Bool? = true` to `AppSettings` (optional for lightweight migration). Toggling off clears all pending notifications via `notificationService.clearAll()`. Today's moment time is surfaced on the Today screen when reminders are disabled, preserving predictability without push pressure.
+3. **Stepper-Based Window Picker & Debouncing**: Replaced continuous sliders in `WindowPicker` with quick preset chips and 30-minute `[-]`/`[+]` steppers. Changes are debounced with a 350ms window before writing to `AppSettings` and rescheduling the horizon, completely removing UI dimming and interaction lockouts.
+
+**Consequences.**
+- Legacy copy is cleared immediately upon app foregrounding.
+- Users can pause notifications on-device at will; airplane mode and offline workflows continue unimpeded.
+- Window adjustments are responsive, tactile, and flicker-free.
+
+---
+
 ## Non-decisions, recorded deliberately
 
 Things that look like decisions but are not:
