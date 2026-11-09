@@ -79,5 +79,9 @@
 	     NSLocationAlwaysUsageDescription — "WhenInUse" only, never background
 	     NSUserTracking                  — see PrivacyInfo.xcprivacy
 	     -->
+
+	<!-- Export compliance: no proprietary encryption beyond standard iOS APIs -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

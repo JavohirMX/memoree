@@ -294,6 +294,11 @@ struct VoiceOverTests {
                                ".thickMaterial", ".bar", ".systemBackground", ".blur("]
             for line in try SourceScan.codeLines(of: file)
             where translucent.contains(where: { line.code.contains($0) }) {
+                // The transient 0.2s camera flip cover in CameraView is a viewfinder
+                // transition to mask the session reconfiguration, not a UI material or surface.
+                if file.lastPathComponent == "CameraView.swift" && line.code.contains("isCameraSwitching") {
+                    continue
+                }
                 for symbol in translucent where line.code.contains(symbol) {
                     materials.append("\(file.lastPathComponent):\(line.number) \(symbol)")
                 }

@@ -35,6 +35,7 @@ struct MomentDetailView: View {
     /// Front-large state keyed by moment, so a swap on one page does not flip a
     /// neighbour that was already loaded into the pager.
     @State private var frontLargeIDs: Set<UUID> = []
+    @State private var momentCornerMap: [UUID: InsetCorner] = [:]
     @State private var imagesCache: [UUID: (large: UIImage?, inset: UIImage?)] = [:]
     @State private var missingCache: Set<UUID> = []
     @State private var fullScreenPair: (primary: UIImage, secondary: UIImage)?
@@ -340,6 +341,10 @@ struct MomentDetailView: View {
                 large: large,
                 inset: inset,
                 insetWidth: Theme.Size.insetStandard,
+                initialCorner: momentCornerMap[item.id] ?? .topLeading,
+                onCornerChanged: { newCorner in
+                    momentCornerMap[item.id] = newCorner
+                },
                 onTapInset: {
                     withAppAnimation(.easeInOut(duration: 0.25)) {
                         if frontLargeIDs.contains(item.id) {

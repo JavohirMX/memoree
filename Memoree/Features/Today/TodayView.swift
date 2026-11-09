@@ -25,6 +25,7 @@ struct TodayView: View {
     @State private var isConfirmingDelete = false
     @State private var isShowingDeleteError = false
     @State private var flippedMoments: Set<UUID> = []
+    @State private var momentCornerMap: [UUID: InsetCorner] = [:]
     @State private var playingBTSMoment: MomentFacts?
     @State private var isShowingSameDayFlipbook = false
     @State private var showSameDayFlipbookSavedAlert = false
@@ -518,6 +519,10 @@ struct TodayView: View {
                     large: large,
                     inset: inset,
                     insetWidth: Theme.Size.insetStandard,
+                    initialCorner: momentCornerMap[moment.id] ?? .topLeading,
+                    onCornerChanged: { newCorner in
+                        momentCornerMap[moment.id] = newCorner
+                    },
                     onTapInset: {
                         toggleFlip(for: moment.id)
                     },
